@@ -1,0 +1,1 @@
+A basic and evolving library for writing geo_types to OpenOrienteering Mapper's .omap files.
