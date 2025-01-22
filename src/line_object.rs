@@ -3,7 +3,7 @@ use geo_types::LineString;
 use polyline2bezier::{BezierSegmentType, BezierString};
 
 use crate::BEZIER_ERROR;
-use crate::{map_geo_traits::MapCoord, MapObject, Symbol, Tag};
+use crate::{MapCoord, MapObject, Symbol, Tag};
 
 use std::{
     fs::File,
