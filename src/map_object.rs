@@ -7,9 +7,9 @@ pub trait MapObject: 'static + Sync + Send {
         self.add_tag("auto-generated", "OmapMaker");
     }
 
-    fn write_to_map(&self, f: &mut BufWriter<File>, as_bezier: bool);
+    fn write_to_map(&self, f: &mut BufWriter<File>, bezier_error: Option<f64>);
 
-    fn write_coords(&self, f: &mut BufWriter<File>, as_bezier: bool);
+    fn write_coords(&self, f: &mut BufWriter<File>, bezier_error: Option<f64>);
 
     fn write_tags(&self, f: &mut BufWriter<File>);
 }

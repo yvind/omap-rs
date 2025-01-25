@@ -2,7 +2,6 @@ use geo_types::Polygon;
 
 use polyline2bezier::{BezierSegmentType, BezierString};
 
-use crate::BEZIER_ERROR;
 use crate::{MapCoord, MapObject, Symbol, Tag};
 
 use std::{
@@ -70,14 +69,14 @@ impl AreaObject {
             .expect("Could not write to map file");
     }
 
-    fn write_bezier(&self, f: &mut BufWriter<File>) {
+    fn write_bezier(&self, f: &mut BufWriter<File>, error: f64) {
         let mut beziers = Vec::with_capacity(self.coordinates.num_rings());
         beziers.push(BezierString::from_polyline(
             self.coordinates.exterior(),
-            BEZIER_ERROR,
+            error,
         ));
         for hole in self.coordinates.interiors() {
-            beziers.push(BezierString::from_polyline(hole, BEZIER_ERROR));
+            beziers.push(BezierString::from_polyline(hole, error));
         }
         let mut num_coords = 0;
         for b in beziers.iter() {
@@ -151,18 +150,18 @@ impl MapObject for AreaObject {
         self.tags.push(Tag::new(k, v));
     }
 
-    fn write_to_map(&self, f: &mut BufWriter<File>, as_bezier: bool) {
+    fn write_to_map(&self, f: &mut BufWriter<File>, bez_error: Option<f64>) {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol).as_bytes())
             .expect("Could not write to map file");
         self.write_tags(f);
-        self.write_coords(f, as_bezier);
+        self.write_coords(f, bez_error);
         f.write_all(b"</object>\n")
             .expect("Could not write to map file");
     }
 
-    fn write_coords(&self, f: &mut BufWriter<File>, as_bezier: bool) {
-        if as_bezier {
-            self.write_bezier(f);
+    fn write_coords(&self, f: &mut BufWriter<File>, bez_error: Option<f64>) {
+        if let Some(error) = bez_error {
+            self.write_bezier(f, error);
         } else {
             self.write_polyline(f);
         }

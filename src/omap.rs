@@ -9,13 +9,15 @@ use std::{
 };
 
 pub struct Omap {
+    bezier_error: Option<f64>,
     ref_point: Coord,
     objects: Vec<Box<dyn MapObject>>,
 }
 
 impl Omap {
-    pub fn new(georef_point: Coord) -> Self {
+    pub fn new(georef_point: Coord, bezier_error: Option<f64>) -> Self {
         Omap {
+            bezier_error,
             ref_point: georef_point,
             objects: vec![],
         }
@@ -25,7 +27,7 @@ impl Omap {
         self.objects.push(Box::new(obj));
     }
 
-    pub fn write_to_file(self, filename: &OsStr, dir: &Path, as_bezier: bool) {
+    pub fn write_to_file(self, filename: &OsStr, dir: &Path) {
         let mut filepath = PathBuf::from(dir);
         filepath.push(filename);
         filepath.set_extension("omap");
@@ -35,7 +37,7 @@ impl Omap {
 
         self.write_header(&mut f);
         self.write_colors_symbols(&mut f);
-        self.write_objects(&mut f, as_bezier);
+        self.write_objects(&mut f);
         self.write_end_of_file(&mut f);
     }
 
@@ -49,7 +51,7 @@ impl Omap {
             .expect("Could not write to map file");
     }
 
-    fn write_objects(&self, f: &mut BufWriter<File>, as_bezier: bool) {
+    fn write_objects(&self, f: &mut BufWriter<File>) {
         f.write_all(
             format!(
                 "<parts count=\"1\" current=\"0\">\n<part name=\"map\"><objects count=\"{}\">\n",
@@ -60,7 +62,7 @@ impl Omap {
         .expect("Could not write to map file");
 
         for object in self.objects.iter() {
-            object.write_to_map(f, as_bezier);
+            object.write_to_map(f, self.bezier_error);
         }
 
         f.write_all(b"</objects></part>\n</parts>\n")

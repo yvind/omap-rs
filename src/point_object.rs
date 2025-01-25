@@ -30,7 +30,7 @@ impl MapObject for PointObject {
         self.tags.push(Tag::new(k, v));
     }
 
-    fn write_to_map(&self, f: &mut BufWriter<File>, _as_bezier: bool) {
+    fn write_to_map(&self, f: &mut BufWriter<File>, _as_bezier: Option<f64>) {
         f.write_all(
             format!(
                 "<object type=\"0\" symbol=\"{}\" rotation=\"{}\">",
@@ -40,12 +40,12 @@ impl MapObject for PointObject {
         )
         .expect("Could not write to map file");
         self.write_tags(f);
-        self.write_coords(f, false);
+        self.write_coords(f, None);
         f.write_all(b"</object>\n")
             .expect("Could not write to map file");
     }
 
-    fn write_coords(&self, f: &mut BufWriter<File>, _as_bezier: bool) {
+    fn write_coords(&self, f: &mut BufWriter<File>, _as_bezier: Option<f64>) {
         let c = self.coordinates.0.to_map_coordinates().unwrap();
         f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())
             .expect("Could not write to map file");

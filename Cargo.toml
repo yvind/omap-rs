@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-geo-types = "0.7.15"
+geo-types = "^0.7.13"
 polyline2bezier = {git = "https://github.com/oyhj1801/polyline2bezier"}
