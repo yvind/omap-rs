@@ -9,14 +9,16 @@ use std::{
 };
 
 pub struct Omap {
+    epsg: Option<u16>,
     bezier_error: Option<f64>,
     ref_point: Coord,
     objects: Vec<Box<dyn MapObject>>,
 }
 
 impl Omap {
-    pub fn new(georef_point: Coord, bezier_error: Option<f64>) -> Self {
+    pub fn new(georef_point: Coord, bezier_error: Option<f64>, epsg_crs: Option<u16>) -> Self {
         Omap {
+            epsg: epsg_crs,
             bezier_error,
             ref_point: georef_point,
             objects: vec![],
@@ -43,6 +45,11 @@ impl Omap {
 
     fn write_header(&self, f: &mut BufWriter<File>) {
         f.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<map xmlns=\"http://openorienteering.org/apps/mapper/xml/v2\" version=\"9\">\n<notes></notes>\n").expect("Could not write to map file");
+
+        if self.epsg.is_some() {
+            println!("Writing georefrenced files not yet supported");
+        }
+
         f.write_all(format!("<georeferencing scale=\"15000\"><projected_crs id=\"Local\"><ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n", self.ref_point.x, self.ref_point.y).as_bytes()).expect("Could not write to map file");
     }
 
