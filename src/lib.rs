@@ -1,7 +1,7 @@
 pub mod area_object;
 pub mod line_object;
 pub mod map_geo_traits;
-mod map_object;
+pub mod map_object;
 pub mod omap;
 pub mod point_object;
 pub mod symbol;

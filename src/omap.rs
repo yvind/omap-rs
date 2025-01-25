@@ -19,7 +19,7 @@ impl Omap {
     pub fn new(georef_point: Coord, bezier_error: Option<f64>, epsg_crs: Option<u16>) -> Self {
         Omap {
             epsg: epsg_crs,
-            bezier_error,
+            bezier_error, // could also just be passed to the write function
             ref_point: georef_point,
             objects: vec![],
         }
