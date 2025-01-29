@@ -30,6 +30,7 @@ impl MapObjectTrait for PointObject {
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()> {
         f.write_all(
             format!(
@@ -40,7 +41,7 @@ impl MapObjectTrait for PointObject {
             .as_bytes(),
         )?;
         self.write_tags(f)?;
-        self.write_coords(f, None, scale)?;
+        self.write_coords(f, None, scale, grivation)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -50,11 +51,12 @@ impl MapObjectTrait for PointObject {
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()> {
         let c = Point::try_from(self.symbol)
             .unwrap()
             .0
-            .to_map_coordinates(scale)?;
+            .to_map_coordinates(scale, grivation)?;
         f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())?;
         Ok(())
     }

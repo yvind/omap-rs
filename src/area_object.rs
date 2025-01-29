@@ -22,7 +22,12 @@ impl AreaObject {
         }
     }
 
-    fn write_polyline(self, f: &mut BufWriter<File>, scale: Scale) -> OmapResult<()> {
+    fn write_polyline(
+        self,
+        f: &mut BufWriter<File>,
+        scale: Scale,
+        grivation: f32,
+    ) -> OmapResult<()> {
         let coordinates = Polygon::try_from(self.symbol)?;
 
         let mut num_coords = coordinates.exterior().0.len();
@@ -38,11 +43,17 @@ impl AreaObject {
         let mut i = 0;
 
         while i < boundary_length - 1 {
-            let c = ext_iter.next().unwrap().to_map_coordinates(scale)?;
+            let c = ext_iter
+                .next()
+                .unwrap()
+                .to_map_coordinates(scale, grivation)?;
             f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
             i += 1;
         }
-        let c = ext_iter.next().unwrap().to_map_coordinates(scale)?;
+        let c = ext_iter
+            .next()
+            .unwrap()
+            .to_map_coordinates(scale, grivation)?;
         f.write_all(format!("{} {} 18;", c.0, c.1).as_bytes())?;
 
         for hole in coordinates.interiors().iter() {
@@ -52,12 +63,18 @@ impl AreaObject {
             let mut i = 0;
 
             while i < hole_length - 1 {
-                let c = int_iter.next().unwrap().to_map_coordinates(scale)?;
+                let c = int_iter
+                    .next()
+                    .unwrap()
+                    .to_map_coordinates(scale, grivation)?;
                 f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
 
                 i += 1;
             }
-            let c = int_iter.next().unwrap().to_map_coordinates(scale)?;
+            let c = int_iter
+                .next()
+                .unwrap()
+                .to_map_coordinates(scale, grivation)?;
             f.write_all(format!("{} {} 18;", c.0, c.1).as_bytes())?;
         }
         f.write_all(b"</coords>")?;
@@ -65,7 +82,13 @@ impl AreaObject {
         Ok(())
     }
 
-    fn write_bezier(self, f: &mut BufWriter<File>, error: f64, scale: Scale) -> OmapResult<()> {
+    fn write_bezier(
+        self,
+        f: &mut BufWriter<File>,
+        error: f64,
+        scale: Scale,
+        grivation: f32,
+    ) -> OmapResult<()> {
         let coordinates = Polygon::try_from(self.symbol)?;
 
         let mut beziers = Vec::with_capacity(coordinates.num_rings());
@@ -89,14 +112,14 @@ impl AreaObject {
                 let segment = bez_iterator.next().unwrap();
                 match segment.line_type() {
                     BezierSegmentType::Polyline => {
-                        let c = segment.0 .0.to_map_coordinates(scale)?;
+                        let c = segment.0 .0.to_map_coordinates(scale, grivation)?;
 
                         f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
                     }
                     BezierSegmentType::Bezier => {
-                        let c = segment.0 .0.to_map_coordinates(scale)?;
-                        let h1 = segment.0 .1.unwrap().to_map_coordinates(scale)?;
-                        let h2 = segment.0 .2.unwrap().to_map_coordinates(scale)?;
+                        let c = segment.0 .0.to_map_coordinates(scale, grivation)?;
+                        let h1 = segment.0 .1.unwrap().to_map_coordinates(scale, grivation)?;
+                        let h2 = segment.0 .2.unwrap().to_map_coordinates(scale, grivation)?;
                         f.write_all(
                             format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1)
                                 .as_bytes(),
@@ -109,16 +132,24 @@ impl AreaObject {
             let final_segment = bez_iterator.next().unwrap();
             match final_segment.line_type() {
                 BezierSegmentType::Polyline => {
-                    let c1 = final_segment.0 .0.to_map_coordinates(scale)?;
-                    let c2 = final_segment.0 .3.to_map_coordinates(scale)?;
+                    let c1 = final_segment.0 .0.to_map_coordinates(scale, grivation)?;
+                    let c2 = final_segment.0 .3.to_map_coordinates(scale, grivation)?;
 
                     f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
                 }
                 BezierSegmentType::Bezier => {
-                    let c1 = final_segment.0 .0.to_map_coordinates(scale)?;
-                    let h1 = final_segment.0 .1.unwrap().to_map_coordinates(scale)?;
-                    let h2 = final_segment.0 .2.unwrap().to_map_coordinates(scale)?;
-                    let c2 = final_segment.0 .3.to_map_coordinates(scale)?;
+                    let c1 = final_segment.0 .0.to_map_coordinates(scale, grivation)?;
+                    let h1 = final_segment
+                        .0
+                         .1
+                        .unwrap()
+                        .to_map_coordinates(scale, grivation)?;
+                    let h2 = final_segment
+                        .0
+                         .2
+                        .unwrap()
+                        .to_map_coordinates(scale, grivation)?;
+                    let c2 = final_segment.0 .3.to_map_coordinates(scale, grivation)?;
 
                     f.write_all(
                         format!(
@@ -145,10 +176,11 @@ impl MapObjectTrait for AreaObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
-        self.write_coords(f, bez_error, scale)?;
+        self.write_coords(f, bez_error, scale, grivation)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -158,11 +190,12 @@ impl MapObjectTrait for AreaObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()> {
         if let Some(error) = bez_error {
-            self.write_bezier(f, error, scale)
+            self.write_bezier(f, error, scale, grivation)
         } else {
-            self.write_polyline(f, scale)
+            self.write_polyline(f, scale, grivation)
         }
     }
 

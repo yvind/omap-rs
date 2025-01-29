@@ -9,7 +9,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Struct representing an Orienteering map
+/// ALL COORDINATES ARE RELATIVE THE ref_point
+/// If epsg.is_some() the map is written georefrenced
+/// else it is written in Local space
 pub struct Omap {
+    grivation: f32,
     scale: Scale,
     epsg: Option<u16>,
     ref_point: Coord,
@@ -19,7 +24,13 @@ pub struct Omap {
 
 impl Omap {
     pub fn new(georef_point: Coord, epsg_crs: Option<u16>, scale: Scale) -> Self {
+        // should use a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point
+        // and proj4rs for the convergence (angle between true north and grid north)
+
+        // the grivation (angle between grid north and magnetic north) must be used when calulating map coords as the axes are magnetic
+
         Omap {
+            grivation: 0.,
             scale,
             epsg: epsg_crs,
             ref_point: georef_point,
@@ -82,7 +93,7 @@ impl Omap {
         )?;
 
         for object in self.objects.into_iter() {
-            object.write_to_map(f, bezier_error, self.scale)?;
+            object.write_to_map(f, bezier_error, self.scale, self.grivation)?;
         }
 
         f.write_all(b"</objects></part>\n</parts>\n")?;

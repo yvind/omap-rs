@@ -8,6 +8,7 @@ pub(crate) trait MapObjectTrait {
         f: &mut BufWriter<File>,
         bezier_error: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()>;
 
     fn write_coords(
@@ -15,6 +16,7 @@ pub(crate) trait MapObjectTrait {
         f: &mut BufWriter<File>,
         bezier_error: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()>;
 
     fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()>;
@@ -54,13 +56,18 @@ impl MapObject {
         f: &mut BufWriter<File>,
         bezier_error: Option<f64>,
         scale: Scale,
+        grivation: f32,
     ) -> OmapResult<()> {
         match self {
-            MapObject::LineObject(line_object) => line_object.write_to_map(f, bezier_error, scale),
-            MapObject::PointObject(point_object) => {
-                point_object.write_to_map(f, bezier_error, scale)
+            MapObject::LineObject(line_object) => {
+                line_object.write_to_map(f, bezier_error, scale, grivation)
             }
-            MapObject::AreaObject(area_object) => area_object.write_to_map(f, bezier_error, scale),
+            MapObject::PointObject(point_object) => {
+                point_object.write_to_map(f, bezier_error, scale, grivation)
+            }
+            MapObject::AreaObject(area_object) => {
+                area_object.write_to_map(f, bezier_error, scale, grivation)
+            }
         }
     }
 }

@@ -3,7 +3,7 @@ use geo_types::Coord;
 use crate::{OmapError, OmapResult, Scale};
 
 pub(crate) trait MapCoord {
-    fn to_map_coordinates(self, scale: Scale) -> OmapResult<(i32, i32)>;
+    fn to_map_coordinates(self, scale: Scale, grivation: f32) -> OmapResult<(i32, i32)>;
 }
 
 // 1 map unit is 0.001mm on paper => 1000 mu = 1mm on map = 15m on ground
@@ -14,7 +14,7 @@ const CONVERSION_7500: f64 = 1_000. / 7.5;
 const MAX_MU: f64 = 2147483647.; // 2^31 - 1 max number a i32 can hold
 
 impl MapCoord for Coord {
-    fn to_map_coordinates(self, scale: Scale) -> OmapResult<(i32, i32)> {
+    fn to_map_coordinates(self, scale: Scale, _grivation: f32) -> OmapResult<(i32, i32)> {
         let (x, y) = match scale {
             Scale::S7_500 => (
                 (self.x * CONVERSION_7500).round(),
