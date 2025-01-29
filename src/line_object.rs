@@ -2,7 +2,7 @@ use geo_types::LineString;
 
 use polyline2bezier::{BezierSegmentType, BezierString};
 
-use crate::{MapCoord, MapObject, Symbol, Tag};
+use crate::{map_geo_traits::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
 
 use std::{
     fs::File,
@@ -11,54 +11,51 @@ use std::{
 
 pub struct LineObject {
     symbol: Symbol,
-    coordinates: LineString,
     tags: Vec<Tag>,
 }
 
 impl LineObject {
-    pub fn from_line_string(line: LineString, symbol: Symbol) -> Self {
+    pub fn from_symbol(symbol: Symbol) -> Self {
         Self {
             symbol,
-            coordinates: line,
             tags: vec![],
         }
     }
 
-    fn write_polyline(&self, f: &mut BufWriter<File>) {
-        let num_coords = self.coordinates.0.len();
+    fn write_polyline(self, f: &mut BufWriter<File>, scale: Scale) -> OmapResult<()> {
+        let num_coords = self.symbol.num_coords();
 
-        f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())
-            .expect("Could not write to map file");
+        let coordinates = LineString::try_from(self.symbol)?;
 
-        let mut coord_iter = self.coordinates.coords();
+        f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
+
+        let mut coord_iter = coordinates.coords();
         let mut i = 0;
         while i < num_coords - 1 {
-            let c = coord_iter.next().unwrap().to_map_coordinates().unwrap();
-            f.write_all(format!("{} {};", c.0, c.1).as_bytes())
-                .expect("Could not write to map file");
+            let c = coord_iter.next().unwrap().to_map_coordinates(scale)?;
+            f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
 
             i += 1;
         }
-        let c = coord_iter.next().unwrap().to_map_coordinates().unwrap();
-        if self.coordinates.is_closed() {
-            f.write_all(format!("{} {} 18;", c.0, c.1).as_bytes())
-                .expect("Could not write to map file");
+        let c = coord_iter.next().unwrap().to_map_coordinates(scale)?;
+        if coordinates.is_closed() {
+            f.write_all(format!("{} {} 18;", c.0, c.1).as_bytes())?;
         } else {
-            f.write_all(format!("{} {};", c.0, c.1).as_bytes())
-                .expect("Could not write to map file");
+            f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
         }
 
-        f.write_all(b"</coords>")
-            .expect("Could not write to map file");
+        f.write_all(b"</coords>")?;
+        Ok(())
     }
 
-    fn write_bezier(&self, f: &mut BufWriter<File>, error: f64) {
-        let bezier = BezierString::from_polyline(&self.coordinates, error);
+    fn write_bezier(self, f: &mut BufWriter<File>, error: f64, scale: Scale) -> OmapResult<()> {
+        let coordinates = LineString::try_from(self.symbol)?;
+
+        let bezier = BezierString::from_polyline(&coordinates, error);
 
         let num_coords = bezier.num_points();
         let num_segments = bezier.0.len();
-        f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())
-            .expect("Could not write to map file");
+        f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
 
         let mut bez_iterator = bezier.0.into_iter();
         let mut i = 0;
@@ -66,20 +63,18 @@ impl LineObject {
             let segment = bez_iterator.next().unwrap();
             match segment.line_type() {
                 BezierSegmentType::Polyline => {
-                    let c = segment.0 .0.to_map_coordinates().unwrap();
+                    let c = segment.0 .0.to_map_coordinates(scale)?;
 
-                    f.write_all(format!("{} {};", c.0, c.1).as_bytes())
-                        .expect("Could not write to map file");
+                    f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
                 }
                 BezierSegmentType::Bezier => {
-                    let c = segment.0 .0.to_map_coordinates().unwrap();
-                    let h1 = segment.0 .1.unwrap().to_map_coordinates().unwrap();
-                    let h2 = segment.0 .2.unwrap().to_map_coordinates().unwrap();
+                    let c = segment.0 .0.to_map_coordinates(scale)?;
+                    let h1 = segment.0 .1.unwrap().to_map_coordinates(scale)?;
+                    let h2 = segment.0 .2.unwrap().to_map_coordinates(scale)?;
                     f.write_all(
                         format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1)
                             .as_bytes(),
-                    )
-                    .expect("Could not write to map file");
+                    )?;
                 }
             }
             i += 1;
@@ -88,32 +83,29 @@ impl LineObject {
         let final_segment = bez_iterator.next().unwrap();
         match final_segment.line_type() {
             BezierSegmentType::Polyline => {
-                let c1 = final_segment.0 .0.to_map_coordinates().unwrap();
-                let c2 = final_segment.0 .3.to_map_coordinates().unwrap();
+                let c1 = final_segment.0 .0.to_map_coordinates(scale)?;
+                let c2 = final_segment.0 .3.to_map_coordinates(scale)?;
 
-                if self.coordinates.is_closed() {
-                    f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())
-                        .expect("Could not write to map file");
+                if coordinates.is_closed() {
+                    f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
                 } else {
-                    f.write_all(format!("{} {};{} {};", c1.0, c1.1, c2.0, c2.1).as_bytes())
-                        .expect("Could not write to map file");
+                    f.write_all(format!("{} {};{} {};", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
                 }
             }
             BezierSegmentType::Bezier => {
-                let c1 = final_segment.0 .0.to_map_coordinates().unwrap();
-                let h1 = final_segment.0 .1.unwrap().to_map_coordinates().unwrap();
-                let h2 = final_segment.0 .2.unwrap().to_map_coordinates().unwrap();
-                let c2 = final_segment.0 .3.to_map_coordinates().unwrap();
+                let c1 = final_segment.0 .0.to_map_coordinates(scale)?;
+                let h1 = final_segment.0 .1.unwrap().to_map_coordinates(scale)?;
+                let h2 = final_segment.0 .2.unwrap().to_map_coordinates(scale)?;
+                let c2 = final_segment.0 .3.to_map_coordinates(scale)?;
 
-                if self.coordinates.is_closed() {
+                if coordinates.is_closed() {
                     f.write_all(
                         format!(
                             "{} {} 1;{} {};{} {};{} {} 18;",
                             c1.0, c1.1, h1.0, h1.1, h2.0, h2.1, c2.0, c2.1
                         )
                         .as_bytes(),
-                    )
-                    .expect("Could not write to map file");
+                    )?;
                 } else {
                     f.write_all(
                         format!(
@@ -121,50 +113,57 @@ impl LineObject {
                             c1.0, c1.1, h1.0, h1.1, h2.0, h2.1, c2.0, c2.1
                         )
                         .as_bytes(),
-                    )
-                    .expect("Could not write to map file");
+                    )?;
                 }
             }
         }
 
-        f.write_all(b"</coords>")
-            .expect("Could not write to map file");
+        f.write_all(b"</coords>")?;
+        Ok(())
     }
 }
 
-impl MapObject for LineObject {
+impl MapObjectTrait for LineObject {
     fn add_tag(&mut self, k: &str, v: &str) {
         self.tags.push(Tag::new(k, v));
     }
 
-    fn write_to_map(&self, f: &mut BufWriter<File>, bez_error: Option<f64>) {
-        f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol).as_bytes())
-            .expect("Could not write to map file");
-        self.write_tags(f);
-        self.write_coords(f, bez_error);
-        f.write_all(b"</object>\n")
-            .expect("Could not write to map file");
+    fn write_to_map(
+        self,
+        f: &mut BufWriter<File>,
+        bez_error: Option<f64>,
+        scale: Scale,
+    ) -> OmapResult<()> {
+        f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
+        self.write_tags(f)?;
+        self.write_coords(f, bez_error, scale)?;
+        f.write_all(b"</object>\n")?;
+        Ok(())
     }
 
-    fn write_coords(&self, f: &mut BufWriter<File>, bez_error: Option<f64>) {
+    fn write_coords(
+        self,
+        f: &mut BufWriter<File>,
+        bez_error: Option<f64>,
+        scale: Scale,
+    ) -> OmapResult<()> {
         if let Some(error) = bez_error {
-            self.write_bezier(f, error);
+            self.write_bezier(f, error, scale)
         } else {
-            self.write_polyline(f);
+            self.write_polyline(f, scale)
         }
     }
 
-    fn write_tags(&self, f: &mut BufWriter<File>) {
+    fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
         if self.tags.is_empty() {
-            return;
+            return Ok(());
         }
 
-        f.write_all(b"<tags>").expect("Could not write to map file");
+        f.write_all(b"<tags>")?;
         for tag in self.tags.iter() {
-            f.write_all(tag.to_string().as_bytes())
-                .expect("Could not write to map file");
+            f.write_all(tag.to_string().as_bytes())?;
         }
-        f.write_all(b"</tags>")
-            .expect("Could not write to map file");
+        f.write_all(b"</tags>")?;
+        Ok(())
     }
 }

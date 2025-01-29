@@ -1,6 +1,5 @@
+use crate::{map_geo_traits::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
 use geo_types::Point;
-
-use crate::{MapCoord, MapObject, Symbol, Tag};
 
 use std::{
     fs::File,
@@ -9,59 +8,67 @@ use std::{
 
 pub struct PointObject {
     symbol: Symbol,
-    coordinates: Point,
-    rotation: f64,
     tags: Vec<Tag>,
 }
 
 impl PointObject {
-    pub fn from_point(coordinates: Point, symbol: Symbol, rotation: f64) -> Self {
+    pub fn from_symbol(symbol: Symbol) -> Self {
         Self {
             symbol,
-            coordinates,
-            rotation,
             tags: vec![],
         }
     }
 }
 
-impl MapObject for PointObject {
+impl MapObjectTrait for PointObject {
     fn add_tag(&mut self, k: &str, v: &str) {
         self.tags.push(Tag::new(k, v));
     }
 
-    fn write_to_map(&self, f: &mut BufWriter<File>, _as_bezier: Option<f64>) {
+    fn write_to_map(
+        self,
+        f: &mut BufWriter<File>,
+        _as_bezier: Option<f64>,
+        scale: Scale,
+    ) -> OmapResult<()> {
         f.write_all(
             format!(
                 "<object type=\"0\" symbol=\"{}\" rotation=\"{}\">",
-                self.symbol, self.rotation
+                self.symbol.id(),
+                self.symbol.rotation()
             )
             .as_bytes(),
-        )
-        .expect("Could not write to map file");
-        self.write_tags(f);
-        self.write_coords(f, None);
-        f.write_all(b"</object>\n")
-            .expect("Could not write to map file");
+        )?;
+        self.write_tags(f)?;
+        self.write_coords(f, None, scale)?;
+        f.write_all(b"</object>\n")?;
+        Ok(())
     }
 
-    fn write_coords(&self, f: &mut BufWriter<File>, _as_bezier: Option<f64>) {
-        let c = self.coordinates.0.to_map_coordinates().unwrap();
-        f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())
-            .expect("Could not write to map file");
+    fn write_coords(
+        self,
+        f: &mut BufWriter<File>,
+        _as_bezier: Option<f64>,
+        scale: Scale,
+    ) -> OmapResult<()> {
+        let c = Point::try_from(self.symbol)
+            .unwrap()
+            .0
+            .to_map_coordinates(scale)?;
+        f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())?;
+        Ok(())
     }
 
-    fn write_tags(&self, f: &mut BufWriter<File>) {
+    fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
         if self.tags.is_empty() {
-            return;
+            return Ok(());
         }
 
-        f.write_all(b"<tags>").expect("Could not write to map file");
+        f.write_all(b"<tags>")?;
         for tag in self.tags.iter() {
-            f.write_all(tag.to_string().as_bytes())
-                .expect("Could not write to map file");
+            f.write_all(tag.to_string().as_bytes())?;
         }
-        f.write_all(b"</tags>")
-            .expect("Could not write to map file");
+        f.write_all(b"</tags>")?;
+        Ok(())
     }
 }

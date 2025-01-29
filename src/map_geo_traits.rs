@@ -1,20 +1,37 @@
 use geo_types::Coord;
 
-pub trait MapCoord {
-    fn to_map_coordinates(self) -> Result<(i32, i32), &'static str>;
+use crate::{OmapError, OmapResult, Scale};
+
+pub(crate) trait MapCoord {
+    fn to_map_coordinates(self, scale: Scale) -> OmapResult<(i32, i32)>;
 }
 
-// scale 1:15_000 and 1 map unit is 0.001mm on paper
-// 1_000 map units on paper = 15m on ground
-const CONVERSION: f64 = 1_000. / 15.;
+// 1 map unit is 0.001mm on paper => 1000 mu = 1mm on map = 15m on ground
+const CONVERSION_15000: f64 = 1_000. / 15.;
+const CONVERSION_10000: f64 = 1_000. / 10.;
+const CONVERSION_7500: f64 = 1_000. / 7.5;
+
+const MAX_MU: f64 = 2147483647.; // 2^31 - 1 max number a i32 can hold
 
 impl MapCoord for Coord {
-    fn to_map_coordinates(self) -> Result<(i32, i32), &'static str> {
-        let x = (self.x * CONVERSION).round();
-        let y = -(self.y * CONVERSION).round();
+    fn to_map_coordinates(self, scale: Scale) -> OmapResult<(i32, i32)> {
+        let (x, y) = match scale {
+            Scale::S7_500 => (
+                (self.x * CONVERSION_7500).round(),
+                -(self.y * CONVERSION_7500).round(),
+            ),
+            Scale::S10_000 => (
+                (self.x * CONVERSION_10000).round(),
+                -(self.y * CONVERSION_10000).round(),
+            ),
+            Scale::S15_000 => (
+                (self.x * CONVERSION_15000).round(),
+                -(self.y * CONVERSION_15000).round(),
+            ),
+        };
 
-        if (x > 2.0_f64.powi(31) - 1.) || (y > 2.0_f64.powi(31) - 1.) {
-            Err("Map coordinate overflow, double check that all lidar files are over the same general area and in the same coordinate refrence system. (Max size is 32_000km from the avg position of all file bounds given in the las header, i.e 3/4 earth's circumference)")
+        if (x.abs() > MAX_MU) || (y.abs() > MAX_MU) {
+            Err(OmapError::MapCoordinateOverflow)
         } else {
             Ok((x as i32, y as i32))
         }

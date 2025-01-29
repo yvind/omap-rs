@@ -5,4 +5,6 @@ edition = "2021"
 
 [dependencies]
 geo-types = "^0.7.13"
+log = "0.4.25"
 polyline2bezier = {git = "https://github.com/oyhj1801/polyline2bezier"}
+thiserror = "2.0.11"
