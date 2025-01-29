@@ -14,6 +14,7 @@ use std::{
 /// If epsg.is_some() the map is written georefrenced
 /// else it is written in Local space
 pub struct Omap {
+    declination: f32,
     grivation: f32,
     scale: Scale,
     epsg: Option<u16>,
@@ -27,9 +28,11 @@ impl Omap {
         // should use a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point
         // and proj4rs for the convergence (angle between true north and grid north)
 
-        // the grivation (angle between grid north and magnetic north) must be used when calulating map coords as the axes are magnetic
+        // the grivation (angle between magnetic north and grid north) must be used when calulating map coords as the axes are magnetic
+        // grivation = declination - convergence
 
         Omap {
+            declination: 0.,
             grivation: 0.,
             scale,
             epsg: epsg_crs,
