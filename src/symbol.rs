@@ -25,7 +25,6 @@ pub enum Symbol {
 impl Symbol {
     pub fn min_size(&self, scale: Scale) -> f64 {
         match scale {
-            Scale::S7_500 => 0.,
             Scale::S10_000 => 0.,
             Scale::S15_000 => match self {
                 Symbol::Contour(_) => 0.,

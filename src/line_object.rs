@@ -2,7 +2,7 @@ use geo_types::LineString;
 
 use polyline2bezier::{BezierSegmentType, BezierString};
 
-use crate::{map_geo_traits::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
+use crate::{map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
 
 use std::{
     fs::File,
@@ -26,7 +26,8 @@ impl LineObject {
         self,
         f: &mut BufWriter<File>,
         scale: Scale,
-        grivation: f32,
+        grivation: f64,
+        combined_scale_factor: f64,
     ) -> OmapResult<()> {
         let num_coords = self.symbol.num_coords();
 
@@ -37,18 +38,20 @@ impl LineObject {
         let mut coord_iter = coordinates.coords();
         let mut i = 0;
         while i < num_coords - 1 {
-            let c = coord_iter
-                .next()
-                .unwrap()
-                .to_map_coordinates(scale, grivation)?;
+            let c = coord_iter.next().unwrap().to_map_coordinates(
+                scale,
+                grivation,
+                combined_scale_factor,
+            )?;
             f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
 
             i += 1;
         }
-        let c = coord_iter
-            .next()
-            .unwrap()
-            .to_map_coordinates(scale, grivation)?;
+        let c = coord_iter.next().unwrap().to_map_coordinates(
+            scale,
+            grivation,
+            combined_scale_factor,
+        )?;
         if coordinates.is_closed() {
             f.write_all(format!("{} {} 18;", c.0, c.1).as_bytes())?;
         } else {
@@ -64,7 +67,8 @@ impl LineObject {
         f: &mut BufWriter<File>,
         error: f64,
         scale: Scale,
-        grivation: f32,
+        grivation: f64,
+        combined_scale_factor: f64,
     ) -> OmapResult<()> {
         let coordinates = LineString::try_from(self.symbol)?;
 
@@ -80,14 +84,30 @@ impl LineObject {
             let segment = bez_iterator.next().unwrap();
             match segment.line_type() {
                 BezierSegmentType::Polyline => {
-                    let c = segment.0 .0.to_map_coordinates(scale, grivation)?;
+                    let c =
+                        segment
+                            .0
+                             .0
+                            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
 
                     f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
                 }
                 BezierSegmentType::Bezier => {
-                    let c = segment.0 .0.to_map_coordinates(scale, grivation)?;
-                    let h1 = segment.0 .1.unwrap().to_map_coordinates(scale, grivation)?;
-                    let h2 = segment.0 .2.unwrap().to_map_coordinates(scale, grivation)?;
+                    let c =
+                        segment
+                            .0
+                             .0
+                            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                    let h1 = segment.0 .1.unwrap().to_map_coordinates(
+                        scale,
+                        grivation,
+                        combined_scale_factor,
+                    )?;
+                    let h2 = segment.0 .2.unwrap().to_map_coordinates(
+                        scale,
+                        grivation,
+                        combined_scale_factor,
+                    )?;
                     f.write_all(
                         format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1)
                             .as_bytes(),
@@ -100,8 +120,16 @@ impl LineObject {
         let final_segment = bez_iterator.next().unwrap();
         match final_segment.line_type() {
             BezierSegmentType::Polyline => {
-                let c1 = final_segment.0 .0.to_map_coordinates(scale, grivation)?;
-                let c2 = final_segment.0 .3.to_map_coordinates(scale, grivation)?;
+                let c1 = final_segment.0 .0.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let c2 = final_segment.0 .3.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
 
                 if coordinates.is_closed() {
                     f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
@@ -110,18 +138,26 @@ impl LineObject {
                 }
             }
             BezierSegmentType::Bezier => {
-                let c1 = final_segment.0 .0.to_map_coordinates(scale, grivation)?;
-                let h1 = final_segment
-                    .0
-                     .1
-                    .unwrap()
-                    .to_map_coordinates(scale, grivation)?;
-                let h2 = final_segment
-                    .0
-                     .2
-                    .unwrap()
-                    .to_map_coordinates(scale, grivation)?;
-                let c2 = final_segment.0 .3.to_map_coordinates(scale, grivation)?;
+                let c1 = final_segment.0 .0.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let h1 = final_segment.0 .1.unwrap().to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let h2 = final_segment.0 .2.unwrap().to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let c2 = final_segment.0 .3.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
 
                 if coordinates.is_closed() {
                     f.write_all(
@@ -158,11 +194,12 @@ impl MapObjectTrait for LineObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         scale: Scale,
-        grivation: f32,
+        grivation: f64,
+        combined_scale_factor: f64,
     ) -> OmapResult<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
-        self.write_coords(f, bez_error, scale, grivation)?;
+        self.write_coords(f, bez_error, scale, grivation, combined_scale_factor)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -172,12 +209,13 @@ impl MapObjectTrait for LineObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         scale: Scale,
-        grivation: f32,
+        grivation: f64,
+        combined_scale_factor: f64,
     ) -> OmapResult<()> {
         if let Some(error) = bez_error {
-            self.write_bezier(f, error, scale, grivation)
+            self.write_bezier(f, error, scale, grivation, combined_scale_factor)
         } else {
-            self.write_polyline(f, scale, grivation)
+            self.write_polyline(f, scale, grivation, combined_scale_factor)
         }
     }
 

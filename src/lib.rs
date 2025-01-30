@@ -1,11 +1,13 @@
 pub mod area_object;
 pub mod line_object;
-mod map_geo_traits;
+mod map_coord;
 mod map_object;
 pub mod omap;
 pub mod point_object;
 pub mod symbol;
 pub mod tag;
+
+use std::fmt::Display;
 
 pub use self::area_object::AreaObject;
 pub use self::line_object::LineObject;
@@ -17,9 +19,17 @@ pub use self::tag::Tag;
 
 #[derive(Clone, Copy)]
 pub enum Scale {
-    S7_500,
     S10_000,
     S15_000,
+}
+
+impl Display for Scale {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Scale::S10_000 => write!(f, "10000"),
+            Scale::S15_000 => write!(f, "15000"),
+        }
+    }
 }
 
 pub type OmapResult<T> = std::result::Result<T, OmapError>;
@@ -33,4 +43,8 @@ pub enum OmapError {
     MismatchedGeometry(#[from] geo_types::Error),
     #[error(transparent)]
     IO(#[from] std::io::Error),
+    #[error(transparent)]
+    Proj(#[from] proj4rs::errors::Error),
+    #[error(transparent)]
+    GeoMagnetic(#[from] world_magnetic_model::Error),
 }

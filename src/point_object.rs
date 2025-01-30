@@ -1,4 +1,4 @@
-use crate::{map_geo_traits::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
+use crate::{map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
 use geo_types::Point;
 
 use std::{
@@ -30,7 +30,8 @@ impl MapObjectTrait for PointObject {
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
         scale: Scale,
-        grivation: f32,
+        grivation: f64,
+        combined_scale_factor: f64,
     ) -> OmapResult<()> {
         f.write_all(
             format!(
@@ -41,7 +42,7 @@ impl MapObjectTrait for PointObject {
             .as_bytes(),
         )?;
         self.write_tags(f)?;
-        self.write_coords(f, None, scale, grivation)?;
+        self.write_coords(f, None, scale, grivation, combined_scale_factor)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -51,12 +52,14 @@ impl MapObjectTrait for PointObject {
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
         scale: Scale,
-        grivation: f32,
+        grivation: f64,
+        combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let c = Point::try_from(self.symbol)
-            .unwrap()
-            .0
-            .to_map_coordinates(scale, grivation)?;
+        let c = Point::try_from(self.symbol).unwrap().0.to_map_coordinates(
+            scale,
+            grivation,
+            combined_scale_factor,
+        )?;
         f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())?;
         Ok(())
     }
