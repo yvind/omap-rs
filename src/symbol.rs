@@ -12,7 +12,7 @@ pub enum Symbol {
     SlopelineFormline(Point, f64),
     SmallBoulder(Point),
     LargeBoulder(Point),
-    GiganticBoulder(Point),
+    GiganticBoulder(Polygon),
     SandyGround(Polygon),
     BareRock(Polygon),
     RoughOpenLand(Polygon),
@@ -157,7 +157,10 @@ impl TryFrom<Symbol> for Point {
             Symbol::SlopelineFormline(point, _) => Ok(point),
             Symbol::SmallBoulder(point) => Ok(point),
             Symbol::LargeBoulder(point) => Ok(point),
-            Symbol::GiganticBoulder(point) => Ok(point),
+            Symbol::GiganticBoulder(_) => Err(Error::MismatchedGeometry {
+                expected: "Point",
+                found: "Polygon",
+            })?,
             Symbol::SandyGround(_) => Err(Error::MismatchedGeometry {
                 expected: "Point",
                 found: "Polygon",
@@ -288,10 +291,7 @@ impl TryFrom<Symbol> for Polygon {
                 expected: "Polygon",
                 found: "Point",
             })?,
-            Symbol::GiganticBoulder(_) => Err(Error::MismatchedGeometry {
-                expected: "Polygon",
-                found: "Point",
-            })?,
+            Symbol::GiganticBoulder(polygon) => Ok(polygon),
             Symbol::SandyGround(polygon) => Ok(polygon),
             Symbol::BareRock(polygon) => Ok(polygon),
             Symbol::RoughOpenLand(polygon) => Ok(polygon),
