@@ -22,7 +22,9 @@ pub(crate) trait MapObjectTrait {
     ) -> OmapResult<()>;
 
     fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()>;
+}
 
+pub trait TagTrait {
     fn add_tag(&mut self, k: &str, v: &str);
 
     fn add_auto_tag(&mut self) {
@@ -37,22 +39,6 @@ pub enum MapObject {
 }
 
 impl MapObject {
-    pub fn add_auto_tag(&mut self) {
-        match self {
-            MapObject::LineObject(line_object) => line_object.add_auto_tag(),
-            MapObject::PointObject(point_object) => point_object.add_auto_tag(),
-            MapObject::AreaObject(area_object) => area_object.add_auto_tag(),
-        }
-    }
-
-    pub fn add_tag(&mut self, k: &str, v: &str) {
-        match self {
-            MapObject::LineObject(line_object) => line_object.add_tag(k, v),
-            MapObject::PointObject(point_object) => point_object.add_tag(k, v),
-            MapObject::AreaObject(area_object) => area_object.add_tag(k, v),
-        }
-    }
-
     pub(crate) fn write_to_map(
         self,
         f: &mut BufWriter<File>,
@@ -71,6 +57,24 @@ impl MapObject {
             MapObject::AreaObject(area_object) => {
                 area_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
             }
+        }
+    }
+}
+
+impl TagTrait for MapObject {
+    fn add_auto_tag(&mut self) {
+        match self {
+            MapObject::LineObject(line_object) => line_object.add_auto_tag(),
+            MapObject::PointObject(point_object) => point_object.add_auto_tag(),
+            MapObject::AreaObject(area_object) => area_object.add_auto_tag(),
+        }
+    }
+
+    fn add_tag(&mut self, k: &str, v: &str) {
+        match self {
+            MapObject::LineObject(line_object) => line_object.add_tag(k, v),
+            MapObject::PointObject(point_object) => point_object.add_tag(k, v),
+            MapObject::AreaObject(area_object) => area_object.add_tag(k, v),
         }
     }
 }

@@ -11,7 +11,7 @@ use std::fmt::Display;
 
 pub use self::area_object::AreaObject;
 pub use self::line_object::LineObject;
-pub use self::map_object::MapObject;
+pub use self::map_object::{MapObject, TagTrait};
 pub use self::omap::Omap;
 pub use self::point_object::PointObject;
 pub use self::symbol::Symbol;

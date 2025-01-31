@@ -2,7 +2,9 @@ use geo_types::LineString;
 
 use polyline2bezier::{BezierSegmentType, BezierString};
 
-use crate::{map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
+use crate::{
+    map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag, TagTrait,
+};
 
 use std::{
     fs::File,
@@ -184,11 +186,13 @@ impl LineObject {
     }
 }
 
-impl MapObjectTrait for LineObject {
+impl TagTrait for LineObject {
     fn add_tag(&mut self, k: &str, v: &str) {
         self.tags.push(Tag::new(k, v));
     }
+}
 
+impl MapObjectTrait for LineObject {
     fn write_to_map(
         self,
         f: &mut BufWriter<File>,

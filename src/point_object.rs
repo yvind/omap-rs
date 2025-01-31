@@ -1,4 +1,6 @@
-use crate::{map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag};
+use crate::{
+    map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag, TagTrait,
+};
 use geo_types::Point;
 
 use std::{
@@ -20,11 +22,13 @@ impl PointObject {
     }
 }
 
-impl MapObjectTrait for PointObject {
+impl TagTrait for PointObject {
     fn add_tag(&mut self, k: &str, v: &str) {
         self.tags.push(Tag::new(k, v));
     }
+}
 
+impl MapObjectTrait for PointObject {
     fn write_to_map(
         self,
         f: &mut BufWriter<File>,
