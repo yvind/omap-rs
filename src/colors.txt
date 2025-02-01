@@ -1,0 +1,40 @@
+<colors count="38">
+<color priority="0" name="Purple 100% for upper course overprint"><spotcolors><component factor="1" spotcolor="31"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="1" name="White for railway"><spotcolors knockout="true"><component factor="0" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="2" name="Black 100%"><spotcolors><component factor="1" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="3" name="Blue 100% for point symbols"><spotcolors knockout="true"><component factor="1" spotcolor="37"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="4" name="Brown 100% for point symbols"><spotcolors knockout="true"><component factor="1" spotcolor="34"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="5" name="Green 100% for point symbols"><spotcolors knockout="true"><component factor="1" spotcolor="36"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="6" name="Blue 100% for line symbols"><spotcolors knockout="true"><component factor="1" spotcolor="37"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="7" name="Dark green 100% for line symbols"><spotcolors knockout="true"><component factor="1" spotcolor="35"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="8" name="Brown 100% for line symbols"><spotcolors knockout="true"><component factor="1" spotcolor="34"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="9" name="Purple for lower course overprint"><spotcolors><component factor="1" spotcolor="31"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="10" name="Brown 50% for road infill"><spotcolors knockout="true"><component factor="0.5" spotcolor="34"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="11" name="Black 100% for road outline"><spotcolors><component factor="1" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="12" name="Black 50%"><spotcolors knockout="true"><component factor="0.5" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="13" name="Black 20%"><spotcolors knockout="true"><component factor="0.2" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="14" name="Blue 100% for area features"><spotcolors knockout="true"><component factor="1" spotcolor="37"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="15" name="Blue 70%"><spotcolors knockout="true"><component factor="0.7" spotcolor="37"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="16" name="Blue 50%"><spotcolors knockout="true"><component factor="0.5" spotcolor="37"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="17" name="White over green and brown"><spotcolors knockout="true"><component factor="0" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="18" name="Brown 50% for area symbols"><spotcolors knockout="true"><component factor="0.5" spotcolor="34"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="19" name="Yellow 100% for narrow ride"><spotcolors knockout="true"><component factor="1" spotcolor="33"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="20" name="Green 60% for narrow ride"><spotcolors knockout="true"><component factor="0.6" spotcolor="36"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="21" name="Green 30% for narrow ride"><spotcolors knockout="true"><component factor="0.3" spotcolor="36"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="22" name="Yellow 100%/Green 50%"><spotcolors knockout="true"><component factor="0.5" spotcolor="36"/><component factor="1" spotcolor="33"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="23" name="Green 100%"><spotcolors knockout="true"><component factor="1" spotcolor="36"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="24" name="Green 60%"><spotcolors knockout="true"><component factor="0.6" spotcolor="36"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="25" name="Green 30%"><spotcolors knockout="true"><component factor="0.3" spotcolor="36"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="26" name="Black 30%"><spotcolors knockout="true"><component factor="0.2" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="27" name="White over yellow"><spotcolors knockout="true"><component factor="0" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="28" name="Black for open land"><spotcolors><component factor="1" spotcolor="32"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="29" name="Yellow 100% for area features"><spotcolors knockout="true"><component factor="1" spotcolor="33"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="30" name="Yellow 50%"><spotcolors knockout="true"><component factor="0.5" spotcolor="33"/></spotcolors><cmyk method="spotcolor"/></color>
+<color priority="31" name="SPOT PURPLE" c="0.35" m="0.85" y="0" k="0" opacity="1"><spotcolors knockout="true"><namedcolor>PURPLE</namedcolor></spotcolors><cmyk method="custom"/></color>
+<color priority="32" name="SPOT BLACK" c="0" m="0" y="0" k="1" opacity="1"><spotcolors knockout="true"><namedcolor>BLACK</namedcolor></spotcolors><cmyk method="custom"/></color>
+<color priority="33" name="SPOT YELLOW" c="0" m="0.27" y="0.79" k="0" opacity="1"><spotcolors knockout="true"><namedcolor>YELLOW</namedcolor></spotcolors><cmyk method="custom"/></color>
+<color priority="34" name="SPOT BROWN" c="0.25" m="0.75" y="1" k="0" opacity="1"><spotcolors knockout="true"><namedcolor>BROWN</namedcolor></spotcolors><cmyk method="custom"/></color>
+<color priority="35" name="SPOT DARK GREEN" c="1" m="0" y="0.8" k="0.3" opacity="1"><spotcolors knockout="true"><namedcolor>DARK GREEN</namedcolor></spotcolors><cmyk method="custom"/></color>
+<color priority="36" name="SPOT GREEN" c="0.76" m="0" y="0.91" k="0" opacity="1"><spotcolors knockout="true"><namedcolor>GREEN</namedcolor></spotcolors><cmyk method="custom"/></color>
+<color priority="37" name="SPOT BLUE" c="1" m="0" y="0" k="0" opacity="1"><spotcolors knockout="true"><namedcolor>BLUE</namedcolor></spotcolors><cmyk method="custom"/></color>
+</colors>

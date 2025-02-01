@@ -1,7 +1,6 @@
 use crate::{MapObject, OmapResult, Scale};
 use chrono::Datelike;
 use geo_types::Coord;
-use log::{log, Level};
 
 use proj4rs::{transform::transform, Proj};
 use world_magnetic_model::{
@@ -19,7 +18,7 @@ use std::{
 };
 
 /// Struct representing an Orienteering map
-/// ALL COORDINATES ARE RELATIVE THE ref_point
+/// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point
 /// If epsg.is_some() the map is written georefrenced
 /// else it is written in Local space
 pub struct Omap {
@@ -187,11 +186,6 @@ impl Omap {
     }
 
     fn write_header(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
-        match self.scale {
-            Scale::S15_000 => (),
-            _ => log!(Level::Warn, "Only 1:15_000 supported yet"),
-        }
-
         f.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<map xmlns=\"http://openorienteering.org/apps/mapper/xml/v2\" version=\"9\">\n<notes></notes>\n")?;
 
         if let Some(epsg) = self.epsg {
@@ -216,13 +210,13 @@ impl Omap {
     }
 
     fn write_colors_symbols(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
+        f.write_all(include_str!("colors.txt").as_bytes())?;
         match self.scale {
             Scale::S10_000 => {
-                log!(Level::Warn, "Only 1:15_000 symbols implemented yet");
-                f.write_all(include_str!("colors_and_symbols_omap_15.txt").as_bytes())?;
+                f.write_all(include_str!("symbols_10.txt").as_bytes())?;
             }
             Scale::S15_000 => {
-                f.write_all(include_str!("colors_and_symbols_omap_15.txt").as_bytes())?;
+                f.write_all(include_str!("symbols_15.txt").as_bytes())?;
             }
         }
         Ok(())
