@@ -3,7 +3,8 @@ use geo_types::Polygon;
 use polyline2bezier::{BezierSegmentType, BezierString};
 
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag, TagTrait,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::AreaSymbol, OmapResult, Scale, Symbol,
+    Tag, TagTrait,
 };
 
 use std::{
@@ -12,13 +13,15 @@ use std::{
 };
 
 pub struct AreaObject {
-    symbol: Symbol,
+    pub polygon: Polygon,
+    pub symbol: AreaSymbol,
     tags: Vec<Tag>,
 }
 
 impl AreaObject {
-    pub fn from_polygon(symbol: Symbol) -> Self {
+    pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol) -> Self {
         Self {
+            polygon,
             symbol,
             tags: vec![],
         }
@@ -31,7 +34,7 @@ impl AreaObject {
         grivation: f64,
         combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let coordinates = Polygon::try_from(self.symbol)?;
+        let coordinates = self.polygon;
 
         let mut num_coords = coordinates.exterior().0.len();
         let boundary_length = num_coords;
@@ -97,7 +100,7 @@ impl AreaObject {
         grivation: f64,
         combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let coordinates = Polygon::try_from(self.symbol)?;
+        let coordinates = self.polygon;
 
         let mut beziers = Vec::with_capacity(coordinates.num_rings());
         beziers.push(BezierString::from_polyline(coordinates.exterior(), error));
@@ -207,7 +210,7 @@ impl AreaObject {
 }
 
 impl TagTrait for AreaObject {
-    fn add_tag(&mut self, k: &str, v: &str) {
+    fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         self.tags.push(Tag::new(k, v));
     }
 }

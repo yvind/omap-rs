@@ -3,7 +3,8 @@ use geo_types::LineString;
 use polyline2bezier::{BezierSegmentType, BezierString};
 
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag, TagTrait,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::LineSymbol, OmapResult, Scale, Symbol,
+    Tag, TagTrait,
 };
 
 use std::{
@@ -12,13 +13,15 @@ use std::{
 };
 
 pub struct LineObject {
-    symbol: Symbol,
+    pub line: LineString,
+    pub symbol: LineSymbol,
     tags: Vec<Tag>,
 }
 
 impl LineObject {
-    pub fn from_symbol(symbol: Symbol) -> Self {
+    pub fn from_line_string(line: LineString, symbol: LineSymbol) -> Self {
         Self {
+            line,
             symbol,
             tags: vec![],
         }
@@ -31,9 +34,9 @@ impl LineObject {
         grivation: f64,
         combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let num_coords = self.symbol.num_coords();
+        let num_coords = self.line.0.len();
 
-        let coordinates = LineString::try_from(self.symbol)?;
+        let coordinates = self.line;
 
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
 
@@ -72,7 +75,7 @@ impl LineObject {
         grivation: f64,
         combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let coordinates = LineString::try_from(self.symbol)?;
+        let coordinates = self.line;
 
         let bezier = BezierString::from_polyline(&coordinates, error);
 
@@ -187,7 +190,7 @@ impl LineObject {
 }
 
 impl TagTrait for LineObject {
-    fn add_tag(&mut self, k: &str, v: &str) {
+    fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         self.tags.push(Tag::new(k, v));
     }
 }

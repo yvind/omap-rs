@@ -25,7 +25,7 @@ pub(crate) trait MapObjectTrait {
 }
 
 pub trait TagTrait {
-    fn add_tag(&mut self, k: &str, v: &str);
+    fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>);
 
     fn add_auto_tag(&mut self) {
         self.add_tag("auto-generated", "OmapMaker");
@@ -70,7 +70,7 @@ impl TagTrait for MapObject {
         }
     }
 
-    fn add_tag(&mut self, k: &str, v: &str) {
+    fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         match self {
             MapObject::LineObject(line_object) => line_object.add_tag(k, v),
             MapObject::PointObject(point_object) => point_object.add_tag(k, v),

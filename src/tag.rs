@@ -6,10 +6,10 @@ pub struct Tag {
 }
 
 impl Tag {
-    pub fn new(k: &str, v: &str) -> Self {
+    pub fn new(k: impl Into<String>, v: impl Into<String>) -> Self {
         Tag {
-            key: k.to_string(),
-            value: v.to_string(),
+            key: k.into(),
+            value: v.into(),
         }
     }
 }

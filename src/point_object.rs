@@ -1,5 +1,6 @@
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, OmapResult, Scale, Symbol, Tag, TagTrait,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::PointSymbol, OmapResult, Scale,
+    Symbol, Tag, TagTrait,
 };
 use geo_types::Point;
 
@@ -9,21 +10,25 @@ use std::{
 };
 
 pub struct PointObject {
-    symbol: Symbol,
+    pub point: Point,
+    pub symbol: PointSymbol,
+    pub rotation: f64,
     tags: Vec<Tag>,
 }
 
 impl PointObject {
-    pub fn from_symbol(symbol: Symbol) -> Self {
+    pub fn from_point(point: Point, symbol: PointSymbol, rotation: f64) -> Self {
         Self {
+            point,
             symbol,
+            rotation,
             tags: vec![],
         }
     }
 }
 
 impl TagTrait for PointObject {
-    fn add_tag(&mut self, k: &str, v: &str) {
+    fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         self.tags.push(Tag::new(k, v));
     }
 }
@@ -41,7 +46,7 @@ impl MapObjectTrait for PointObject {
             format!(
                 "<object type=\"0\" symbol=\"{}\" rotation=\"{}\">",
                 self.symbol.id(),
-                self.symbol.rotation()
+                self.rotation
             )
             .as_bytes(),
         )?;
@@ -59,11 +64,10 @@ impl MapObjectTrait for PointObject {
         grivation: f64,
         combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let c = Point::try_from(self.symbol).unwrap().0.to_map_coordinates(
-            scale,
-            grivation,
-            combined_scale_factor,
-        )?;
+        let c = self
+            .point
+            .0
+            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
         f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())?;
         Ok(())
     }
