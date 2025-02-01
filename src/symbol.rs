@@ -39,8 +39,14 @@ pub trait Symbol {
 
 impl Symbol for LineSymbol {
     fn min_size(&self, scale: Scale) -> f64 {
+        // should add min lenghts for line objects
         match scale {
-            Scale::S10_000 => 0.,
+            Scale::S10_000 => match self {
+                LineSymbol::Contour => 0.,
+                LineSymbol::BasemapContour => 0.,
+                LineSymbol::IndexContour => 0.,
+                LineSymbol::Formline => 0.,
+            },
             Scale::S15_000 => match self {
                 LineSymbol::Contour => 0.,
                 LineSymbol::BasemapContour => 0.,
@@ -63,7 +69,17 @@ impl Symbol for LineSymbol {
 impl Symbol for AreaSymbol {
     fn min_size(&self, scale: Scale) -> f64 {
         match scale {
-            Scale::S10_000 => 0.,
+            Scale::S10_000 => match self {
+                AreaSymbol::GiganticBoulder => 10.,
+                AreaSymbol::SandyGround => 100.,
+                AreaSymbol::BareRock => 100.,
+                AreaSymbol::RoughOpenLand => 100.,
+                AreaSymbol::LightGreen => 100.,
+                AreaSymbol::MediumGreen => 50.,
+                AreaSymbol::DarkGreen => 30.,
+                AreaSymbol::Building => 10.,
+                AreaSymbol::Water => 10.,
+            },
             Scale::S15_000 => match self {
                 AreaSymbol::GiganticBoulder => 10.,
                 AreaSymbol::SandyGround => 225.,
@@ -72,8 +88,8 @@ impl Symbol for AreaSymbol {
                 AreaSymbol::LightGreen => 225.,
                 AreaSymbol::MediumGreen => 110.,
                 AreaSymbol::DarkGreen => 64.,
-                AreaSymbol::Building => 0.,
-                AreaSymbol::Water => 0.,
+                AreaSymbol::Building => 10.,
+                AreaSymbol::Water => 10.,
             },
         }
     }

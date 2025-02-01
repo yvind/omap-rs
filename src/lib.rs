@@ -1,13 +1,11 @@
-pub mod area_object;
-pub mod line_object;
+mod area_object;
+mod line_object;
 mod map_coord;
 mod map_object;
-pub mod omap;
-pub mod point_object;
-pub mod symbol;
-pub mod tag;
-
-use std::fmt::Display;
+mod omap;
+mod point_object;
+mod symbol;
+mod tag;
 
 pub use self::area_object::AreaObject;
 pub use self::line_object::LineObject;
@@ -23,8 +21,9 @@ pub enum Scale {
     S15_000,
 }
 
-impl Display for Scale {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+use std::fmt;
+impl fmt::Display for Scale {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Scale::S10_000 => write!(f, "10000"),
             Scale::S15_000 => write!(f, "15000"),
