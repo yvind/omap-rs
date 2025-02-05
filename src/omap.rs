@@ -83,6 +83,14 @@ impl Omap {
         self.objects.push(obj);
     }
 
+    pub fn get_crs(&self) -> Option<u16> {
+        self.epsg
+    }
+
+    pub fn get_ref_point(&self) -> Coord {
+        self.ref_point
+    }
+
     pub fn write_to_file(
         self,
         filename: &OsStr,
