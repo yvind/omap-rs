@@ -62,14 +62,6 @@ impl MapObject {
 }
 
 impl TagTrait for MapObject {
-    fn add_auto_tag(&mut self) {
-        match self {
-            MapObject::LineObject(line_object) => line_object.add_auto_tag(),
-            MapObject::PointObject(point_object) => point_object.add_auto_tag(),
-            MapObject::AreaObject(area_object) => area_object.add_auto_tag(),
-        }
-    }
-
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         match self {
             MapObject::LineObject(line_object) => line_object.add_tag(k, v),

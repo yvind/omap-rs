@@ -4,6 +4,7 @@ use crate::Scale;
 pub enum LineSymbol {
     Contour,
     BasemapContour,
+    NegBasemapContour,
     IndexContour,
     Formline,
 }
@@ -39,17 +40,19 @@ pub trait Symbol {
 
 impl Symbol for LineSymbol {
     fn min_size(&self, scale: Scale) -> f64 {
-        // should add min lenghts for line objects
+        // should add min lenghts for line objects, thats why I've spelt out everything
         match scale {
             Scale::S10_000 => match self {
                 LineSymbol::Contour => 0.,
                 LineSymbol::BasemapContour => 0.,
+                LineSymbol::NegBasemapContour => 0.,
                 LineSymbol::IndexContour => 0.,
                 LineSymbol::Formline => 0.,
             },
             Scale::S15_000 => match self {
                 LineSymbol::Contour => 0.,
                 LineSymbol::BasemapContour => 0.,
+                LineSymbol::NegBasemapContour => 0.,
                 LineSymbol::IndexContour => 0.,
                 LineSymbol::Formline => 0.,
             },
@@ -60,6 +63,7 @@ impl Symbol for LineSymbol {
         match self {
             LineSymbol::Contour => 0,
             LineSymbol::BasemapContour => 2,
+            LineSymbol::NegBasemapContour => unimplemented!("Not in current symbol sets"),
             LineSymbol::IndexContour => 3,
             LineSymbol::Formline => 5,
         }
