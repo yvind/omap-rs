@@ -3,8 +3,8 @@ use geo_types::LineString;
 use polyline2bezier::{BezierSegmentType, BezierString};
 
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, symbol::LineSymbol, OmapResult, Scale, Symbol,
-    Tag, TagTrait,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::LineSymbol, OmapResult, Scale, Tag,
+    TagTrait,
 };
 
 use std::{

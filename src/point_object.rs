@@ -1,6 +1,6 @@
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, symbol::PointSymbol, OmapResult, Scale,
-    Symbol, Tag, TagTrait,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::PointSymbol, OmapResult, Scale, Tag,
+    TagTrait,
 };
 use geo_types::Point;
 

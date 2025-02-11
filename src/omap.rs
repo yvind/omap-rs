@@ -1,4 +1,4 @@
-use crate::{MapObject, OmapResult, Scale};
+use crate::{MapObject, OmapResult, Scale, Symbol};
 use chrono::Datelike;
 use geo_types::Coord;
 
@@ -10,7 +10,10 @@ use world_magnetic_model::{
     GeomagneticField,
 };
 
-use std::io::{BufWriter, Write};
+use std::{
+    collections::HashMap,
+    io::{BufWriter, Write},
+};
 use std::{
     ffi::OsStr,
     fs::File,
@@ -30,7 +33,7 @@ pub struct Omap {
     epsg: Option<u16>,
     ref_point: Coord,
 
-    objects: Vec<MapObject>,
+    pub objects: HashMap<Symbol, Vec<MapObject>>,
 }
 
 impl Omap {
@@ -75,12 +78,25 @@ impl Omap {
             scale,
             epsg: epsg_crs,
             ref_point: georef_point,
-            objects: vec![],
+            objects: HashMap::new(),
+        }
+    }
+
+    pub fn reserve_capacity(&mut self, symbol: Symbol, cap: usize) {
+        if let Some(obj) = self.objects.get_mut(&symbol) {
+            obj.reserve(cap);
+        } else {
+            self.objects.insert(symbol, Vec::with_capacity(cap));
         }
     }
 
     pub fn add_object(&mut self, obj: MapObject) {
-        self.objects.push(obj);
+        let key = obj.symbol();
+        if let Some(val) = self.objects.get_mut(&key) {
+            val.push(obj);
+        } else {
+            self.objects.insert(key, vec![obj]);
+        }
     }
 
     pub fn get_crs(&self) -> Option<u16> {
@@ -109,10 +125,6 @@ impl Omap {
         self.write_objects(&mut f, bezier_error)?;
         Self::write_end_of_file(&mut f)?;
         Ok(())
-    }
-
-    pub fn into_objects(self) -> std::vec::IntoIter<MapObject> {
-        self.objects.into_iter()
     }
 }
 
@@ -156,22 +168,25 @@ impl Omap {
     }
 
     fn write_objects(self, f: &mut BufWriter<File>, bezier_error: Option<f64>) -> OmapResult<()> {
+        let num_objects = self.objects.values().fold(0, |acc, v| acc + v.len());
+
         f.write_all(
             format!(
-                "<parts count=\"1\" current=\"0\">\n<part name=\"map\"><objects count=\"{}\">\n",
-                self.objects.len()
+                "<parts count=\"1\" current=\"0\">\n<part name=\"map\"><objects count=\"{num_objects}\">\n"
             )
             .as_bytes(),
         )?;
 
-        for object in self.objects.into_iter() {
-            object.write_to_map(
-                f,
-                bezier_error,
-                self.scale,
-                self.grivation,
-                self.combined_scale_factor,
-            )?;
+        for sym_vals in self.objects.into_values() {
+            for obj in sym_vals {
+                obj.write_to_map(
+                    f,
+                    bezier_error,
+                    self.scale,
+                    self.grivation,
+                    self.combined_scale_factor,
+                )?;
+            }
         }
 
         f.write_all(b"</objects></part>\n</parts>\n")?;

@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufWriter};
 
-use crate::{AreaObject, LineObject, OmapResult, PointObject, Scale};
+use crate::{AreaObject, LineObject, OmapResult, PointObject, Scale, Symbol};
 
 pub(crate) trait MapObjectTrait {
     fn write_to_map(
@@ -57,6 +57,14 @@ impl MapObject {
             MapObject::AreaObject(area_object) => {
                 area_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
             }
+        }
+    }
+
+    pub fn symbol(&self) -> Symbol {
+        match self {
+            MapObject::LineObject(line_object) => Symbol::from(line_object.symbol),
+            MapObject::PointObject(point_object) => Symbol::from(point_object.symbol),
+            MapObject::AreaObject(area_object) => Symbol::from(area_object.symbol),
         }
     }
 }

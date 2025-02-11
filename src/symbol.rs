@@ -1,132 +1,147 @@
+use strum_macros::EnumIter;
+use subenum::subenum;
+
 use crate::Scale;
 
-#[derive(Copy, Clone)]
-pub enum LineSymbol {
-    Contour,
-    BasemapContour,
-    NegBasemapContour,
-    IndexContour,
-    Formline,
-}
-
-#[derive(Copy, Clone)]
-pub enum AreaSymbol {
-    GiganticBoulder,
-    SandyGround,
-    BareRock,
+// order in enum should be from bottom colors to top colors
+// does not affect output but the order of writing to screen in OmapMaker
+#[subenum(PointSymbol, LineSymbol, AreaSymbol)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, EnumIter)]
+pub enum Symbol {
+    #[subenum(AreaSymbol)]
     RoughOpenLand,
+    #[subenum(AreaSymbol)]
+    SandyGround,
+    #[subenum(AreaSymbol)]
+    BareRock,
+    #[subenum(AreaSymbol)]
     LightGreen,
+    #[subenum(AreaSymbol)]
     MediumGreen,
+    #[subenum(AreaSymbol)]
     DarkGreen,
-    Building,
+    #[subenum(AreaSymbol)]
     Water,
-}
-
-#[derive(Copy, Clone)]
-pub enum PointSymbol {
+    #[subenum(LineSymbol)]
+    Contour,
+    #[subenum(LineSymbol)]
+    BasemapContour,
+    #[subenum(LineSymbol)]
+    NegBasemapContour,
+    #[subenum(LineSymbol)]
+    IndexContour,
+    #[subenum(LineSymbol)]
+    Formline,
+    #[subenum(PointSymbol)]
     SlopelineContour,
+    #[subenum(PointSymbol)]
     SlopelineFormline,
+    #[subenum(PointSymbol)]
     DotKnoll,
+    #[subenum(PointSymbol)]
     ElongatedDotKnoll,
+    #[subenum(PointSymbol)]
     UDepression,
+    #[subenum(AreaSymbol)]
+    GiganticBoulder,
+    #[subenum(PointSymbol)]
     SmallBoulder,
+    #[subenum(PointSymbol)]
     LargeBoulder,
+    #[subenum(AreaSymbol)]
+    Building,
 }
 
-pub trait Symbol {
-    fn min_size(&self, scale: Scale) -> f64;
-    fn id(&self) -> u8;
-}
-
-impl Symbol for LineSymbol {
-    fn min_size(&self, scale: Scale) -> f64 {
-        // should add min lenghts for line objects, thats why I've spelt out everything
+impl Symbol {
+    pub fn min_size(&self, scale: Scale) -> f64 {
+        // should add min lenghts for line objects, thats why I've spelt it out
         match scale {
             Scale::S10_000 => match self {
-                LineSymbol::Contour => 0.,
-                LineSymbol::BasemapContour => 0.,
-                LineSymbol::NegBasemapContour => 0.,
-                LineSymbol::IndexContour => 0.,
-                LineSymbol::Formline => 0.,
+                Symbol::Contour => 0.,           // Line
+                Symbol::BasemapContour => 0.,    // Line
+                Symbol::NegBasemapContour => 0., // Line
+                Symbol::IndexContour => 0.,      // Line
+                Symbol::Formline => 0.,          // Line
+                Symbol::GiganticBoulder => 10.,  // Area
+                Symbol::SandyGround => 100.,     // Area
+                Symbol::BareRock => 100.,        // Area
+                Symbol::RoughOpenLand => 100.,   // Area
+                Symbol::LightGreen => 100.,      // Area
+                Symbol::MediumGreen => 50.,      // Area
+                Symbol::DarkGreen => 30.,        // Area
+                Symbol::Building => 10.,         // Area
+                Symbol::Water => 10.,            // Area
+                _ => 0.,
             },
             Scale::S15_000 => match self {
-                LineSymbol::Contour => 0.,
-                LineSymbol::BasemapContour => 0.,
-                LineSymbol::NegBasemapContour => 0.,
-                LineSymbol::IndexContour => 0.,
-                LineSymbol::Formline => 0.,
+                Symbol::Contour => 0.,           // Line
+                Symbol::BasemapContour => 0.,    // Line
+                Symbol::NegBasemapContour => 0., // Line
+                Symbol::IndexContour => 0.,      // Line
+                Symbol::Formline => 0.,          // Line
+                Symbol::GiganticBoulder => 10.,  // Area
+                Symbol::SandyGround => 225.,     // Area
+                Symbol::BareRock => 225.,        // Area
+                Symbol::RoughOpenLand => 225.,   // Area
+                Symbol::LightGreen => 225.,      // Area
+                Symbol::MediumGreen => 110.,     // Area
+                Symbol::DarkGreen => 64.,        // Area
+                Symbol::Building => 10.,         // Area
+                Symbol::Water => 10.,            // Area
+                _ => 0.,
             },
         }
     }
 
-    fn id(&self) -> u8 {
+    pub fn id(&self) -> u8 {
         match self {
-            LineSymbol::Contour => 0,
-            LineSymbol::BasemapContour => 2,
-            LineSymbol::NegBasemapContour => unimplemented!("Not in current symbol sets"),
-            LineSymbol::IndexContour => 3,
-            LineSymbol::Formline => 5,
+            Symbol::Contour => 0,
+            Symbol::BasemapContour => 2,
+            Symbol::NegBasemapContour => unimplemented!("Not in current symbol sets"),
+            Symbol::IndexContour => 3,
+            Symbol::Formline => 5,
+            Symbol::GiganticBoulder => 37,
+            Symbol::SandyGround => 48,
+            Symbol::BareRock => 49,
+            Symbol::RoughOpenLand => 79,
+            Symbol::LightGreen => 83,
+            Symbol::MediumGreen => 86,
+            Symbol::DarkGreen => 90,
+            Symbol::Building => 140,
+            Symbol::Water => 51,
+            Symbol::SlopelineContour => 1,
+            Symbol::SlopelineFormline => 6,
+            Symbol::DotKnoll => 16,
+            Symbol::ElongatedDotKnoll => 17,
+            Symbol::UDepression => 18,
+            Symbol::SmallBoulder => 34,
+            Symbol::LargeBoulder => 35,
         }
     }
 }
 
-impl Symbol for AreaSymbol {
-    fn min_size(&self, scale: Scale) -> f64 {
-        match scale {
-            Scale::S10_000 => match self {
-                AreaSymbol::GiganticBoulder => 10.,
-                AreaSymbol::SandyGround => 100.,
-                AreaSymbol::BareRock => 100.,
-                AreaSymbol::RoughOpenLand => 100.,
-                AreaSymbol::LightGreen => 100.,
-                AreaSymbol::MediumGreen => 50.,
-                AreaSymbol::DarkGreen => 30.,
-                AreaSymbol::Building => 10.,
-                AreaSymbol::Water => 10.,
-            },
-            Scale::S15_000 => match self {
-                AreaSymbol::GiganticBoulder => 10.,
-                AreaSymbol::SandyGround => 225.,
-                AreaSymbol::BareRock => 225.,
-                AreaSymbol::RoughOpenLand => 225.,
-                AreaSymbol::LightGreen => 225.,
-                AreaSymbol::MediumGreen => 110.,
-                AreaSymbol::DarkGreen => 64.,
-                AreaSymbol::Building => 10.,
-                AreaSymbol::Water => 10.,
-            },
-        }
+impl LineSymbol {
+    pub fn id(&self) -> u8 {
+        (Symbol::from(*self)).id()
     }
 
-    fn id(&self) -> u8 {
-        match self {
-            AreaSymbol::GiganticBoulder => 37,
-            AreaSymbol::SandyGround => 48,
-            AreaSymbol::BareRock => 49,
-            AreaSymbol::RoughOpenLand => 79,
-            AreaSymbol::LightGreen => 83,
-            AreaSymbol::MediumGreen => 86,
-            AreaSymbol::DarkGreen => 90,
-            AreaSymbol::Building => 140,
-            AreaSymbol::Water => 51,
-        }
+    pub fn min_size(&self, scale: Scale) -> f64 {
+        (Symbol::from(*self)).min_size(scale)
     }
 }
 
-impl Symbol for PointSymbol {
-    fn min_size(&self, _scale: Scale) -> f64 {
-        0.
+impl PointSymbol {
+    pub fn id(&self) -> u8 {
+        (Symbol::from(*self)).id()
+    }
+}
+
+impl AreaSymbol {
+    pub fn id(&self) -> u8 {
+        (Symbol::from(*self)).id()
     }
 
-    fn id(&self) -> u8 {
-        match self {
-            PointSymbol::SlopelineContour => 1,
-            PointSymbol::SlopelineFormline => 6,
-            PointSymbol::DotKnoll => 16,
-            PointSymbol::ElongatedDotKnoll => 17,
-            PointSymbol::UDepression => 18,
-            PointSymbol::SmallBoulder => 34,
-            PointSymbol::LargeBoulder => 35,
-        }
+    pub fn min_size(&self, scale: Scale) -> f64 {
+        (Symbol::from(*self)).min_size(scale)
     }
 }
