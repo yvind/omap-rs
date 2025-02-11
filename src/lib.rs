@@ -15,7 +15,7 @@ pub use self::point_object::PointObject;
 pub use self::symbol::*;
 pub use self::tag::Tag;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Scale {
     S10_000,
     S15_000,
