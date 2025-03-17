@@ -1,7 +1,8 @@
 use crate::{MapObject, OmapResult, Scale, Symbol};
 use chrono::Datelike;
-use geo_types::Coord;
+use geo_types::{Coord, LineString};
 
+use kiddo::SquaredEuclidean;
 use proj4rs::{transform::transform, Proj};
 use world_magnetic_model::{
     time::Date,
@@ -14,11 +15,7 @@ use std::{
     collections::HashMap,
     io::{BufWriter, Write},
 };
-use std::{
-    ffi::OsStr,
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::{ffi::OsStr, fs::File, path::PathBuf};
 
 /// Struct representing an Orienteering map
 /// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point
@@ -38,17 +35,16 @@ pub struct Omap {
 
 impl Omap {
     pub fn new(georef_point: Coord, epsg_crs: Option<u16>, scale: Scale) -> Self {
-        // should use a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point
+        // uses a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
         // and proj4rs for the convergence (angle between true north and grid north)
         //
         // the grivation (angle between magnetic north and grid north) must be used when calulating map coords as the axes are magnetic
         // grivation = declination - convergence
         //
-        // proj4rs should be able to give the grid_scale_factor which relates ellipsoid distances to grid distances
-        // in proj4rs this is Proj::projdata.k0 (crate public only) but should be a function of lat/lon??
+        // the grid scale factor is calculated by the same algorithm as in OOmapper (I tried to do a 1:1 port)
         //
-        // further the elevation factor (called auxiliary scale factor in mapper) relates real distances to ellipsoid distances
-        // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid)), which also is a function of lat/lon and height
+        // further the elevation factor (called auxiliary scale factor in OOmapper) relates real distances to ellipsoid distances
+        // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid)), is assumed to be 1.
         //
         // to calculate map units the combined scale factor and scale of map is needed to go from grid coordinates to real coordinates to map coordinates
         //
@@ -107,17 +103,198 @@ impl Omap {
         self.ref_point
     }
 
-    pub fn write_to_file(
-        self,
-        filename: &OsStr,
-        dir: &Path,
-        bezier_error: Option<f64>,
-    ) -> OmapResult<()> {
-        let mut filepath = PathBuf::from(dir);
-        filepath.push(filename);
-        filepath.set_extension("omap");
+    pub fn merge_lines(&mut self, delta: f64) {
+        for (key, map_objects) in self.objects.iter_mut() {
+            if !key.is_line_symbol() {
+                continue;
+            }
+            let delta = delta * delta; // adjust delta as squared euclidean is used
 
-        let f = File::create(&filepath)?;
+            let mut unclosed_objects = Vec::with_capacity(map_objects.len());
+
+            let mut i = 0;
+            while i < map_objects.len() {
+                if let MapObject::LineObject(o) = &map_objects[i] {
+                    if !o.line.is_closed() {
+                        unclosed_objects.push(map_objects.swap_remove(i));
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+
+            // check for elevation tags
+            let mut group_memberships = vec![0; unclosed_objects.len()];
+
+            let mut unique_elevations = HashMap::new();
+
+            let mut has_elevation_tags = true;
+            for obj in unclosed_objects.iter() {
+                if let MapObject::LineObject(o) = obj {
+                    let elevation_tag = o.tags.get("Elevation");
+                    if elevation_tag.is_none() {
+                        has_elevation_tags = false;
+                        break;
+                    }
+                    let elevation_tag = elevation_tag.unwrap().parse::<f32>();
+                    if elevation_tag.is_err() {
+                        has_elevation_tags = false;
+                        break;
+                    }
+
+                    let elevation_tag = (elevation_tag.unwrap() * 100.) as i32;
+
+                    let id = if unique_elevations.contains_key(&elevation_tag) {
+                        *unique_elevations.get(&elevation_tag).unwrap()
+                    } else {
+                        let id = unique_elevations.len();
+                        unique_elevations.insert(elevation_tag, id);
+                        id
+                    };
+
+                    group_memberships[i] = id;
+                }
+            }
+            let elevation_groups = if has_elevation_tags {
+                unique_elevations.into_values().collect()
+            } else {
+                group_memberships = vec![0; unclosed_objects.len()];
+                vec![0]
+            };
+
+            let mut unclosed_object_groups = vec![Vec::new(); elevation_groups.len()];
+
+            for (i, unclosed_object) in unclosed_objects.into_iter().enumerate() {
+                if let MapObject::LineObject(o) = unclosed_object {
+                    let group = group_memberships[i];
+
+                    unclosed_object_groups[group].push(o);
+                }
+            }
+
+            for mut unclosed_objects in unclosed_object_groups {
+                let (heads, tails): (Vec<_>, Vec<_>) = unclosed_objects
+                    .iter()
+                    .map(|o| {
+                        let tail = o.line.0[0];
+                        let head = o.line.0[o.line.0.len() - 1];
+
+                        ([head.x, head.y], [tail.x, tail.y])
+                    })
+                    .collect();
+
+                // detect the merges needed
+                let head_tree = kiddo::ImmutableKdTree::new_from_slice(heads.as_slice());
+
+                let mut merges = Vec::with_capacity(tails.len());
+                for (ti, tail) in tails.iter().enumerate() {
+                    let nn = head_tree.nearest_one::<SquaredEuclidean>(tail);
+                    if nn.distance <= delta {
+                        merges.push((ti, nn.item as usize));
+                    }
+                }
+
+                // start doing merges keeping track of the moved objects
+                while let Some(merge) = merges.pop() {
+                    if merge.0 == merge.1 {
+                        let mut line = unclosed_objects.swap_remove(merge.0);
+                        line.line.close();
+
+                        map_objects.push(MapObject::LineObject(line));
+
+                        for other_merge in merges.iter_mut() {
+                            if other_merge.1 >= unclosed_objects.len() {
+                                other_merge.1 = merge.0;
+                            }
+                            if merge.0 >= unclosed_objects.len() {
+                                other_merge.0 = merge.0;
+                            }
+                        }
+                    } else {
+                        // merge
+                        let tail = unclosed_objects.swap_remove(merge.0);
+
+                        let head = if merge.1 >= unclosed_objects.len() {
+                            &mut unclosed_objects[merge.0]
+                        } else {
+                            &mut unclosed_objects[merge.1]
+                        };
+
+                        head.line.0.pop();
+                        head.line.0.extend(tail.line.0);
+
+                        // update map
+                        let mut i = 0;
+                        while i < merges.len() {
+                            let other_merge = &mut merges[i];
+
+                            // find merges made impossible
+                            if other_merge.1 == merge.1 || other_merge.0 == merge.0 {
+                                merges.swap_remove(i);
+                                continue;
+                            } else {
+                                i += 1;
+                            }
+
+                            // update map as merge.0 is now called merge.1
+                            if other_merge.0 == merge.0 {
+                                other_merge.0 = merge.1
+                            }
+                            if other_merge.1 == merge.0 {
+                                other_merge.1 = merge.1
+                            }
+
+                            // correct map for swap remove moving object
+                            if other_merge.0 >= unclosed_objects.len() {
+                                other_merge.0 = merge.0;
+                            }
+                            if other_merge.1 >= unclosed_objects.len() {
+                                other_merge.1 = merge.0;
+                            }
+                        }
+                    }
+                }
+                map_objects.extend(unclosed_objects.into_iter().map(MapObject::LineObject));
+            }
+        }
+    }
+
+    pub fn mark_basemap_depressions(&mut self) {
+        let basemap = self.objects.get_mut(&Symbol::BasemapContour);
+        if basemap.is_none() {
+            return;
+        }
+
+        let basemap = basemap.unwrap();
+
+        let mut neg_basemap = Vec::new();
+
+        let mut i = 0;
+        while i < basemap.len() {
+            if let MapObject::LineObject(o) = &basemap[i] {
+                if o.line.is_closed() {
+                    if line_string_signed_area(&o.line) < 0. {
+                        neg_basemap.push(basemap.swap_remove(i));
+                    } else {
+                        i += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            } else {
+                panic!("Non LineObject under Basemap symbol in objects hashmap");
+            }
+        }
+
+        self.objects.insert(Symbol::NegBasemapContour, neg_basemap);
+    }
+
+    pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
+        if path.extension() != Some(OsStr::new("omap")) {
+            path.set_extension("omap");
+        }
+
+        let f = File::create(&path)?;
         let mut f = BufWriter::new(f);
 
         self.write_header(&mut f)?;
@@ -281,4 +458,15 @@ impl Omap {
 
         Ok(dec as f64)
     }
+}
+
+fn line_string_signed_area(line: &LineString) -> f64 {
+    if line.0.len() < 3 || !line.is_closed() {
+        return 0.;
+    }
+    let mut area: f64 = 0.;
+    for i in 0..line.0.len() - 1 {
+        area += line.0[i].x * line.0[i + 1].y - line.0[i].y * line.0[i + 1].x;
+    }
+    0.5 * area
 }

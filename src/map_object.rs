@@ -27,11 +27,12 @@ pub(crate) trait MapObjectTrait {
 pub trait TagTrait {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>);
 
-    fn add_auto_tag(&mut self) {
-        self.add_tag("auto-generated", "OmapMaker");
+    fn add_elevation_tag(&mut self, elevation: f64) {
+        self.add_tag("Elevation", format!("{:.2}", elevation));
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum MapObject {
     LineObject(LineObject),
     PointObject(PointObject),

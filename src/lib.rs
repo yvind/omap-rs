@@ -5,7 +5,6 @@ mod map_object;
 mod omap;
 mod point_object;
 mod symbol;
-mod tag;
 
 pub use self::area_object::AreaObject;
 pub use self::line_object::LineObject;
@@ -13,7 +12,6 @@ pub use self::map_object::{MapObject, TagTrait};
 pub use self::omap::Omap;
 pub use self::point_object::PointObject;
 pub use self::symbol::*;
-pub use self::tag::Tag;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Scale {

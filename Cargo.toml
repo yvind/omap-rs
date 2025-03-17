@@ -1,12 +1,13 @@
 [package]
 name = "omap"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
 chrono = "0.4.39"
 geo-types = "^0.7.13"
-polyline2bezier = {git = "https://github.com/oyhj1801/polyline2bezier"}
+kiddo = "5.0.3"
+polyline2bezier = {path = "../polyline2bezier"}
 proj4rs = { version = "0.1.5", features = ["crs-definitions"] }
 strum = "0.27.0"
 strum_macros = "0.27.0"

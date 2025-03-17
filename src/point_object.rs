@@ -1,19 +1,21 @@
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, symbol::PointSymbol, OmapResult, Scale, Tag,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::PointSymbol, OmapResult, Scale,
     TagTrait,
 };
 use geo_types::Point;
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
 };
 
+#[derive(Debug, Clone)]
 pub struct PointObject {
     pub point: Point,
     pub symbol: PointSymbol,
     pub rotation: f64,
-    tags: Vec<Tag>,
+    pub tags: HashMap<String, String>,
 }
 
 impl PointObject {
@@ -22,14 +24,14 @@ impl PointObject {
             point,
             symbol,
             rotation,
-            tags: vec![],
+            tags: HashMap::new(),
         }
     }
 }
 
 impl TagTrait for PointObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
-        self.tags.push(Tag::new(k, v));
+        self.tags.insert(k.into(), v.into());
     }
 }
 
@@ -78,8 +80,8 @@ impl MapObjectTrait for PointObject {
         }
 
         f.write_all(b"<tags>")?;
-        for tag in self.tags.iter() {
-            f.write_all(tag.to_string().as_bytes())?;
+        for (key, val) in self.tags.iter() {
+            f.write_all(format!("<t k=\"{key}\">{val}</t>").as_bytes())?;
         }
         f.write_all(b"</tags>")?;
         Ok(())

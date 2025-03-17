@@ -118,6 +118,21 @@ impl Symbol {
             Symbol::LargeBoulder => 35,
         }
     }
+
+    pub fn is_line_symbol(&self) -> bool {
+        let a: Result<LineSymbol, LineSymbolConvertError> = (*self).try_into();
+        a.is_ok()
+    }
+
+    pub fn is_point_symbol(&self) -> bool {
+        let a: Result<PointSymbol, PointSymbolConvertError> = (*self).try_into();
+        a.is_ok()
+    }
+
+    pub fn is_area_symbol(&self) -> bool {
+        let a: Result<AreaSymbol, AreaSymbolConvertError> = (*self).try_into();
+        a.is_ok()
+    }
 }
 
 impl LineSymbol {

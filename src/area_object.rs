@@ -1,21 +1,23 @@
 use geo_types::Polygon;
 
-use polyline2bezier::{BezierSegmentType, BezierString};
+use polyline2bezier::BezierString;
 
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, symbol::AreaSymbol, OmapResult, Scale, Tag,
+    map_coord::MapCoord, map_object::MapObjectTrait, symbol::AreaSymbol, OmapResult, Scale,
     TagTrait,
 };
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
 };
 
+#[derive(Debug, Clone)]
 pub struct AreaObject {
     pub polygon: Polygon,
     pub symbol: AreaSymbol,
-    tags: Vec<Tag>,
+    pub tags: HashMap<String, String>,
 }
 
 impl AreaObject {
@@ -23,7 +25,7 @@ impl AreaObject {
         Self {
             polygon,
             symbol,
-            tags: vec![],
+            tags: HashMap::new(),
         }
     }
 
@@ -103,8 +105,11 @@ impl AreaObject {
         let coordinates = self.polygon;
 
         let mut beziers = Vec::with_capacity(coordinates.num_rings());
-        beziers.push(BezierString::from_polyline(coordinates.exterior(), error));
-        for hole in coordinates.interiors() {
+
+        let (exterior, interiors) = coordinates.into_inner();
+
+        beziers.push(BezierString::from_polyline(exterior, error));
+        for hole in interiors {
             beziers.push(BezierString::from_polyline(hole, error));
         }
         let mut num_coords = 0;
@@ -121,87 +126,81 @@ impl AreaObject {
             let mut i = 0;
             while i < num_segments - 1 {
                 let segment = bez_iterator.next().unwrap();
-                match segment.line_type() {
-                    BezierSegmentType::Polyline => {
-                        let c = segment.0 .0.to_map_coordinates(
-                            scale,
-                            grivation,
-                            combined_scale_factor,
-                        )?;
+                if segment.is_bezier_segment() {
+                    let c =
+                        segment
+                            .0
+                             .0
+                            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                    let h1 = segment.0 .1.unwrap().to_map_coordinates(
+                        scale,
+                        grivation,
+                        combined_scale_factor,
+                    )?;
+                    let h2 = segment.0 .2.unwrap().to_map_coordinates(
+                        scale,
+                        grivation,
+                        combined_scale_factor,
+                    )?;
+                    f.write_all(
+                        format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1)
+                            .as_bytes(),
+                    )?;
+                } else {
+                    let c =
+                        segment
+                            .0
+                             .0
+                            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
 
-                        f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
-                    }
-                    BezierSegmentType::Bezier => {
-                        let c = segment.0 .0.to_map_coordinates(
-                            scale,
-                            grivation,
-                            combined_scale_factor,
-                        )?;
-                        let h1 = segment.0 .1.unwrap().to_map_coordinates(
-                            scale,
-                            grivation,
-                            combined_scale_factor,
-                        )?;
-                        let h2 = segment.0 .2.unwrap().to_map_coordinates(
-                            scale,
-                            grivation,
-                            combined_scale_factor,
-                        )?;
-                        f.write_all(
-                            format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1)
-                                .as_bytes(),
-                        )?;
-                    }
+                    f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
                 }
                 i += 1;
             }
             // finish with the last segment of the curve
             let final_segment = bez_iterator.next().unwrap();
-            match final_segment.line_type() {
-                BezierSegmentType::Polyline => {
-                    let c1 = final_segment.0 .0.to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
-                    let c2 = final_segment.0 .3.to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
+            if final_segment.is_bezier_segment() {
+                let c1 = final_segment.0 .0.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let h1 = final_segment.0 .1.unwrap().to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let h2 = final_segment.0 .2.unwrap().to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let c2 = final_segment.0 .3.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
 
-                    f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
-                }
-                BezierSegmentType::Bezier => {
-                    let c1 = final_segment.0 .0.to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
-                    let h1 = final_segment.0 .1.unwrap().to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
-                    let h2 = final_segment.0 .2.unwrap().to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
-                    let c2 = final_segment.0 .3.to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
+                f.write_all(
+                    format!(
+                        "{} {} 1;{} {};{} {};{} {} 18;",
+                        c1.0, c1.1, h1.0, h1.1, h2.0, h2.1, c2.0, c2.1
+                    )
+                    .as_bytes(),
+                )?;
+            } else {
+                let c1 = final_segment.0 .0.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
+                let c2 = final_segment.0 .3.to_map_coordinates(
+                    scale,
+                    grivation,
+                    combined_scale_factor,
+                )?;
 
-                    f.write_all(
-                        format!(
-                            "{} {} 1;{} {};{} {};{} {} 18;",
-                            c1.0, c1.1, h1.0, h1.1, h2.0, h2.1, c2.0, c2.1
-                        )
-                        .as_bytes(),
-                    )?;
-                }
+                f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
             }
         }
         f.write_all(b"</coords>")?;
@@ -211,7 +210,7 @@ impl AreaObject {
 
 impl TagTrait for AreaObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
-        self.tags.push(Tag::new(k, v));
+        self.tags.insert(k.into(), v.into());
     }
 }
 
@@ -252,8 +251,8 @@ impl MapObjectTrait for AreaObject {
         }
 
         f.write_all(b"<tags>")?;
-        for tag in self.tags.iter() {
-            f.write_all(tag.to_string().as_bytes())?;
+        for (key, val) in self.tags.iter() {
+            f.write_all(format!("<t k=\"{key}\">{val}</t>").as_bytes())?;
         }
         f.write_all(b"</tags>")?;
         Ok(())
