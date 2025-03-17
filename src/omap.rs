@@ -129,7 +129,7 @@ impl Omap {
             let mut unique_elevations = HashMap::new();
 
             let mut has_elevation_tags = true;
-            for obj in unclosed_objects.iter() {
+            for (i, obj) in unclosed_objects.iter().enumerate() {
                 if let MapObject::LineObject(o) = obj {
                     let elevation_tag = o.tags.get("Elevation");
                     if elevation_tag.is_none() {
@@ -173,24 +173,24 @@ impl Omap {
             }
 
             for mut unclosed_objects in unclosed_object_groups {
-                let (heads, tails): (Vec<_>, Vec<_>) = unclosed_objects
+                let (line_ends, line_starts): (Vec<_>, Vec<_>) = unclosed_objects
                     .iter()
                     .map(|o| {
-                        let tail = o.line.0[0];
-                        let head = o.line.0[o.line.0.len() - 1];
+                        let line_start = o.line.0[0];
+                        let line_end = o.line.0[o.line.0.len() - 1];
 
-                        ([head.x, head.y], [tail.x, tail.y])
+                        ([line_end.x, line_end.y], [line_start.x, line_start.y])
                     })
                     .collect();
 
                 // detect the merges needed
-                let head_tree = kiddo::ImmutableKdTree::new_from_slice(heads.as_slice());
+                let end_tree = kiddo::ImmutableKdTree::new_from_slice(line_ends.as_slice());
 
-                let mut merges = Vec::with_capacity(tails.len());
-                for (ti, tail) in tails.iter().enumerate() {
-                    let nn = head_tree.nearest_one::<SquaredEuclidean>(tail);
+                let mut merges = Vec::with_capacity(line_starts.len());
+                for (start_i, line_start) in line_starts.iter().enumerate() {
+                    let nn = end_tree.nearest_one::<SquaredEuclidean>(line_start);
                     if nn.distance <= delta {
-                        merges.push((ti, nn.item as usize));
+                        merges.push((start_i, nn.item as usize));
                     }
                 }
 
@@ -201,60 +201,62 @@ impl Omap {
                         line.line.close();
 
                         map_objects.push(MapObject::LineObject(line));
-
-                        for other_merge in merges.iter_mut() {
-                            if other_merge.1 >= unclosed_objects.len() {
-                                other_merge.1 = merge.0;
-                            }
-                            if merge.0 >= unclosed_objects.len() {
-                                other_merge.0 = merge.0;
-                            }
-                        }
                     } else {
                         // merge
-                        let tail = unclosed_objects.swap_remove(merge.0);
+                        let part2 = unclosed_objects.swap_remove(merge.0);
 
-                        let head = if merge.1 >= unclosed_objects.len() {
+                        let part1 = if merge.1 >= unclosed_objects.len() {
                             &mut unclosed_objects[merge.0]
                         } else {
                             &mut unclosed_objects[merge.1]
                         };
 
-                        head.line.0.pop();
-                        head.line.0.extend(tail.line.0);
+                        part1.line.0.pop();
+                        part1.line.0.extend(part2.line.0);
+                    }
+                    // update map
+                    let mut i = 0;
+                    while i < merges.len() {
+                        let other_merge = &mut merges[i];
 
-                        // update map
-                        let mut i = 0;
-                        while i < merges.len() {
-                            let other_merge = &mut merges[i];
+                        // find merges made impossible
+                        if other_merge.1 == merge.1 || other_merge.0 == merge.0 {
+                            merges.swap_remove(i);
+                            continue;
+                        } else {
+                            i += 1;
+                        }
 
-                            // find merges made impossible
-                            if other_merge.1 == merge.1 || other_merge.0 == merge.0 {
-                                merges.swap_remove(i);
-                                continue;
-                            } else {
-                                i += 1;
-                            }
+                        // update map as merge.0 is now called merge.1
+                        if other_merge.0 == merge.0 {
+                            other_merge.0 = merge.1
+                        }
+                        if other_merge.1 == merge.0 {
+                            other_merge.1 = merge.1
+                        }
 
-                            // update map as merge.0 is now called merge.1
-                            if other_merge.0 == merge.0 {
-                                other_merge.0 = merge.1
-                            }
-                            if other_merge.1 == merge.0 {
-                                other_merge.1 = merge.1
-                            }
-
-                            // correct map for swap remove moving object
-                            if other_merge.0 >= unclosed_objects.len() {
-                                other_merge.0 = merge.0;
-                            }
-                            if other_merge.1 >= unclosed_objects.len() {
-                                other_merge.1 = merge.0;
-                            }
+                        // correct map for swap remove moving object
+                        if other_merge.0 >= unclosed_objects.len() {
+                            other_merge.0 = merge.0;
+                        }
+                        if other_merge.1 >= unclosed_objects.len() {
+                            other_merge.1 = merge.0;
                         }
                     }
                 }
-                map_objects.extend(unclosed_objects.into_iter().map(MapObject::LineObject));
+                let unclosed = unclosed_objects.into_iter().map(|mut lineobject| {
+                    // check if it is almost closed
+                    let start = lineobject.line.0[0];
+                    let end = lineobject.line.0[lineobject.line.0.len() - 1];
+
+                    if (start.x - end.x).powi(2) + (start.y - end.y).powi(2) <= delta {
+                        lineobject.line.close();
+                    }
+
+                    MapObject::LineObject(lineobject)
+                });
+
+                map_objects.extend(unclosed);
             }
         }
     }
@@ -461,7 +463,7 @@ impl Omap {
 }
 
 fn line_string_signed_area(line: &LineString) -> f64 {
-    if line.0.len() < 3 || !line.is_closed() {
+    if line.0.len() < 3 {
         return 0.;
     }
     let mut area: f64 = 0.;
