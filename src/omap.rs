@@ -1,6 +1,6 @@
-use crate::{MapObject, OmapResult, Scale, Symbol};
+use crate::{MapObject, OmapResult, PointObject, PointSymbol, Scale, Symbol};
 use chrono::Datelike;
-use geo_types::{Coord, LineString};
+use geo_types::{Coord, LineString, Point};
 
 use kiddo::SquaredEuclidean;
 use proj4rs::{transform::transform, Proj};
@@ -261,6 +261,77 @@ impl Omap {
         }
     }
 
+    pub fn make_dotknolls_and_depressions(
+        &mut self,
+        min_area: f64,
+        max_area: f64,
+        elongated_aspect: f64,
+    ) {
+        let keys = [Symbol::Contour, Symbol::Formline, Symbol::IndexContour];
+
+        for key in keys {
+            let contours = self.objects.get_mut(&key);
+
+            if contours.is_none() {
+                continue;
+            }
+
+            let contours = contours.unwrap();
+            let mut small_loops = Vec::with_capacity(contours.len());
+
+            let mut i = 0;
+            while i < contours.len() {
+                let contour_object = &contours[i];
+                if let MapObject::LineObject(o) = contour_object {
+                    if o.line.is_closed() {
+                        let area = line_string_signed_area(&o.line);
+
+                        if area.abs() <= max_area {
+                            small_loops.push(contours.swap_remove(i));
+                        } else {
+                            i += 1;
+                        }
+                    } else {
+                        i += 1;
+                    }
+                } else {
+                    panic!("Non-line object under contour symbol in objects hashmap");
+                }
+            }
+
+            for small_loop in small_loops {
+                if let MapObject::LineObject(o) = &small_loop {
+                    let area = line_string_signed_area(&o.line);
+
+                    // ignore too small loops
+                    if area.abs() < min_area {
+                        continue;
+                    }
+
+                    let (aspect, mid_point, rotation) =
+                        line_string_aspect_midpoint_rotation(&o.line);
+
+                    if area < 0. {
+                        let u_depression =
+                            PointObject::from_point(Point(mid_point), PointSymbol::UDepression, 0.);
+                        self.add_object(MapObject::PointObject(u_depression));
+                    } else if aspect < elongated_aspect {
+                        let dot_knoll =
+                            PointObject::from_point(Point(mid_point), PointSymbol::DotKnoll, 0.);
+                        self.add_object(MapObject::PointObject(dot_knoll));
+                    } else {
+                        let long_dot_knoll = PointObject::from_point(
+                            Point(mid_point),
+                            PointSymbol::ElongatedDotKnoll,
+                            rotation,
+                        );
+                        self.add_object(MapObject::PointObject(long_dot_knoll));
+                    }
+                }
+            }
+        }
+    }
+
     pub fn mark_basemap_depressions(&mut self) {
         let basemap = self.objects.get_mut(&Symbol::BasemapContour);
         if basemap.is_none() {
@@ -471,4 +542,59 @@ fn line_string_signed_area(line: &LineString) -> f64 {
         area += line.0[i].x * line.0[i + 1].y - line.0[i].y * line.0[i + 1].x;
     }
     0.5 * area
+}
+
+fn line_string_aspect_midpoint_rotation(line: &LineString) -> (f64, Coord, f64) {
+    let mut midpoint = Coord::zero();
+    for c in line.0.iter() {
+        midpoint = midpoint + *c;
+    }
+    midpoint = midpoint / line.0.len() as f64;
+
+    // Calculate second moments
+    let mu20 = line
+        .0
+        .iter()
+        .map(|p| (p.x - midpoint.x).powi(2))
+        .sum::<f64>();
+    let mu02 = line
+        .0
+        .iter()
+        .map(|p| (p.y - midpoint.y).powi(2))
+        .sum::<f64>();
+    let mu11 = line
+        .0
+        .iter()
+        .map(|p| (p.x - midpoint.x) * (p.y - midpoint.y))
+        .sum::<f64>();
+
+    // Calculate elongation using eigenvalues of the covariance matrix
+    let temp = ((mu20 - mu02).powi(2) + 4.0 * mu11.powi(2)).sqrt();
+    let lambda1 = (mu20 + mu02 + temp) / 2.0;
+    let lambda2 = (mu20 + mu02 - temp) / 2.0;
+
+    // Handle potential numerical issues
+    if lambda2.abs() <= 2. * f64::EPSILON
+        || ((mu20 - mu02).abs() <= 2. * f64::EPSILON && mu11.abs() <= 2. * f64::EPSILON)
+    {
+        return (1., midpoint, 0.);
+    }
+
+    let elongation = (lambda1 / lambda2).sqrt();
+
+    // Calculate the angle of the major axis (in radians)
+    // The eigenvector corresponding to the largest eigenvalue gives the direction
+    let mut angle = 0.5 * f64::atan2(2.0 * mu11, mu20 - mu02);
+
+    // Ensure the angle corresponds to the major (not minor) axis
+    if !(mu20 < mu02 || mu11 >= 0.0) {
+        angle += std::f64::consts::FRAC_PI_2;
+    }
+
+    angle %= std::f64::consts::PI;
+    if angle < 0.0 {
+        angle += std::f64::consts::PI;
+    }
+
+    (elongation, midpoint, angle)
 }
