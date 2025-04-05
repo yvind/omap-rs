@@ -4,9 +4,11 @@ use subenum::subenum;
 use crate::Scale;
 
 // order in enum should be from bottom colors to top colors
-// does not affect output but the order of writing to screen in OmapMaker
+// does not affect written omap file, but the order of writing to screen in OmapMaker
+// uses subenum for convenience and strum for ability to iterate through all variants,
+// but should maybe write my own macro to reduce bloat and dependencies
 #[subenum(PointSymbol, LineSymbol, AreaSymbol)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, EnumIter, PartialOrd, Ord)]
 pub enum Symbol {
     #[subenum(AreaSymbol)]
     RoughOpenLand,
@@ -21,17 +23,19 @@ pub enum Symbol {
     #[subenum(AreaSymbol)]
     DarkGreen,
     #[subenum(AreaSymbol)]
-    Water,
-    #[subenum(LineSymbol)]
-    Contour,
+    Marsh,
+    #[subenum(AreaSymbol)]
+    PavedArea,
     #[subenum(LineSymbol)]
     BasemapContour,
     #[subenum(LineSymbol)]
-    NegBasemapContour,
+    Contour,
     #[subenum(LineSymbol)]
     IndexContour,
     #[subenum(LineSymbol)]
     Formline,
+    #[subenum(LineSymbol)]
+    NegBasemapContour,
     #[subenum(PointSymbol)]
     SlopelineContour,
     #[subenum(PointSymbol)]
@@ -42,6 +46,8 @@ pub enum Symbol {
     ElongatedDotKnoll,
     #[subenum(PointSymbol)]
     UDepression,
+    #[subenum(AreaSymbol)]
+    Water,
     #[subenum(AreaSymbol)]
     GiganticBoulder,
     #[subenum(PointSymbol)]
@@ -71,6 +77,8 @@ impl Symbol {
                 Symbol::DarkGreen => 30.,        // Area
                 Symbol::Building => 10.,         // Area
                 Symbol::Water => 10.,            // Area
+                Symbol::PavedArea => 100.,       // Area
+                Symbol::Marsh => 100.,
                 _ => 0.,
             },
             Scale::S15_000 => match self {
@@ -88,6 +96,8 @@ impl Symbol {
                 Symbol::DarkGreen => 64.,        // Area
                 Symbol::Building => 10.,         // Area
                 Symbol::Water => 10.,            // Area
+                Symbol::PavedArea => 225.,       // Area
+                Symbol::Marsh => 225.,           // Area
                 _ => 0.,
             },
         }
@@ -116,6 +126,8 @@ impl Symbol {
             Symbol::UDepression => 18,
             Symbol::SmallBoulder => 34,
             Symbol::LargeBoulder => 35,
+            Symbol::PavedArea => 106,
+            Symbol::Marsh => 68,
         }
     }
 
