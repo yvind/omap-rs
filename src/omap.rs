@@ -34,7 +34,11 @@ pub struct Omap {
 }
 
 impl Omap {
-    pub fn new(georef_point: Coord, epsg_crs: Option<u16>, scale: Scale) -> Self {
+    pub fn new(
+        georef_point: Coord,
+        epsg_crs: Option<u16>,
+        scale: Scale, /*, meters_above_sea: Option<f64> */
+    ) -> Self {
         // uses a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
         // and proj4rs for the convergence (angle between true north and grid north)
         //
@@ -44,7 +48,11 @@ impl Omap {
         // the grid scale factor is calculated by the same algorithm as in OOmapper (I tried to do a 1:1 port)
         //
         // further the elevation factor (called auxiliary scale factor in OOmapper) relates real distances to ellipsoid distances
-        // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid)), is assumed to be 1.
+        // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid))
+        //
+        // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
+        // f = 1 / 298.257223563
+        // R_equator = 6378137.0
         //
         // to calculate map units the combined scale factor and scale of map is needed to go from grid coordinates to real coordinates to map coordinates
         //
