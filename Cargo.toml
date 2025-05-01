@@ -2,12 +2,21 @@
 name = "omap"
 version = "0.2.0"
 edition = "2021"
+authors = ["Øyvind Hjermstad <@yvind>"]
+
+description = "Open Orienteering Mapper omap file writer"
+homepage = "https://github.com/yvind/omap"
+repository = "https://github.com/yvind/omap"
+readme = "README.md"
+license = "MIT"
+keywords = ["orienteering", "map", "mapping"]
+
 
 [dependencies]
 chrono = "0.4.39"
 geo-types = "^0.7.13"
 kiddo = "5.0.3"
-polyline2bezier = {path = "../polyline2bezier"}
+polyline2bezier = {git = "https://github.com/yvind/polyline2bezier"}
 proj4rs = { version = "0.1.5", features = ["crs-definitions"] }
 strum = "0.27.0"
 strum_macros = "0.27.0"
