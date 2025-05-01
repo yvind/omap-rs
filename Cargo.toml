@@ -5,8 +5,8 @@ edition = "2021"
 authors = ["Øyvind Hjermstad <@yvind>"]
 
 description = "Open Orienteering Mapper omap file writer"
-homepage = "https://github.com/yvind/omap"
-repository = "https://github.com/yvind/omap"
+homepage = "https://github.com/yvind/omap-rs"
+repository = "https://github.com/yvind/omap-rs"
 readme = "README.md"
 license = "MIT"
 keywords = ["orienteering", "map", "mapping"]
