@@ -1,6 +1,8 @@
 use crate::{
-    map_coord::MapCoord, map_object::MapObjectTrait, symbol::LineSymbol, OmapResult, Scale,
-    TagTrait,
+    map_coord::MapCoord,
+    map_object::MapObjectTrait,
+    symbol::{LineSymbol, SymbolTrait},
+    OmapResult, Scale, TagTrait,
 };
 use geo_types::LineString;
 use linestring2bezier::{BezierSegment, BezierString};

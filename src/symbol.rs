@@ -1,187 +1,225 @@
 use crate::Scale;
-use strum_macros::EnumIter;
-use subenum::subenum;
 
-// order in enum should be from bottom colors to top colors
-// does not affect written omap file, but the order of writing to screen in OmapMaker
-// uses subenum for convenience and strum for ability to iterate through all variants,
-//
-// should probably be rewritten
-//
-/// Enum for all suported map symbols
-#[allow(missing_docs)]
-#[subenum(PointSymbol, LineSymbol, AreaSymbol)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, EnumIter, PartialOrd, Ord)]
+/// trait defining the two functions all symbol types must have
+pub trait SymbolTrait {
+    /// minimum size of an object with the symbol at the scale
+    fn min_size(&self, _scale: Scale) -> f64 {
+        0.
+    }
+
+    /// the id of the symbol in the symbol_x.txt files
+    fn id(&self) -> u8;
+}
+
+/// Orienteering map symbols higher order enum
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Symbol {
-    #[subenum(AreaSymbol)]
-    RoughOpenLand,
-    #[subenum(AreaSymbol)]
-    SandyGround,
-    #[subenum(AreaSymbol)]
-    BareRock,
-    #[subenum(AreaSymbol)]
-    LightGreen,
-    #[subenum(AreaSymbol)]
-    MediumGreen,
-    #[subenum(AreaSymbol)]
-    DarkGreen,
-    #[subenum(AreaSymbol)]
-    Marsh,
-    #[subenum(AreaSymbol)]
-    PavedArea,
-    #[subenum(LineSymbol)]
-    BasemapContour,
-    #[subenum(LineSymbol)]
-    Contour,
-    #[subenum(LineSymbol)]
-    IndexContour,
-    #[subenum(LineSymbol)]
-    Formline,
-    #[subenum(LineSymbol)]
-    NegBasemapContour,
-    #[subenum(PointSymbol)]
-    SlopelineContour,
-    #[subenum(PointSymbol)]
-    SlopelineFormline,
-    #[subenum(PointSymbol)]
-    DotKnoll,
-    #[subenum(PointSymbol)]
-    ElongatedDotKnoll,
-    #[subenum(PointSymbol)]
-    UDepression,
-    #[subenum(AreaSymbol)]
-    Water,
-    #[subenum(AreaSymbol)]
-    GiganticBoulder,
-    #[subenum(PointSymbol)]
-    SmallBoulder,
-    #[subenum(PointSymbol)]
-    LargeBoulder,
-    #[subenum(AreaSymbol)]
-    Building,
+    /// Symbols for area objects
+    Area(AreaSymbol),
+    /// Symbols for line objects
+    Line(LineSymbol),
+    /// Symbols for point objects
+    Point(PointSymbol),
 }
 
 impl Symbol {
-    /// Get the minimum allowed size (in meters or sq meters) for the symbol and scale
-    pub fn min_size(&self, scale: Scale) -> f64 {
+    /// Check if symbol is a line symbol
+    pub fn is_line_symbol(&self) -> bool {
+        matches!(self, Symbol::Line(_))
+    }
+
+    /// Check if symbol is a point symbol
+    pub fn is_point_symbol(&self) -> bool {
+        matches!(self, Symbol::Point(_))
+    }
+
+    /// Check if symbol is a area symbol
+    pub fn is_area_symbol(&self) -> bool {
+        matches!(self, Symbol::Area(_))
+    }
+
+    /// get an iterator over all the symbols in draw order
+    /// from bottom colors to top colors
+    pub fn iter_in_draw_order() -> std::vec::IntoIter<Symbol> {
+        vec![
+            Symbol::Area(AreaSymbol::RoughOpenLand),
+            Symbol::Area(AreaSymbol::SandyGround),
+            Symbol::Area(AreaSymbol::BareRock),
+            Symbol::Area(AreaSymbol::LightGreen),
+            Symbol::Area(AreaSymbol::MediumGreen),
+            Symbol::Area(AreaSymbol::DarkGreen),
+            Symbol::Area(AreaSymbol::Marsh),
+            Symbol::Area(AreaSymbol::PavedArea),
+            Symbol::Line(LineSymbol::BasemapContour),
+            Symbol::Line(LineSymbol::Contour),
+            Symbol::Line(LineSymbol::IndexContour),
+            Symbol::Line(LineSymbol::Formline),
+            Symbol::Line(LineSymbol::NegBasemapContour),
+            Symbol::Point(PointSymbol::SlopelineContour),
+            Symbol::Point(PointSymbol::SlopelineFormline),
+            Symbol::Point(PointSymbol::DotKnoll),
+            Symbol::Point(PointSymbol::ElongatedDotKnoll),
+            Symbol::Point(PointSymbol::UDepression),
+            Symbol::Area(AreaSymbol::Water),
+            Symbol::Area(AreaSymbol::GiganticBoulder),
+            Symbol::Point(PointSymbol::SmallBoulder),
+            Symbol::Point(PointSymbol::LargeBoulder),
+            Symbol::Area(AreaSymbol::Building),
+        ]
+        .into_iter()
+    }
+}
+
+impl From<AreaSymbol> for Symbol {
+    fn from(value: AreaSymbol) -> Self {
+        Symbol::Area(value)
+    }
+}
+
+impl From<LineSymbol> for Symbol {
+    fn from(value: LineSymbol) -> Self {
+        Symbol::Line(value)
+    }
+}
+
+impl From<PointSymbol> for Symbol {
+    fn from(value: PointSymbol) -> Self {
+        Symbol::Point(value)
+    }
+}
+
+impl SymbolTrait for Symbol {
+    fn min_size(&self, scale: Scale) -> f64 {
+        match self {
+            Symbol::Area(a) => a.min_size(scale),
+            Symbol::Line(l) => l.min_size(scale),
+            Symbol::Point(p) => p.min_size(scale),
+        }
+    }
+
+    fn id(&self) -> u8 {
+        match self {
+            Symbol::Area(a) => a.id(),
+            Symbol::Line(l) => l.id(),
+            Symbol::Point(p) => p.id(),
+        }
+    }
+}
+
+/// Symbols for area objects
+#[allow(missing_docs)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum AreaSymbol {
+    RoughOpenLand,
+    SandyGround,
+    BareRock,
+    LightGreen,
+    MediumGreen,
+    DarkGreen,
+    Marsh,
+    PavedArea,
+    Water,
+    GiganticBoulder,
+    Building,
+}
+
+impl SymbolTrait for AreaSymbol {
+    fn min_size(&self, scale: Scale) -> f64 {
         // should add min lenghts for line objects, thats why I've spelt it out
         match scale {
             Scale::S10_000 => match self {
-                Symbol::Contour => 0.,           // Line
-                Symbol::BasemapContour => 0.,    // Line
-                Symbol::NegBasemapContour => 0., // Line
-                Symbol::IndexContour => 0.,      // Line
-                Symbol::Formline => 0.,          // Line
-                Symbol::GiganticBoulder => 10.,  // Area
-                Symbol::SandyGround => 100.,     // Area
-                Symbol::BareRock => 100.,        // Area
-                Symbol::RoughOpenLand => 100.,   // Area
-                Symbol::LightGreen => 100.,      // Area
-                Symbol::MediumGreen => 50.,      // Area
-                Symbol::DarkGreen => 30.,        // Area
-                Symbol::Building => 10.,         // Area
-                Symbol::Water => 10.,            // Area
-                Symbol::PavedArea => 100.,       // Area
-                Symbol::Marsh => 100.,
-                _ => 0.,
+                AreaSymbol::GiganticBoulder => 10.,
+                AreaSymbol::SandyGround => 100.,
+                AreaSymbol::BareRock => 100.,
+                AreaSymbol::RoughOpenLand => 100.,
+                AreaSymbol::LightGreen => 100.,
+                AreaSymbol::MediumGreen => 50.,
+                AreaSymbol::DarkGreen => 30.,
+                AreaSymbol::Building => 10.,
+                AreaSymbol::Water => 10.,
+                AreaSymbol::PavedArea => 100.,
+                AreaSymbol::Marsh => 100.,
             },
             Scale::S15_000 => match self {
-                Symbol::Contour => 0.,           // Line
-                Symbol::BasemapContour => 0.,    // Line
-                Symbol::NegBasemapContour => 0., // Line
-                Symbol::IndexContour => 0.,      // Line
-                Symbol::Formline => 0.,          // Line
-                Symbol::GiganticBoulder => 10.,  // Area
-                Symbol::SandyGround => 225.,     // Area
-                Symbol::BareRock => 225.,        // Area
-                Symbol::RoughOpenLand => 225.,   // Area
-                Symbol::LightGreen => 225.,      // Area
-                Symbol::MediumGreen => 110.,     // Area
-                Symbol::DarkGreen => 64.,        // Area
-                Symbol::Building => 10.,         // Area
-                Symbol::Water => 10.,            // Area
-                Symbol::PavedArea => 225.,       // Area
-                Symbol::Marsh => 225.,           // Area
-                _ => 0.,
+                AreaSymbol::GiganticBoulder => 10.,
+                AreaSymbol::SandyGround => 225.,
+                AreaSymbol::BareRock => 225.,
+                AreaSymbol::RoughOpenLand => 225.,
+                AreaSymbol::LightGreen => 225.,
+                AreaSymbol::MediumGreen => 110.,
+                AreaSymbol::DarkGreen => 64.,
+                AreaSymbol::Building => 10.,
+                AreaSymbol::Water => 10.,
+                AreaSymbol::PavedArea => 225.,
+                AreaSymbol::Marsh => 225.,
             },
         }
     }
 
     /// get the symbol id
-    pub fn id(&self) -> u8 {
+    fn id(&self) -> u8 {
         match self {
-            Symbol::Contour => 0,
-            Symbol::BasemapContour => 2,
-            Symbol::NegBasemapContour => unimplemented!("Not in current symbol sets"),
-            Symbol::IndexContour => 3,
-            Symbol::Formline => 5,
-            Symbol::GiganticBoulder => 37,
-            Symbol::SandyGround => 48,
-            Symbol::BareRock => 49,
-            Symbol::RoughOpenLand => 79,
-            Symbol::LightGreen => 83,
-            Symbol::MediumGreen => 86,
-            Symbol::DarkGreen => 90,
-            Symbol::Building => 140,
-            Symbol::Water => 51,
-            Symbol::SlopelineContour => 1,
-            Symbol::SlopelineFormline => 6,
-            Symbol::DotKnoll => 16,
-            Symbol::ElongatedDotKnoll => 17,
-            Symbol::UDepression => 18,
-            Symbol::SmallBoulder => 34,
-            Symbol::LargeBoulder => 35,
-            Symbol::PavedArea => 106,
-            Symbol::Marsh => 68,
+            AreaSymbol::GiganticBoulder => 37,
+            AreaSymbol::SandyGround => 48,
+            AreaSymbol::BareRock => 49,
+            AreaSymbol::RoughOpenLand => 79,
+            AreaSymbol::LightGreen => 83,
+            AreaSymbol::MediumGreen => 86,
+            AreaSymbol::DarkGreen => 90,
+            AreaSymbol::Building => 140,
+            AreaSymbol::Water => 51,
+            AreaSymbol::PavedArea => 106,
+            AreaSymbol::Marsh => 68,
         }
     }
+}
 
-    /// Check if symbol is a line symbol
-    pub fn is_line_symbol(&self) -> bool {
-        let a: Result<LineSymbol, LineSymbolConvertError> = (*self).try_into();
-        a.is_ok()
-    }
+/// Symbols for line objects
+#[allow(missing_docs)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum LineSymbol {
+    BasemapContour,
+    Contour,
+    IndexContour,
+    Formline,
+    NegBasemapContour,
+}
 
-    /// Check if symbol is a point symbol
-    pub fn is_point_symbol(&self) -> bool {
-        let a: Result<PointSymbol, PointSymbolConvertError> = (*self).try_into();
-        a.is_ok()
-    }
-
-    /// Check if symbol is a area symbol
-    pub fn is_area_symbol(&self) -> bool {
-        let a: Result<AreaSymbol, AreaSymbolConvertError> = (*self).try_into();
-        a.is_ok()
+impl SymbolTrait for LineSymbol {
+    fn id(&self) -> u8 {
+        match self {
+            LineSymbol::Contour => 0,
+            LineSymbol::BasemapContour => 2,
+            LineSymbol::NegBasemapContour => unimplemented!("Not in current symbol sets"),
+            LineSymbol::IndexContour => 3,
+            LineSymbol::Formline => 5,
+        }
     }
 }
 
-impl LineSymbol {
-    /// get id of symbol
-    pub fn id(&self) -> u8 {
-        (Symbol::from(*self)).id()
-    }
-
-    /// get min size of symbol
-    pub fn min_size(&self, scale: Scale) -> f64 {
-        (Symbol::from(*self)).min_size(scale)
-    }
+/// Symbols for point objects
+#[allow(missing_docs)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PointSymbol {
+    SlopelineContour,
+    SlopelineFormline,
+    DotKnoll,
+    ElongatedDotKnoll,
+    UDepression,
+    SmallBoulder,
+    LargeBoulder,
 }
 
-impl PointSymbol {
-    /// get id of symbol
-    pub fn id(&self) -> u8 {
-        (Symbol::from(*self)).id()
-    }
-}
-
-impl AreaSymbol {
-    /// get id of symbol
-    pub fn id(&self) -> u8 {
-        (Symbol::from(*self)).id()
-    }
-
-    /// get min size of symbol
-    pub fn min_size(&self, scale: Scale) -> f64 {
-        (Symbol::from(*self)).min_size(scale)
+impl SymbolTrait for PointSymbol {
+    fn id(&self) -> u8 {
+        match self {
+            PointSymbol::SlopelineContour => 1,
+            PointSymbol::SlopelineFormline => 6,
+            PointSymbol::DotKnoll => 16,
+            PointSymbol::ElongatedDotKnoll => 17,
+            PointSymbol::UDepression => 18,
+            PointSymbol::SmallBoulder => 34,
+            PointSymbol::LargeBoulder => 35,
+        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::{MapObject, OmapResult, PointObject, PointSymbol, Scale, Symbol};
+use crate::{LineSymbol, MapObject, OmapResult, PointObject, PointSymbol, Scale, Symbol};
 use chrono::Datelike;
 use geo_types::{Coord, LineString, Point};
 use kiddo::SquaredEuclidean;
@@ -282,7 +282,11 @@ impl Omap {
         max_area: f64,
         elongated_aspect: f64,
     ) {
-        let keys = [Symbol::Contour, Symbol::Formline, Symbol::IndexContour];
+        let keys = [
+            Symbol::Line(LineSymbol::Contour),
+            Symbol::Line(LineSymbol::Formline),
+            Symbol::Line(LineSymbol::IndexContour),
+        ];
 
         for key in keys {
             let contours = self.objects.get_mut(&key);
@@ -349,7 +353,9 @@ impl Omap {
 
     /// mark closed basemap contour loops wound clockwise as depressions
     pub fn mark_basemap_depressions(&mut self) {
-        let basemap = self.objects.get_mut(&Symbol::BasemapContour);
+        let basemap = self
+            .objects
+            .get_mut(&Symbol::Line(LineSymbol::BasemapContour));
         if basemap.is_none() {
             return;
         }
@@ -375,7 +381,9 @@ impl Omap {
             }
         }
 
-        let _ = self.objects.insert(Symbol::NegBasemapContour, neg_basemap);
+        let _ = self
+            .objects
+            .insert(Symbol::Line(LineSymbol::NegBasemapContour), neg_basemap);
     }
 
     /// write the map an omap file,

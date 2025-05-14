@@ -18,8 +18,5 @@ geo-types = "0.7.16"
 kiddo = "5.0.3"
 linestring2bezier = "0.2.0"
 proj4rs = { version = "0.1.5", features = ["crs-definitions"] }
-strum = "0.27.0"
-strum_macros = "0.27.0"
-subenum = { version = "1.1.2", default-features = false}
 thiserror = "2.0.11"
 world_magnetic_model = "0.2.0"
