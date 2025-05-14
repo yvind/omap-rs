@@ -1,9 +1,13 @@
 use crate::{MapObject, OmapResult, PointObject, PointSymbol, Scale, Symbol};
 use chrono::Datelike;
 use geo_types::{Coord, LineString, Point};
-
 use kiddo::SquaredEuclidean;
 use proj4rs::{transform::transform, Proj};
+use std::{
+    collections::HashMap,
+    io::{BufWriter, Write},
+};
+use std::{ffi::OsStr, fs::File, path::PathBuf};
 use world_magnetic_model::{
     time::Date,
     uom::si::f32::{Angle, Length},
@@ -11,16 +15,11 @@ use world_magnetic_model::{
     GeomagneticField,
 };
 
-use std::{
-    collections::HashMap,
-    io::{BufWriter, Write},
-};
-use std::{ffi::OsStr, fs::File, path::PathBuf};
-
 /// Struct representing an Orienteering map
 /// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point
 /// If epsg.is_some() the map is written georefrenced
 /// else it is written in Local space
+#[derive(Debug)]
 pub struct Omap {
     elevation_scale_factor: f64,
     combined_scale_factor: f64,
@@ -30,10 +29,12 @@ pub struct Omap {
     epsg: Option<u16>,
     ref_point: Coord,
 
+    /// the objects of the map
     pub objects: HashMap<Symbol, Vec<MapObject>>,
 }
 
 impl Omap {
+    /// Create a new map in the given scale with an optional CRS centered att georef_point
     pub fn new(
         georef_point: Coord,
         epsg_crs: Option<u16>,
@@ -52,7 +53,7 @@ impl Omap {
         //
         // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
         // f = 1 / 298.257223563
-        // R_equator = 6378137.0
+        // R_equator = 6378137.0m
         //
         // to calculate map units the combined scale factor and scale of map is needed to go from grid coordinates to real coordinates to map coordinates
         //
@@ -86,31 +87,36 @@ impl Omap {
         }
     }
 
+    /// reserve capacity for cap elemetns in key symbol in the objects hashmap
     pub fn reserve_capacity(&mut self, symbol: Symbol, cap: usize) {
         if let Some(obj) = self.objects.get_mut(&symbol) {
             obj.reserve(cap);
         } else {
-            self.objects.insert(symbol, Vec::with_capacity(cap));
+            let _ = self.objects.insert(symbol, Vec::with_capacity(cap));
         }
     }
 
+    /// insert an object in the objects hashmap
     pub fn add_object(&mut self, obj: MapObject) {
         let key = obj.symbol();
         if let Some(val) = self.objects.get_mut(&key) {
             val.push(obj);
         } else {
-            self.objects.insert(key, vec![obj]);
+            let _ = self.objects.insert(key, vec![obj]);
         }
     }
 
+    /// get the CRS of the map represented by an EPSG code
     pub fn get_crs(&self) -> Option<u16> {
         self.epsg
     }
 
+    /// get the ref point of the map
     pub fn get_ref_point(&self) -> Coord {
         self.ref_point
     }
 
+    /// merge line objects across tile bounds
     pub fn merge_lines(&mut self, delta: f64) {
         for (key, map_objects) in self.objects.iter_mut() {
             if !key.is_line_symbol() {
@@ -156,7 +162,7 @@ impl Omap {
                         *unique_elevations.get(&elevation_tag).unwrap()
                     } else {
                         let id = unique_elevations.len();
-                        unique_elevations.insert(elevation_tag, id);
+                        let _ = unique_elevations.insert(elevation_tag, id);
                         id
                     };
 
@@ -219,7 +225,7 @@ impl Omap {
                             &mut unclosed_objects[merge.1]
                         };
 
-                        part1.line.0.pop();
+                        let _ = part1.line.0.pop();
                         part1.line.0.extend(part2.line.0);
                     }
                     // update map
@@ -229,7 +235,7 @@ impl Omap {
 
                         // find merges made impossible
                         if other_merge.1 == merge.1 || other_merge.0 == merge.0 {
-                            merges.swap_remove(i);
+                            let _ = merges.swap_remove(i);
                             continue;
                         } else {
                             i += 1;
@@ -269,6 +275,7 @@ impl Omap {
         }
     }
 
+    /// turn small contour loops to dotknolls and depression and remove the smallest ones
     pub fn make_dotknolls_and_depressions(
         &mut self,
         min_area: f64,
@@ -340,6 +347,7 @@ impl Omap {
         }
     }
 
+    /// mark closed basemap contour loops wound clockwise as depressions
     pub fn mark_basemap_depressions(&mut self) {
         let basemap = self.objects.get_mut(&Symbol::BasemapContour);
         if basemap.is_none() {
@@ -367,12 +375,14 @@ impl Omap {
             }
         }
 
-        self.objects.insert(Symbol::NegBasemapContour, neg_basemap);
+        let _ = self.objects.insert(Symbol::NegBasemapContour, neg_basemap);
     }
 
+    /// write the map an omap file,
+    /// if path is an unvalid path then "./auto_generated_map.omap" is the new path
     pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
         if path.extension() != Some(OsStr::new("omap")) {
-            path.set_extension("omap");
+            let _ = path.set_extension("omap");
         }
 
         let f = File::create(&path)?;

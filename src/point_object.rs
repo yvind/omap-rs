@@ -3,22 +3,27 @@ use crate::{
     TagTrait,
 };
 use geo_types::Point;
-
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
 };
 
+/// A PointObject representing anything that has a PointSymbol
 #[derive(Debug, Clone)]
 pub struct PointObject {
+    /// the coordinate (relative the ref point of the map)
     pub point: Point,
+    /// the symbol
     pub symbol: PointSymbol,
+    /// a rotation in radians
     pub rotation: f64,
+    /// tags for this object
     pub tags: HashMap<String, String>,
 }
 
 impl PointObject {
+    /// create a point object from a geo_types::Point
     pub fn from_point(point: Point, symbol: PointSymbol, rotation: f64) -> Self {
         Self {
             point,
@@ -31,7 +36,7 @@ impl PointObject {
 
 impl TagTrait for PointObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
-        self.tags.insert(k.into(), v.into());
+        let _ = self.tags.insert(k.into(), v.into());
     }
 }
 

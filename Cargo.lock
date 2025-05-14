@@ -358,6 +358,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
 
 [[package]]
+name = "linestring2bezier"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea29447adbc9121e646dc7cfd2280ebea15839439a384c83446bbaba8fce0559"
+dependencies = [
+ "geo-types",
+]
+
+[[package]]
 name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -429,12 +438,12 @@ dependencies = [
 
 [[package]]
 name = "omap"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "geo-types",
  "kiddo",
- "polyline2bezier",
+ "linestring2bezier",
  "proj4rs",
  "strum",
  "strum_macros",
@@ -475,14 +484,6 @@ name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b3cff922bd51709b605d9ead9aa71031d81447142d828eb4a6eba76fe619f9b"
-
-[[package]]
-name = "polyline2bezier"
-version = "0.1.0"
-source = "git+https://github.com/yvind/polyline2bezier#484cde316b80bfa511781200a04bed2e92245567"
-dependencies = [
- "geo-types",
-]
 
 [[package]]
 name = "powerfmt"

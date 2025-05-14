@@ -1,6 +1,6 @@
 [package]
 name = "omap"
-version = "0.2.0"
+version = "0.1.0"
 edition = "2021"
 authors = ["Øyvind Hjermstad <@yvind>"]
 
@@ -14,9 +14,9 @@ keywords = ["orienteering", "map", "mapping"]
 
 [dependencies]
 chrono = "0.4.39"
-geo-types = "^0.7.13"
+geo-types = "0.7.16"
 kiddo = "5.0.3"
-polyline2bezier = {git = "https://github.com/yvind/polyline2bezier"}
+linestring2bezier = "0.2.0"
 proj4rs = { version = "0.1.5", features = ["crs-definitions"] }
 strum = "0.27.0"
 strum_macros = "0.27.0"

@@ -1,26 +1,28 @@
-use geo_types::Polygon;
-
-use polyline2bezier::BezierString;
-
 use crate::{
     map_coord::MapCoord, map_object::MapObjectTrait, symbol::AreaSymbol, OmapResult, Scale,
     TagTrait,
 };
-
+use geo_types::Polygon;
+use linestring2bezier::{BezierSegment, BezierString};
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
 };
 
+/// A AreaObject representing anything that has a AreaSymbol
 #[derive(Debug, Clone)]
 pub struct AreaObject {
+    /// the polygon with coordinates relative the maps refpoint
     pub polygon: Polygon,
+    /// any areasymbol
     pub symbol: AreaSymbol,
+    /// tags for the object
     pub tags: HashMap<String, String>,
 }
 
 impl AreaObject {
+    /// create an area object from a geo_types::Polygon
     pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol) -> Self {
         Self {
             polygon,
@@ -108,9 +110,9 @@ impl AreaObject {
 
         let (exterior, interiors) = coordinates.into_inner();
 
-        beziers.push(BezierString::from_polyline(exterior, error));
+        beziers.push(BezierString::from_linestring(exterior, error));
         for hole in interiors {
-            beziers.push(BezierString::from_polyline(hole, error));
+            beziers.push(BezierString::from_linestring(hole, error));
         }
         let mut num_coords = 0;
         for b in beziers.iter() {
@@ -126,32 +128,29 @@ impl AreaObject {
             let mut i = 0;
             while i < num_segments - 1 {
                 let segment = bez_iterator.next().unwrap();
-                if segment.is_bezier_segment() {
-                    let c =
-                        segment
+
+                let BezierSegment {
+                    start,
+                    handles,
+                    end: _,
+                } = segment;
+
+                if let Some(handles) = handles {
+                    let c = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                    let h1 =
+                        handles
                             .0
-                             .0
                             .to_map_coordinates(scale, grivation, combined_scale_factor)?;
-                    let h1 = segment.0 .1.unwrap().to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
-                    let h2 = segment.0 .2.unwrap().to_map_coordinates(
-                        scale,
-                        grivation,
-                        combined_scale_factor,
-                    )?;
+                    let h2 =
+                        handles
+                            .1
+                            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
                     f.write_all(
                         format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1)
                             .as_bytes(),
                     )?;
                 } else {
-                    let c =
-                        segment
-                            .0
-                             .0
-                            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                    let c = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
 
                     f.write_all(format!("{} {};", c.0, c.1).as_bytes())?;
                 }
@@ -159,27 +158,22 @@ impl AreaObject {
             }
             // finish with the last segment of the curve
             let final_segment = bez_iterator.next().unwrap();
-            if final_segment.is_bezier_segment() {
-                let c1 = final_segment.0 .0.to_map_coordinates(
-                    scale,
-                    grivation,
-                    combined_scale_factor,
-                )?;
-                let h1 = final_segment.0 .1.unwrap().to_map_coordinates(
-                    scale,
-                    grivation,
-                    combined_scale_factor,
-                )?;
-                let h2 = final_segment.0 .2.unwrap().to_map_coordinates(
-                    scale,
-                    grivation,
-                    combined_scale_factor,
-                )?;
-                let c2 = final_segment.0 .3.to_map_coordinates(
-                    scale,
-                    grivation,
-                    combined_scale_factor,
-                )?;
+
+            let BezierSegment {
+                start,
+                handles,
+                end,
+            } = final_segment;
+
+            if let Some(handles) = handles {
+                let c1 = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                let h1 = handles
+                    .0
+                    .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                let h2 = handles
+                    .1
+                    .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                let c2 = end.to_map_coordinates(scale, grivation, combined_scale_factor)?;
 
                 f.write_all(
                     format!(
@@ -189,16 +183,8 @@ impl AreaObject {
                     .as_bytes(),
                 )?;
             } else {
-                let c1 = final_segment.0 .0.to_map_coordinates(
-                    scale,
-                    grivation,
-                    combined_scale_factor,
-                )?;
-                let c2 = final_segment.0 .3.to_map_coordinates(
-                    scale,
-                    grivation,
-                    combined_scale_factor,
-                )?;
+                let c1 = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                let c2 = end.to_map_coordinates(scale, grivation, combined_scale_factor)?;
 
                 f.write_all(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).as_bytes())?;
             }
@@ -210,7 +196,7 @@ impl AreaObject {
 
 impl TagTrait for AreaObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
-        self.tags.insert(k.into(), v.into());
+        let _ = self.tags.insert(k.into(), v.into());
     }
 }
 

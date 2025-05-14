@@ -1,12 +1,15 @@
+use crate::Scale;
 use strum_macros::EnumIter;
 use subenum::subenum;
-
-use crate::Scale;
 
 // order in enum should be from bottom colors to top colors
 // does not affect written omap file, but the order of writing to screen in OmapMaker
 // uses subenum for convenience and strum for ability to iterate through all variants,
-// but should maybe write my own macro to reduce bloat and dependencies
+//
+// should probably be rewritten
+//
+/// Enum for all suported map symbols
+#[allow(missing_docs)]
 #[subenum(PointSymbol, LineSymbol, AreaSymbol)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, EnumIter, PartialOrd, Ord)]
 pub enum Symbol {
@@ -59,6 +62,7 @@ pub enum Symbol {
 }
 
 impl Symbol {
+    /// Get the minimum allowed size (in meters or sq meters) for the symbol and scale
     pub fn min_size(&self, scale: Scale) -> f64 {
         // should add min lenghts for line objects, thats why I've spelt it out
         match scale {
@@ -103,6 +107,7 @@ impl Symbol {
         }
     }
 
+    /// get the symbol id
     pub fn id(&self) -> u8 {
         match self {
             Symbol::Contour => 0,
@@ -131,16 +136,19 @@ impl Symbol {
         }
     }
 
+    /// Check if symbol is a line symbol
     pub fn is_line_symbol(&self) -> bool {
         let a: Result<LineSymbol, LineSymbolConvertError> = (*self).try_into();
         a.is_ok()
     }
 
+    /// Check if symbol is a point symbol
     pub fn is_point_symbol(&self) -> bool {
         let a: Result<PointSymbol, PointSymbolConvertError> = (*self).try_into();
         a.is_ok()
     }
 
+    /// Check if symbol is a area symbol
     pub fn is_area_symbol(&self) -> bool {
         let a: Result<AreaSymbol, AreaSymbolConvertError> = (*self).try_into();
         a.is_ok()
@@ -148,26 +156,31 @@ impl Symbol {
 }
 
 impl LineSymbol {
+    /// get id of symbol
     pub fn id(&self) -> u8 {
         (Symbol::from(*self)).id()
     }
 
+    /// get min size of symbol
     pub fn min_size(&self, scale: Scale) -> f64 {
         (Symbol::from(*self)).min_size(scale)
     }
 }
 
 impl PointSymbol {
+    /// get id of symbol
     pub fn id(&self) -> u8 {
         (Symbol::from(*self)).id()
     }
 }
 
 impl AreaSymbol {
+    /// get id of symbol
     pub fn id(&self) -> u8 {
         (Symbol::from(*self)).id()
     }
 
+    /// get min size of symbol
     pub fn min_size(&self, scale: Scale) -> f64 {
         (Symbol::from(*self)).min_size(scale)
     }
