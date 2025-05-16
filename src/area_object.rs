@@ -75,7 +75,17 @@ impl MapObjectTrait for AreaObject {
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;
-        f.write_all(b"</object>\n")?;
+        if self.symbol.is_rotatable() {
+            f.write_all(
+                format!(
+                    "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern></object>\n",
+                    self.rotation
+                )
+                .as_bytes(),
+            )?;
+        } else {
+            f.write_all(b"</object>\n")?;
+        }
         Ok(())
     }
 

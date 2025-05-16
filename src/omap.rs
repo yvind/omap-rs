@@ -389,10 +389,20 @@ impl Omap {
     }
 
     /// write the map an omap file,
-    /// if path is an invalid path then "./auto_generated_map.omap" is the new path
+    /// if path is an invalid path then "auto_generated_map.omap" is the new path
     pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
+        if path.as_os_str().is_empty() || path.is_dir() {
+            path.push("auto_generated_map.omap");
+        }
+
         if path.extension() != Some(OsStr::new("omap")) {
             let _ = path.set_extension("omap");
+        }
+
+        // File::create might fail on some platforms if not the entire parent path exists
+        // So just to make sure they exist
+        if let Some(dir_path) = path.parent() {
+            let _ = std::fs::create_dir_all(dir_path);
         }
 
         let f = File::create(&path)?;
@@ -418,13 +428,14 @@ impl Omap {
             // transform ref_point to lat/lon
             let mut geo_ref_point = (self.ref_point.x, self.ref_point.y);
             transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
+            geo_ref_point = (geo_ref_point.0.to_degrees(), geo_ref_point.1.to_degrees());
 
             f.write_all(format!("<georeferencing scale=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\">\
             <projected_crs id=\"EPSG\"><spec language=\"PROJ.4\">+init=epsg:{}</spec><parameter>{}</parameter>\
             <ref_point x=\"{}\" y=\"{}\"/></projected_crs><geographic_crs id=\"Geographic coordinates\">\
             <spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec>\
             <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>",
-            self.scale, self.elevation_scale_factor, self.declination, epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).as_bytes())?;
+            self.scale, self.elevation_scale_factor, self.declination.to_degrees(), epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).as_bytes())?;
         } else {
             f.write_all(format!("<georeferencing scale=\"{}\"><projected_crs id=\"Local\"><ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n", self.scale, self.ref_point.x, self.ref_point.y).as_bytes())?;
         }
@@ -530,7 +541,7 @@ impl Omap {
 
         // Check determinant
         let determinant = d_easting_dx * d_northing_dy - d_northing_dx * d_easting_dy;
-        if determinant < 0.01 {
+        if determinant < 0.00001 {
             Err(proj4rs::errors::Error::ToleranceConditionError)?;
         }
 
