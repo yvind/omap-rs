@@ -15,9 +15,9 @@ use std::{
 /// A LineObject representing anything that has a LineSymbol
 #[derive(Debug, Clone)]
 pub struct LineObject {
-    /// the linestring with coordinates relative the maps refpoint
+    /// the linestring with coordinates relative the maps ref-point
     pub line: LineString,
-    /// any linesymbol
+    /// any line symbol
     pub symbol: LineSymbol,
     /// tags for the object
     pub tags: HashMap<String, String>,

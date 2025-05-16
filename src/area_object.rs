@@ -15,22 +15,23 @@ use std::{
 /// A AreaObject representing anything that has a AreaSymbol
 #[derive(Debug, Clone)]
 pub struct AreaObject {
-    /// the polygon with coordinates relative the maps refpoint
+    /// the polygon with coordinates relative the maps ref-point
     pub polygon: Polygon,
-    /// any areasymbol
+    /// any area_symbol
     pub symbol: AreaSymbol,
-    // some area symbols have a rotation on the pattern
-    // pub rotation: f64,
+    /// some area symbols have a rotation on the pattern
+    pub rotation: f64,
     /// tags for the object
     pub tags: HashMap<String, String>,
 }
 
 impl AreaObject {
     /// create an area object from a geo_types::Polygon
-    pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol) -> Self {
+    pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol, rotation: f64) -> Self {
         Self {
             polygon,
             symbol,
+            rotation,
             tags: HashMap::new(),
         }
     }

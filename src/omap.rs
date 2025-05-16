@@ -17,7 +17,7 @@ use world_magnetic_model::{
 
 /// Struct representing an Orienteering map
 /// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point
-/// If epsg.is_some() the map is written georefrenced
+/// If epsg.is_some() the map is written georeferenced
 /// else it is written in Local space
 #[derive(Debug)]
 pub struct Omap {
@@ -41,10 +41,10 @@ impl Omap {
         epsg_crs: Option<u16>,
         meters_above_sea: Option<f64>,
     ) -> Self {
-        // uses a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
+        // uses the world magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
         // and proj4rs for the convergence (angle between true north and grid north)
         //
-        // the grivation (angle between magnetic north and grid north) must be used when calulating map coords as the axes are magnetic
+        // the grivation (angle between magnetic north and grid north) must be used when calculating map coords as the axes are magnetic
         // grivation = declination - convergence
         //
         // the grid scale factor is calculated by the same algorithm as in OOmapper (I tried to do a 1:1 port)
@@ -89,7 +89,7 @@ impl Omap {
         }
     }
 
-    /// reserve capacity for cap elemetns in key symbol in the objects hashmap
+    /// reserve capacity for cap elements in key symbol in the objects hashmap
     pub fn reserve_capacity(&mut self, symbol: Symbol, cap: usize) {
         if let Some(obj) = self.objects.get_mut(&symbol) {
             obj.reserve(cap);
@@ -260,16 +260,16 @@ impl Omap {
                         }
                     }
                 }
-                let unclosed = unclosed_objects.into_iter().map(|mut lineobject| {
+                let unclosed = unclosed_objects.into_iter().map(|mut line_object| {
                     // check if it is almost closed
-                    let start = lineobject.line.0[0];
-                    let end = lineobject.line.0[lineobject.line.0.len() - 1];
+                    let start = line_object.line.0[0];
+                    let end = line_object.line.0[line_object.line.0.len() - 1];
 
                     if (start.x - end.x).powi(2) + (start.y - end.y).powi(2) <= delta {
-                        lineobject.line.close();
+                        line_object.line.close();
                     }
 
-                    MapObject::LineObject(lineobject)
+                    MapObject::LineObject(line_object)
                 });
 
                 map_objects.extend(unclosed);
@@ -286,7 +286,7 @@ impl Omap {
     ) {
         let keys = [
             Symbol::Line(LineSymbol::Contour),
-            Symbol::Line(LineSymbol::Formline),
+            Symbol::Line(LineSymbol::FormLine),
             Symbol::Line(LineSymbol::IndexContour),
         ];
 
@@ -389,7 +389,7 @@ impl Omap {
     }
 
     /// write the map an omap file,
-    /// if path is an unvalid path then "./auto_generated_map.omap" is the new path
+    /// if path is an invalid path then "./auto_generated_map.omap" is the new path
     pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
         if path.extension() != Some(OsStr::new("omap")) {
             let _ = path.set_extension("omap");
