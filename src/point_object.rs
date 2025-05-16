@@ -1,5 +1,5 @@
 use crate::{
-    map_coord::MapCoord,
+    geometry::MapCoord,
     map_object::MapObjectTrait,
     symbol::{PointSymbol, SymbolTrait},
     OmapResult, Scale, TagTrait,

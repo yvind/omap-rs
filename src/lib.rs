@@ -31,8 +31,8 @@
 )]
 
 mod area_object;
+mod geometry;
 mod line_object;
-mod map_coord;
 mod map_object;
 mod omap;
 mod point_object;
