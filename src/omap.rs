@@ -34,11 +34,12 @@ pub struct Omap {
 }
 
 impl Omap {
-    /// Create a new map in the given scale with an optional CRS centered att georef_point
+    /// Create a new map in the given scale with an optional CRS centered att georef_point which is meter_above_sea in elevation
     pub fn new(
         georef_point: Coord,
+        scale: Scale,
         epsg_crs: Option<u16>,
-        scale: Scale, /*, meters_above_sea: Option<f64> */
+        meters_above_sea: Option<f64>,
     ) -> Self {
         // uses a magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
         // and proj4rs for the convergence (angle between true north and grid north)
@@ -63,14 +64,15 @@ impl Omap {
         // - the combined scale factor
 
         let declination = if let Some(epsg) = epsg_crs {
-            Self::declination(epsg, georef_point).unwrap_or(0.)
+            Self::declination(epsg, georef_point, meters_above_sea).unwrap_or(0.)
         } else {
             0.
         };
 
         let (grid_scale_factor, elevation_scale_factor, convergence) = if let Some(epsg) = epsg_crs
         {
-            Self::scale_factors_and_convergence(epsg, georef_point).unwrap_or((1., 1., 0.))
+            Self::scale_factors_and_convergence(epsg, georef_point, meters_above_sea)
+                .unwrap_or((1., 1., 0.))
         } else {
             (1., 1., 0.)
         };
@@ -476,7 +478,11 @@ impl Omap {
         Ok(())
     }
 
-    fn scale_factors_and_convergence(epsg: u16, ref_point: Coord) -> OmapResult<(f64, f64, f64)> {
+    fn scale_factors_and_convergence(
+        epsg: u16,
+        ref_point: Coord,
+        _masl: Option<f64>,
+    ) -> OmapResult<(f64, f64, f64)> {
         let geographic_proj = Proj::from_epsg_code(4326)?;
         let local_proj = Proj::from_epsg_code(epsg)?;
 
@@ -534,7 +540,7 @@ impl Omap {
         Ok((grid_scale_factor, 1., convergence))
     }
 
-    fn declination(epsg: u16, ref_point: Coord) -> OmapResult<f64> {
+    fn declination(epsg: u16, ref_point: Coord, masl: Option<f64>) -> OmapResult<f64> {
         let geographic_proj = Proj::from_epsg_code(4326)?;
         let local_proj = Proj::from_epsg_code(epsg)?;
 
@@ -547,7 +553,7 @@ impl Omap {
         let day = date.ordinal() as u16;
 
         let field = GeomagneticField::new(
-            Length::new::<meter>(0.),
+            Length::new::<meter>(masl.unwrap_or(0.) as f32),
             Angle::new::<radian>(geo_ref_point.1 as f32),
             Angle::new::<radian>(geo_ref_point.0 as f32),
             Date::from_ordinal_date(year, day)

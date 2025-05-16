@@ -19,6 +19,8 @@ pub struct AreaObject {
     pub polygon: Polygon,
     /// any areasymbol
     pub symbol: AreaSymbol,
+    // some area symbols have a rotation on the pattern
+    // pub rotation: f64,
     /// tags for the object
     pub tags: HashMap<String, String>,
 }

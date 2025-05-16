@@ -1,4 +1,4 @@
-//! Write .omap files in Rust
+//! Write Open Orienteering Mapper's .omap files in Rust
 
 #![deny(
     elided_lifetimes_in_paths,
@@ -38,6 +38,7 @@ mod omap;
 mod point_object;
 mod scale;
 mod symbol;
+mod text_object;
 
 pub use self::area_object::AreaObject;
 pub use self::line_object::LineObject;
@@ -46,6 +47,7 @@ pub use self::omap::Omap;
 pub use self::point_object::PointObject;
 pub use self::scale::Scale;
 pub use self::symbol::*;
+pub use self::text_object::TextObject;
 
 /// crate result
 pub type OmapResult<T> = Result<T, OmapError>;

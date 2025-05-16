@@ -1,4 +1,4 @@
-use crate::{AreaObject, LineObject, OmapResult, PointObject, Scale, Symbol};
+use crate::{AreaObject, LineObject, OmapResult, PointObject, Scale, Symbol, TextObject};
 use std::{fs::File, io::BufWriter};
 
 pub(crate) trait MapObjectTrait {
@@ -43,6 +43,8 @@ pub enum MapObject {
     PointObject(PointObject),
     /// area object
     AreaObject(AreaObject),
+    /// text object
+    TextObject(TextObject),
 }
 
 impl MapObject {
@@ -64,15 +66,19 @@ impl MapObject {
             MapObject::AreaObject(area_object) => {
                 area_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
             }
+            MapObject::TextObject(text_object) => {
+                text_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
+            }
         }
     }
 
-    /// get symbol of map object
+    /// get symbol of a map object
     pub fn symbol(&self) -> Symbol {
         match self {
-            MapObject::LineObject(line_object) => Symbol::from(line_object.symbol),
-            MapObject::PointObject(point_object) => Symbol::from(point_object.symbol),
-            MapObject::AreaObject(area_object) => Symbol::from(area_object.symbol),
+            MapObject::LineObject(line_object) => line_object.symbol.into(),
+            MapObject::PointObject(point_object) => point_object.symbol.into(),
+            MapObject::AreaObject(area_object) => area_object.symbol.into(),
+            MapObject::TextObject(text_object) => text_object.symbol.into(),
         }
     }
 }
@@ -83,6 +89,7 @@ impl TagTrait for MapObject {
             MapObject::LineObject(line_object) => line_object.add_tag(k, v),
             MapObject::PointObject(point_object) => point_object.add_tag(k, v),
             MapObject::AreaObject(area_object) => area_object.add_tag(k, v),
+            MapObject::TextObject(text_object) => text_object.add_tag(k, v),
         }
     }
 }
