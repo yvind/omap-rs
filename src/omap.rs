@@ -34,7 +34,7 @@ pub struct Omap {
 }
 
 impl Omap {
-    /// Create a new map in the given scale with an optional CRS centered att georef_point which is meter_above_sea in elevation
+    /// Create a new map in the given scale with an optional CRS centered att georef_point which is meters_above_sea in elevation
     pub fn new(
         georef_point: Coord,
         scale: Scale,
@@ -481,7 +481,7 @@ impl Omap {
     fn scale_factors_and_convergence(
         epsg: u16,
         ref_point: Coord,
-        _masl: Option<f64>,
+        meters_above_sea_level: Option<f64>,
     ) -> OmapResult<(f64, f64, f64)> {
         let geographic_proj = Proj::from_epsg_code(4326)?;
         let local_proj = Proj::from_epsg_code(epsg)?;
@@ -513,7 +513,7 @@ impl Omap {
             base_line_points.as_mut_slice(),
         )?;
 
-        //reproject the points down to the grid
+        //re-project the points down to the grid
         transform(
             &geographic_proj,
             &local_proj,
@@ -537,10 +537,30 @@ impl Omap {
         let convergence = (d_northing_dx - d_easting_dy).atan2(d_easting_dx + d_northing_dy);
         let grid_scale_factor = determinant.sqrt();
 
-        Ok((grid_scale_factor, 1., convergence))
+        let elevation_scale_factor = if let Some(meters_above_sea_level) = meters_above_sea_level {
+            // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid))
+            //
+            // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
+            // f = 1 / 298.257223563
+            // R_equator = 6378137.0m
+            const F: f64 = 1. / 298.257223563;
+            const R_EQUATOR: f64 = 6378137.;
+
+            let ellipsoid_radius = R_EQUATOR * (1. - F * geo_ref_point.0.sin().powi(2));
+
+            ellipsoid_radius / (ellipsoid_radius + meters_above_sea_level)
+        } else {
+            1.
+        };
+
+        Ok((grid_scale_factor, elevation_scale_factor, convergence))
     }
 
-    fn declination(epsg: u16, ref_point: Coord, masl: Option<f64>) -> OmapResult<f64> {
+    fn declination(
+        epsg: u16,
+        ref_point: Coord,
+        meters_above_sea_level: Option<f64>,
+    ) -> OmapResult<f64> {
         let geographic_proj = Proj::from_epsg_code(4326)?;
         let local_proj = Proj::from_epsg_code(epsg)?;
 
@@ -553,7 +573,7 @@ impl Omap {
         let day = date.ordinal() as u16;
 
         let field = GeomagneticField::new(
-            Length::new::<meter>(masl.unwrap_or(0.) as f32),
+            Length::new::<meter>(meters_above_sea_level.unwrap_or(0.) as f32),
             Angle::new::<radian>(geo_ref_point.1 as f32),
             Angle::new::<radian>(geo_ref_point.0 as f32),
             Date::from_ordinal_date(year, day)
