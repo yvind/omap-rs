@@ -47,6 +47,30 @@ pub enum MapObject {
     TextObject(TextObject),
 }
 
+impl From<LineObject> for MapObject {
+    fn from(value: LineObject) -> Self {
+        MapObject::LineObject(value)
+    }
+}
+
+impl From<AreaObject> for MapObject {
+    fn from(value: AreaObject) -> Self {
+        MapObject::AreaObject(value)
+    }
+}
+
+impl From<PointObject> for MapObject {
+    fn from(value: PointObject) -> Self {
+        MapObject::PointObject(value)
+    }
+}
+
+impl From<TextObject> for MapObject {
+    fn from(value: TextObject) -> Self {
+        MapObject::TextObject(value)
+    }
+}
+
 impl MapObject {
     pub(crate) fn write_to_map(
         self,

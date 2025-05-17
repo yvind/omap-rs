@@ -19,18 +19,18 @@ pub struct AreaObject {
     /// any area_symbol
     pub symbol: AreaSymbol,
     /// some area symbols have a rotation on the pattern
-    pub rotation: f64,
+    pub pattern_rotation: f64,
     /// tags for the object
     pub tags: HashMap<String, String>,
 }
 
 impl AreaObject {
     /// create an area object from a geo_types::Polygon
-    pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol, rotation: f64) -> Self {
+    pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol, pattern_rotation: f64) -> Self {
         Self {
             polygon,
             symbol,
-            rotation,
+            pattern_rotation,
             tags: HashMap::new(),
         }
     }
@@ -75,16 +75,15 @@ impl MapObjectTrait for AreaObject {
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;
+        f.write_all(b"</coords>")?;
         if self.symbol.is_rotatable() {
             f.write_all(
                 format!(
-                    "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern></object>\n",
-                    self.rotation
+                    "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern>",
+                    self.pattern_rotation
                 )
                 .as_bytes(),
             )?;
-        } else {
-            f.write_all(b"</object>\n")?;
         }
         Ok(())
     }

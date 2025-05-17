@@ -72,7 +72,7 @@ impl MapObjectTrait for LineObject {
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;
-        f.write_all(b"</object>\n")?;
+        f.write_all(b"</coords>")?;
         Ok(())
     }
 

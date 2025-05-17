@@ -34,13 +34,13 @@ pub struct Omap {
 }
 
 impl Omap {
-    /// Create a new map in the given scale with an optional CRS centered att georef_point which is meters_above_sea in elevation
+    /// Create a new map in the given scale with an optional CRS centered att ref_point which is meters_above_sea in elevation
     pub fn new(
-        georef_point: Coord,
+        ref_point: Coord,
         scale: Scale,
         epsg_crs: Option<u16>,
         meters_above_sea: Option<f64>,
-    ) -> Self {
+    ) -> OmapResult<Self> {
         // uses the world magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
         // and proj4rs for the convergence (angle between true north and grid north)
         //
@@ -64,29 +64,28 @@ impl Omap {
         // - the combined scale factor
 
         let declination = if let Some(epsg) = epsg_crs {
-            Self::declination(epsg, georef_point, meters_above_sea).unwrap_or(0.)
+            Self::declination(epsg, ref_point, meters_above_sea)?
         } else {
             0.
         };
 
         let (grid_scale_factor, elevation_scale_factor, convergence) = if let Some(epsg) = epsg_crs
         {
-            Self::scale_factors_and_convergence(epsg, georef_point, meters_above_sea)
-                .unwrap_or((1., 1., 0.))
+            Self::scale_factors_and_convergence(epsg, ref_point, meters_above_sea)?
         } else {
             (1., 1., 0.)
         };
 
-        Omap {
+        Ok(Omap {
             elevation_scale_factor,
             combined_scale_factor: grid_scale_factor * elevation_scale_factor,
             declination,
             grivation: declination - convergence,
             scale,
             epsg: epsg_crs,
-            ref_point: georef_point,
+            ref_point,
             objects: HashMap::new(),
-        }
+        })
     }
 
     /// reserve capacity for cap elements in key symbol in the objects hashmap
