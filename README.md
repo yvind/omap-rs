@@ -1,4 +1,7 @@
 # Omap-rs
+[![crates.io version](https://img.shields.io/crates/v/omap.svg)](https://crates.io/crates/omap)
+[![docs.rs docs](https://docs.rs/omap/badge.svg)](https://docs.rs/omap)  
+
 A library for writing `geo_types`-geometries to OpenOrienteering Mapper's .omap files.  
 
 The files are automatically georeferenced (including scale factors) and magnetic north aligned (using the current WMM, date and map-location) if a Coordinate Reference System is provided (by EPSG code). 
