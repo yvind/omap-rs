@@ -1,6 +1,6 @@
 use crate::{
-    geometry::MapCoord,
     objects::{MapObjectTrait, TagTrait},
+    serialize::MapCoord,
     symbols::{SymbolTrait, TextSymbol},
     OmapResult, Scale,
 };
@@ -49,7 +49,7 @@ impl MapObjectTrait for TextObject {
         _as_bezier: Option<f64>,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<()> {
         f.write_all(
             format!(
@@ -60,7 +60,7 @@ impl MapObjectTrait for TextObject {
         )?;
         self.write_tags(f)?;
         let text = self.text.clone();
-        self.write_coords(f, None, scale, grivation, combined_scale_factor)?;
+        self.write_coords(f, None, scale, grivation, inv_combined_scale_factor)?;
         f.write_all(format!("<text>{}</text>", text).as_bytes())?;
         f.write_all(b"</object>\n")?;
         Ok(())
@@ -72,12 +72,12 @@ impl MapObjectTrait for TextObject {
         _as_bezier: Option<f64>,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<()> {
         let c = self
             .point
             .0
-            .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+            .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
         f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())?;
         Ok(())
     }

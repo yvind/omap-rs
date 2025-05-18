@@ -8,7 +8,7 @@ pub(crate) trait MapCoord {
         self,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(i32, i32)>;
 }
 
@@ -23,7 +23,7 @@ impl MapCoord for Coord {
         self,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(i32, i32)> {
         let sin = grivation.sin();
         let cos = grivation.cos();
@@ -33,12 +33,12 @@ impl MapCoord for Coord {
 
         let (x, y) = match scale {
             Scale::S10_000 => (
-                (x * CONVERSION_10000 * combined_scale_factor).round(),
-                -(y * CONVERSION_10000 * combined_scale_factor).round(),
+                (x * CONVERSION_10000 * inv_combined_scale_factor).round(),
+                -(y * CONVERSION_10000 * inv_combined_scale_factor).round(),
             ),
             Scale::S15_000 => (
-                (x * CONVERSION_15000 * combined_scale_factor).round(),
-                -(y * CONVERSION_15000 * combined_scale_factor).round(),
+                (x * CONVERSION_15000 * inv_combined_scale_factor).round(),
+                -(y * CONVERSION_15000 * inv_combined_scale_factor).round(),
             ),
         };
 
@@ -55,7 +55,7 @@ pub(crate) trait Serialize {
         self,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)>;
 
     fn serialize_bezier(
@@ -63,7 +63,7 @@ pub(crate) trait Serialize {
         bezier_error: f64,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)>;
 }
 
@@ -72,7 +72,7 @@ impl Serialize for LineString {
         self,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)> {
         let num_coords = self.0.len();
 
@@ -84,7 +84,7 @@ impl Serialize for LineString {
             let c = coord_iter.next().unwrap().to_map_coordinates(
                 scale,
                 grivation,
-                combined_scale_factor,
+                inv_combined_scale_factor,
             )?;
             byte_vec.extend(format!("{} {};", c.0, c.1).into_bytes());
 
@@ -93,7 +93,7 @@ impl Serialize for LineString {
         let c = coord_iter.next().unwrap().to_map_coordinates(
             scale,
             grivation,
-            combined_scale_factor,
+            inv_combined_scale_factor,
         )?;
         if self.is_closed() {
             byte_vec.extend(format!("{} {} 18;", c.0, c.1).into_bytes());
@@ -108,7 +108,7 @@ impl Serialize for LineString {
         bezier_error: f64,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)> {
         let is_closed = self.is_closed();
         let bezier = BezierString::from_linestring(self, bezier_error);
@@ -130,18 +130,20 @@ impl Serialize for LineString {
             } = segment;
 
             if let Some(handles) = handles {
-                let c = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
-                let h1 = handles
-                    .0
-                    .to_map_coordinates(scale, grivation, combined_scale_factor)?;
-                let h2 = handles
-                    .1
-                    .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                let c = start.to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
+                let h1 =
+                    handles
+                        .0
+                        .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
+                let h2 =
+                    handles
+                        .1
+                        .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
                 byte_vec.extend(
                     format!("{} {} 1;{} {};{} {};", c.0, c.1, h1.0, h1.1, h2.0, h2.1).into_bytes(),
                 );
             } else {
-                let c = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                let c = start.to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
 
                 byte_vec.extend(format!("{} {};", c.0, c.1).into_bytes());
             }
@@ -157,14 +159,14 @@ impl Serialize for LineString {
         } = final_segment;
 
         if let Some(handles) = handles {
-            let c1 = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+            let c1 = start.to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
             let h1 = handles
                 .0
-                .to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
             let h2 = handles
                 .1
-                .to_map_coordinates(scale, grivation, combined_scale_factor)?;
-            let c2 = end.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+                .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
+            let c2 = end.to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
 
             if is_closed {
                 byte_vec.extend(
@@ -184,8 +186,8 @@ impl Serialize for LineString {
                 );
             }
         } else {
-            let c1 = start.to_map_coordinates(scale, grivation, combined_scale_factor)?;
-            let c2 = end.to_map_coordinates(scale, grivation, combined_scale_factor)?;
+            let c1 = start.to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
+            let c2 = end.to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
 
             if is_closed {
                 byte_vec.extend(format!("{} {};{} {} 18;", c1.0, c1.1, c2.0, c2.1).into_bytes());
@@ -202,15 +204,15 @@ impl Serialize for Polygon {
         self,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)> {
         let (exterior, interiors) = self.into_inner();
 
         let (mut bytes_vec, mut num_coords) =
-            exterior.serialize_polyline(scale, grivation, combined_scale_factor)?;
+            exterior.serialize_polyline(scale, grivation, inv_combined_scale_factor)?;
 
         for hole in interiors {
-            let (hv, hc) = hole.serialize_polyline(scale, grivation, combined_scale_factor)?;
+            let (hv, hc) = hole.serialize_polyline(scale, grivation, inv_combined_scale_factor)?;
             bytes_vec.extend(hv);
             num_coords += hc;
         }
@@ -222,16 +224,16 @@ impl Serialize for Polygon {
         bezier_error: f64,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)> {
         let (exterior, interiors) = self.into_inner();
 
         let (mut bytes_vec, mut num_coords) =
-            exterior.serialize_bezier(bezier_error, scale, grivation, combined_scale_factor)?;
+            exterior.serialize_bezier(bezier_error, scale, grivation, inv_combined_scale_factor)?;
 
         for hole in interiors {
             let (hv, hc) =
-                hole.serialize_bezier(bezier_error, scale, grivation, combined_scale_factor)?;
+                hole.serialize_bezier(bezier_error, scale, grivation, inv_combined_scale_factor)?;
             bytes_vec.extend(hv);
             num_coords += hc;
         }

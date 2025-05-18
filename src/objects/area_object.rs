@@ -1,6 +1,6 @@
 use crate::{
-    geometry::Serialize,
     objects::{MapObjectTrait, TagTrait},
+    serialize::Serialize,
     symbols::{AreaSymbol, SymbolTrait},
     OmapResult, Scale,
 };
@@ -49,11 +49,11 @@ impl MapObjectTrait for AreaObject {
         bez_error: Option<f64>,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
-        self.write_coords(f, bez_error, scale, grivation, combined_scale_factor)?;
+        self.write_coords(f, bez_error, scale, grivation, inv_combined_scale_factor)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -64,14 +64,14 @@ impl MapObjectTrait for AreaObject {
         bez_error: Option<f64>,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<()> {
         let (bytes, num_coords) = if let Some(bezier_error) = bez_error {
             self.polygon
-                .serialize_bezier(bezier_error, scale, grivation, combined_scale_factor)
+                .serialize_bezier(bezier_error, scale, grivation, inv_combined_scale_factor)
         } else {
             self.polygon
-                .serialize_polyline(scale, grivation, combined_scale_factor)
+                .serialize_polyline(scale, grivation, inv_combined_scale_factor)
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;

@@ -471,6 +471,7 @@ impl Omap {
             .as_bytes(),
         )?;
 
+        let inv_combined_scale_factor = 1. / self.combined_scale_factor;
         for sym_vals in self.objects.into_values() {
             for obj in sym_vals {
                 obj.write_to_map(
@@ -478,7 +479,7 @@ impl Omap {
                     bezier_error,
                     self.scale,
                     self.grivation,
-                    self.combined_scale_factor,
+                    inv_combined_scale_factor,
                 )?;
             }
         }

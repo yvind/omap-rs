@@ -99,11 +99,11 @@
     warnings
 )]
 
-mod geometry;
 /// Objects module
 pub mod objects;
 mod omap;
 mod scale;
+mod serialize;
 /// Symbols module
 pub mod symbols;
 

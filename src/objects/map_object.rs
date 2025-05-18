@@ -46,21 +46,37 @@ impl MapObject {
         bezier_error: Option<f64>,
         scale: Scale,
         grivation: f64,
-        combined_scale_factor: f64,
+        inv_combined_scale_factor: f64,
     ) -> OmapResult<()> {
         match self {
-            MapObject::LineObject(line_object) => {
-                line_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
-            }
-            MapObject::PointObject(point_object) => {
-                point_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
-            }
-            MapObject::AreaObject(area_object) => {
-                area_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
-            }
-            MapObject::TextObject(text_object) => {
-                text_object.write_to_map(f, bezier_error, scale, grivation, combined_scale_factor)
-            }
+            MapObject::LineObject(line_object) => line_object.write_to_map(
+                f,
+                bezier_error,
+                scale,
+                grivation,
+                inv_combined_scale_factor,
+            ),
+            MapObject::PointObject(point_object) => point_object.write_to_map(
+                f,
+                bezier_error,
+                scale,
+                grivation,
+                inv_combined_scale_factor,
+            ),
+            MapObject::AreaObject(area_object) => area_object.write_to_map(
+                f,
+                bezier_error,
+                scale,
+                grivation,
+                inv_combined_scale_factor,
+            ),
+            MapObject::TextObject(text_object) => text_object.write_to_map(
+                f,
+                bezier_error,
+                scale,
+                grivation,
+                inv_combined_scale_factor,
+            ),
         }
     }
 
