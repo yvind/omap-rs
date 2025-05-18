@@ -1,4 +1,8 @@
-use crate::{LineSymbol, MapObject, OmapResult, PointObject, PointSymbol, Scale, Symbol};
+use crate::{
+    objects::{MapObject, PointObject},
+    symbols::{LineSymbol, PointSymbol, Symbol},
+    OmapResult, Scale,
+};
 use chrono::Datelike;
 use geo_types::{Coord, LineString, Point};
 use kiddo::SquaredEuclidean;
@@ -88,7 +92,7 @@ impl Omap {
         })
     }
 
-    /// reserve capacity for cap elements in key symbol in the objects hashmap
+    /// reserve capacity for cap elements for key symbol in the objects hashmap
     pub fn reserve_capacity(&mut self, symbol: Symbol, cap: usize) {
         if let Some(obj) = self.objects.get_mut(&symbol) {
             obj.reserve(cap);
@@ -98,7 +102,8 @@ impl Omap {
     }
 
     /// insert an object in the objects hashmap
-    pub fn add_object(&mut self, obj: MapObject) {
+    pub fn add_object(&mut self, obj: impl Into<MapObject>) {
+        let obj = obj.into();
         let key = obj.symbol();
         if let Some(val) = self.objects.get_mut(&key) {
             val.push(obj);

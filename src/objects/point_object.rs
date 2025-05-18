@@ -1,8 +1,8 @@
 use crate::{
     geometry::MapCoord,
-    map_object::MapObjectTrait,
-    symbol::{SymbolTrait, TextSymbol},
-    OmapResult, Scale, TagTrait,
+    objects::{MapObjectTrait, TagTrait},
+    symbols::{PointSymbol, SymbolTrait},
+    OmapResult, Scale,
 };
 use geo_types::Point;
 use std::{
@@ -11,38 +11,38 @@ use std::{
     io::{BufWriter, Write},
 };
 
-/// A TextObject representing anything that has a TextSymbol
+/// A PointObject representing anything that has a PointSymbol
 #[derive(Debug, Clone)]
-pub struct TextObject {
+pub struct PointObject {
     /// the coordinate (relative the ref point of the map)
     pub point: Point,
     /// the symbol
-    pub symbol: TextSymbol,
-    /// the actual text to display,
-    pub text: String,
+    pub symbol: PointSymbol,
+    /// a rotation in radians
+    pub rotation: f64,
     /// tags for this object
     pub tags: HashMap<String, String>,
 }
 
-impl TextObject {
-    /// create a text object from a geo_types::Point and String
-    pub fn from_point(point: Point, symbol: TextSymbol, text: String) -> Self {
+impl PointObject {
+    /// create a point object from a geo_types::Point
+    pub fn from_point(point: Point, symbol: PointSymbol, rotation: f64) -> Self {
         Self {
             point,
             symbol,
-            text,
+            rotation,
             tags: HashMap::new(),
         }
     }
 }
 
-impl TagTrait for TextObject {
+impl TagTrait for PointObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         let _ = self.tags.insert(k.into(), v.into());
     }
 }
 
-impl MapObjectTrait for TextObject {
+impl MapObjectTrait for PointObject {
     fn write_to_map(
         self,
         f: &mut BufWriter<File>,
@@ -53,15 +53,14 @@ impl MapObjectTrait for TextObject {
     ) -> OmapResult<()> {
         f.write_all(
             format!(
-                "<object type=\"4\" symbol=\"{}\" h_align=\"1\" v_align=\"2\">",
+                "<object type=\"0\" symbol=\"{}\" rotation=\"{}\">",
                 self.symbol.id(),
+                self.rotation
             )
             .as_bytes(),
         )?;
         self.write_tags(f)?;
-        let text = self.text.clone();
         self.write_coords(f, None, scale, grivation, combined_scale_factor)?;
-        f.write_all(format!("<text>{}</text>", text).as_bytes())?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }

@@ -3,7 +3,11 @@
 //! # Example
 //!
 //! ```
-//! use omap::{Omap, Scale, AreaObject, AreaSymbol, LineObject, LineSymbol, TagTrait, PointSymbol, PointObject, TextSymbol, TextObject};
+//! use omap::{
+//!     objects::{AreaObject, LineObject, PointObject, TextObject, TagTrait},
+//!     symbols::{AreaSymbol, LineSymbol, PointSymbol, TextSymbol},
+//!     Omap, Scale,
+//!     };
 //! use geo_types::{Coord, LineString, Polygon, Point};
 //! use std::{path::PathBuf, str::FromStr};
 //!
@@ -44,10 +48,10 @@
 //! let text = "some text".to_string();
 //! let text_object = TextObject::from_point(text_point, TextSymbol::SpotHeight, text);
 //!
-//! omap.add_object(area_object.into());
-//! omap.add_object(line_object.into());
-//! omap.add_object(point_object.into());
-//! omap.add_object(text_object.into());
+//! omap.add_object(area_object);
+//! omap.add_object(line_object);
+//! omap.add_object(point_object);
+//! omap.add_object(text_object);
 //!
 //! let max_bezier_error = 5.;
 //!
@@ -84,24 +88,16 @@
     warnings
 )]
 
-mod area_object;
 mod geometry;
-mod line_object;
-mod map_object;
+/// Objects module
+pub mod objects;
 mod omap;
-mod point_object;
 mod scale;
-mod symbol;
-mod text_object;
+/// Symbols module
+pub mod symbols;
 
-pub use self::area_object::AreaObject;
-pub use self::line_object::LineObject;
-pub use self::map_object::{MapObject, TagTrait};
 pub use self::omap::Omap;
-pub use self::point_object::PointObject;
 pub use self::scale::Scale;
-pub use self::symbol::*;
-pub use self::text_object::TextObject;
 
 /// crate result
 pub type OmapResult<T> = Result<T, OmapError>;

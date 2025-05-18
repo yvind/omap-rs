@@ -1,38 +1,6 @@
-use crate::{AreaObject, LineObject, OmapResult, PointObject, Scale, Symbol, TextObject};
+use super::{AreaObject, LineObject, MapObjectTrait, PointObject, TagTrait, TextObject};
+use crate::{symbols::Symbol, OmapResult, Scale};
 use std::{fs::File, io::BufWriter};
-
-pub(crate) trait MapObjectTrait {
-    fn write_to_map(
-        self,
-        f: &mut BufWriter<File>,
-        bezier_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        combined_scale_factor: f64,
-    ) -> OmapResult<()>;
-
-    fn write_coords(
-        self,
-        f: &mut BufWriter<File>,
-        bezier_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        combined_scale_factor: f64,
-    ) -> OmapResult<()>;
-
-    fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()>;
-}
-
-/// trait for adding tags to objects
-pub trait TagTrait {
-    /// add any tag
-    fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>);
-
-    /// add an elevation tag
-    fn add_elevation_tag(&mut self, elevation: f64) {
-        self.add_tag("Elevation", format!("{:.2}", elevation));
-    }
-}
 
 /// Enum for the different map object types
 #[derive(Debug, Clone)]

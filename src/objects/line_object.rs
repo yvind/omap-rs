@@ -1,48 +1,45 @@
 use crate::{
     geometry::Serialize,
-    map_object::MapObjectTrait,
-    symbol::{AreaSymbol, SymbolTrait},
-    OmapResult, Scale, TagTrait,
+    objects::{MapObjectTrait, TagTrait},
+    symbols::{LineSymbol, SymbolTrait},
+    OmapResult, Scale,
 };
-use geo_types::Polygon;
+use geo_types::LineString;
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
 };
 
-/// A AreaObject representing anything that has a AreaSymbol
+/// A LineObject representing anything that has a LineSymbol
 #[derive(Debug, Clone)]
-pub struct AreaObject {
-    /// the polygon with coordinates relative the maps ref-point
-    pub polygon: Polygon,
-    /// any area_symbol
-    pub symbol: AreaSymbol,
-    /// some area symbols have a rotation on the pattern
-    pub pattern_rotation: f64,
+pub struct LineObject {
+    /// the linestring with coordinates relative the maps ref-point
+    pub line: LineString,
+    /// any line symbol
+    pub symbol: LineSymbol,
     /// tags for the object
     pub tags: HashMap<String, String>,
 }
 
-impl AreaObject {
-    /// create an area object from a geo_types::Polygon
-    pub fn from_polygon(polygon: Polygon, symbol: AreaSymbol, pattern_rotation: f64) -> Self {
+impl LineObject {
+    /// create a line object from a geo_types::LineString
+    pub fn from_line_string(line: LineString, symbol: LineSymbol) -> Self {
         Self {
-            polygon,
+            line,
             symbol,
-            pattern_rotation,
             tags: HashMap::new(),
         }
     }
 }
 
-impl TagTrait for AreaObject {
+impl TagTrait for LineObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         let _ = self.tags.insert(k.into(), v.into());
     }
 }
 
-impl MapObjectTrait for AreaObject {
+impl MapObjectTrait for LineObject {
     fn write_to_map(
         self,
         f: &mut BufWriter<File>,
@@ -67,24 +64,15 @@ impl MapObjectTrait for AreaObject {
         combined_scale_factor: f64,
     ) -> OmapResult<()> {
         let (bytes, num_coords) = if let Some(bezier_error) = bez_error {
-            self.polygon
+            self.line
                 .serialize_bezier(bezier_error, scale, grivation, combined_scale_factor)
         } else {
-            self.polygon
+            self.line
                 .serialize_polyline(scale, grivation, combined_scale_factor)
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;
         f.write_all(b"</coords>")?;
-        if self.symbol.is_rotatable() {
-            f.write_all(
-                format!(
-                    "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern>",
-                    self.pattern_rotation
-                )
-                .as_bytes(),
-            )?;
-        }
         Ok(())
     }
 
