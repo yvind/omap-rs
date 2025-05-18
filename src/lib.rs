@@ -12,10 +12,17 @@
 //! use std::{path::PathBuf, str::FromStr};
 //!
 //! let map_center = Coord {x: 463_575.5, y: 6_833_849.6};
+//! let map_center_elevation_meters = 2_469.;
+//! let crs_epsg_code = 25832;
 //!
-//! let mut omap = Omap::new(map_center, Scale::S15_000, Some(25832), Some(2_469.)).expect("Could not make map with the given CRS-code");
+//! let mut omap = Omap::new(
+//!     map_center,
+//!     Scale::S15_000,
+//!     Some(crs_epsg_code),
+//!     Some(map_center_elevation_meters)
+//! ).expect("Could not make map with the given CRS-code");
 //!
-//! // coordinates of geometry is relative the map_center
+//! // coordinates of geometry are in the same units as the map_center, but relative the map_center
 //! let polygon = Polygon::new(
 //!     LineString::new(vec![
 //!         Coord {x: -50., y: -50.},
@@ -32,7 +39,8 @@
 //!             Coord {x: -60., y: 20.},
 //!             Coord {x: -20., y: 25.},
 //!             Coord {x: 0., y: 27.5},
-//!             Coord {x: 20., y: 25.},
+//!             Coord {x: 20., y: 26.},
+//!             Coord {x: 40., y: 22.5},
 //!             Coord {x: 60., y: 20.},
 //!             Coord {x: 60., y: -20.},
 //!             Coord {x: -60., y: -20.},
@@ -53,9 +61,12 @@
 //! omap.add_object(point_object);
 //! omap.add_object(text_object);
 //!
-//! let max_bezier_error = 5.;
+//! let max_bezier_deviation_meters = 2.5;
 //!
-//! omap.write_to_file(PathBuf::from_str("./my_map.omap").unwrap(), Some(max_bezier_error)).expect("Could not write to file");
+//! omap.write_to_file(
+//!     PathBuf::from_str("./my_map.omap").unwrap(),
+//!     Some(max_bezier_deviation_meters)
+//! ).expect("Could not write to file");
 //! ```
 
 #![deny(
