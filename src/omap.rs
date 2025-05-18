@@ -434,12 +434,13 @@ impl Omap {
             transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
             geo_ref_point = (geo_ref_point.0.to_degrees(), geo_ref_point.1.to_degrees());
 
-            f.write_all(format!("<georeferencing scale=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\">\
+            f.write_all(format!("<georeferencing scale=\"{}\" grid_scale_factor=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\" grivation=\"{}\">\
             <projected_crs id=\"EPSG\"><spec language=\"PROJ.4\">+init=epsg:{}</spec><parameter>{}</parameter>\
             <ref_point x=\"{}\" y=\"{}\"/></projected_crs><geographic_crs id=\"Geographic coordinates\">\
             <spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec>\
-            <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>",
-            self.scale, self.elevation_scale_factor, self.declination.to_degrees(), epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).as_bytes())?;
+            <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>\n",
+            self.scale, self.combined_scale_factor, self.elevation_scale_factor, self.declination.to_degrees(), self.grivation.to_degrees(),
+            epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).as_bytes())?;
         } else {
             f.write_all(format!("<georeferencing scale=\"{}\"><projected_crs id=\"Local\"><ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n", self.scale, self.ref_point.x, self.ref_point.y).as_bytes())?;
         }
@@ -508,7 +509,8 @@ impl Omap {
         let baseline_proj = Proj::from_proj_string(
             format!(
                 "+proj=sterea +lat_0={} +lon_0={} +ellps=WGS84 +units=m",
-                geo_ref_point.1, geo_ref_point.0
+                geo_ref_point.1.to_degrees(),
+                geo_ref_point.0.to_degrees()
             )
             .as_str(),
         )?;
