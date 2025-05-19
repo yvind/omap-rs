@@ -1,6 +1,6 @@
 [package]
 name = "omap"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Øyvind Hjermstad <@yvind>"]
 
@@ -24,3 +24,6 @@ world_magnetic_model = { version = "0.2.0", optional = true }
 default = ["geo_ref"]
 geo_ref = ["dep:proj4rs", "dep:world_magnetic_model", "dep:chrono"]
 merge_lines = ["dep:kiddo"]
+
+[package.metadata.docs.rs]
+all-features = true

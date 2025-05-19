@@ -1,6 +1,6 @@
 use crate::{
     objects::{MapObjectTrait, TagTrait},
-    serialize::MapCoord,
+    serialize::SerializePolyLine,
     symbols::{SymbolTrait, TextSymbol},
     OmapResult, Scale,
 };
@@ -74,11 +74,13 @@ impl MapObjectTrait for TextObject {
         grivation: f64,
         inv_combined_scale_factor: f64,
     ) -> OmapResult<()> {
-        let c = self
-            .point
-            .0
-            .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
-        f.write_all(format!("<coords count=\"1\">{} {};</coords>", c.0, c.1).as_bytes())?;
+        let (bytes, _) =
+            self.point
+                .serialize_polyline(scale, grivation, inv_combined_scale_factor)?;
+
+        f.write_all(b"<coords count=\"1\">")?;
+        f.write_all(&bytes)?;
+        f.write_all(b"</coords>")?;
         Ok(())
     }
 

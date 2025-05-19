@@ -79,7 +79,7 @@ impl Omap {
         })
     }
 
-    /// reserve capacity for cap elements for key symbol in the objects hashmap
+    /// Reserve capacity for `cap` elements for key `symbol` in the objects hashmap
     pub fn reserve_capacity(&mut self, symbol: impl Into<Symbol>, cap: usize) {
         let symbol = symbol.into();
         if let Some(obj) = self.objects.get_mut(&symbol) {
@@ -89,7 +89,7 @@ impl Omap {
         }
     }
 
-    /// insert an object in the objects hashmap
+    /// Insert an object in the objects hashmap
     pub fn add_object(&mut self, obj: impl Into<MapObject>) {
         let obj = obj.into();
         let key = obj.symbol();
@@ -100,17 +100,17 @@ impl Omap {
         }
     }
 
-    /// get the CRS of the map represented by an EPSG code
+    /// Get the CRS of the map represented by an EPSG code
     pub fn get_crs(&self) -> Option<u16> {
         self.epsg
     }
 
-    /// get the ref point of the map
+    /// Get the ref point of the map
     pub fn get_ref_point(&self) -> Coord {
         self.ref_point
     }
 
-    /// Merge line objects that are tip to tail   
+    /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature     
     /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs most often meters) apart are merged.  
     /// Elevation tags are respected and only elements with equal Elevation tags can be merged
     #[cfg(feature = "merge_lines")]
@@ -272,7 +272,7 @@ impl Omap {
         }
     }
 
-    /// turn small contour loops to dotknolls and depressions and remove the smallest ones
+    /// Turn small contour loops to dotknolls and depressions and remove the smallest ones
     pub fn make_dotknolls_and_depressions(
         &mut self,
         min_area: f64,
@@ -348,7 +348,7 @@ impl Omap {
         }
     }
 
-    /// mark closed basemap contour loops wound clockwise as depressions
+    /// Mark closed basemap contour loops wound clockwise as depressions
     pub fn mark_basemap_depressions(&mut self) {
         let basemap = self
             .objects
@@ -383,8 +383,8 @@ impl Omap {
             .insert(Symbol::Line(LineSymbol::NegBasemapContour), neg_basemap);
     }
 
-    /// write the map to an omap file,  
-    /// if path is an invalid path then "auto_generated_map.omap" is the new path
+    /// Write the map to an omap file,  
+    /// if `path` is an invalid path then "auto_generated_map.omap" is the new path
     pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
         if path.as_os_str().is_empty() || path.is_dir() {
             path.push("auto_generated_map.omap");

@@ -1,6 +1,6 @@
 use crate::{
     objects::{MapObjectTrait, TagTrait},
-    serialize::Serialize,
+    serialize::{SerializeBezier, SerializePolyLine},
     symbols::{AreaSymbol, SymbolTrait},
     OmapResult, Scale,
 };
@@ -18,7 +18,8 @@ pub struct AreaObject {
     pub polygon: Polygon,
     /// any area_symbol
     pub symbol: AreaSymbol,
-    /// some area symbols have a rotation on the pattern
+    /// some area symbols have a rotation on the pattern  
+    /// this field is only respected if `symbol.is_rotatable()`
     pub pattern_rotation: f64,
     /// tags for the object
     pub tags: HashMap<String, String>,
@@ -80,7 +81,7 @@ impl MapObjectTrait for AreaObject {
             f.write_all(
                 format!(
                     "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern>",
-                    self.pattern_rotation
+                    self.pattern_rotation + grivation
                 )
                 .as_bytes(),
             )?;

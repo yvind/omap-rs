@@ -1,9 +1,9 @@
-use geo_types::{Coord, LineString, Polygon};
+use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
 
 use crate::{OmapError, OmapResult, Scale};
 
-pub(crate) trait MapCoord {
+trait MapCoord {
     fn to_map_coordinates(
         self,
         scale: Scale,
@@ -50,14 +50,16 @@ impl MapCoord for Coord {
     }
 }
 
-pub(crate) trait Serialize {
+pub(crate) trait SerializePolyLine {
     fn serialize_polyline(
         self,
         scale: Scale,
         grivation: f64,
         inv_combined_scale_factor: f64,
     ) -> OmapResult<(Vec<u8>, usize)>;
+}
 
+pub(crate) trait SerializeBezier {
     fn serialize_bezier(
         self,
         bezier_error: f64,
@@ -67,7 +69,7 @@ pub(crate) trait Serialize {
     ) -> OmapResult<(Vec<u8>, usize)>;
 }
 
-impl Serialize for LineString {
+impl SerializePolyLine for LineString {
     fn serialize_polyline(
         self,
         scale: Scale,
@@ -102,7 +104,9 @@ impl Serialize for LineString {
         }
         Ok((byte_vec, num_coords))
     }
+}
 
+impl SerializeBezier for LineString {
     fn serialize_bezier(
         self,
         bezier_error: f64,
@@ -199,7 +203,7 @@ impl Serialize for LineString {
     }
 }
 
-impl Serialize for Polygon {
+impl SerializePolyLine for Polygon {
     fn serialize_polyline(
         self,
         scale: Scale,
@@ -218,7 +222,9 @@ impl Serialize for Polygon {
         }
         Ok((bytes_vec, num_coords))
     }
+}
 
+impl SerializeBezier for Polygon {
     fn serialize_bezier(
         self,
         bezier_error: f64,
@@ -238,5 +244,21 @@ impl Serialize for Polygon {
             num_coords += hc;
         }
         Ok((bytes_vec, num_coords))
+    }
+}
+
+impl SerializePolyLine for Point {
+    fn serialize_polyline(
+        self,
+        scale: Scale,
+        grivation: f64,
+        inv_combined_scale_factor: f64,
+    ) -> OmapResult<(Vec<u8>, usize)> {
+        let c = self
+            .0
+            .to_map_coordinates(scale, grivation, inv_combined_scale_factor)?;
+        let bytes = format!("{} {};", c.0, c.1).into_bytes();
+
+        Ok((bytes, 1))
     }
 }

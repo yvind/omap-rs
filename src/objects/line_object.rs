@@ -1,6 +1,6 @@
 use crate::{
     objects::{MapObjectTrait, TagTrait},
-    serialize::Serialize,
+    serialize::{SerializeBezier, SerializePolyLine},
     symbols::{LineSymbol, SymbolTrait},
     OmapResult, Scale,
 };
