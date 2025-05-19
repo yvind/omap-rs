@@ -3,15 +3,18 @@ use crate::{
     symbols::{LineSymbol, PointSymbol, Symbol},
     OmapResult, Scale,
 };
-use chrono::Datelike;
 use geo_types::{Coord, LineString, Point};
-use kiddo::SquaredEuclidean;
-use proj4rs::{transform::transform, Proj};
 use std::{
     collections::HashMap,
     io::{BufWriter, Write},
 };
 use std::{ffi::OsStr, fs::File, path::PathBuf};
+
+#[cfg(feature = "geo_ref")]
+use chrono::Datelike;
+#[cfg(feature = "geo_ref")]
+use proj4rs::{transform::transform, Proj};
+#[cfg(feature = "geo_ref")]
 use world_magnetic_model::{
     time::Date,
     uom::si::f32::{Angle, Length},
@@ -27,8 +30,10 @@ use world_magnetic_model::{
 /// else it is written in Local space
 #[derive(Debug)]
 pub struct Omap {
+    #[allow(unused)]
     elevation_scale_factor: f64,
     combined_scale_factor: f64,
+    #[allow(unused)]
     declination: f64,
     grivation: f64,
     scale: Scale,
@@ -45,19 +50,21 @@ impl Omap {
         ref_point: Coord,
         scale: Scale,
         epsg_crs: Option<u16>,
-        meters_above_sea: Option<f64>,
+        #[allow(unused_variables)] meters_above_sea: Option<f64>,
     ) -> OmapResult<Self> {
-        let declination = if let Some(epsg) = epsg_crs {
-            Self::declination(epsg, ref_point, meters_above_sea)?
-        } else {
-            0.
+        #[allow(unused_mut)]
+        let mut declination = 0.;
+        #[cfg(feature = "geo_ref")]
+        if let Some(epsg) = epsg_crs {
+            declination = Self::declination(epsg, ref_point, meters_above_sea)?;
         };
 
-        let (grid_scale_factor, elevation_scale_factor, convergence) = if let Some(epsg) = epsg_crs
-        {
-            Self::scale_factors_and_convergence(epsg, ref_point, meters_above_sea)?
-        } else {
-            (1., 1., 0.)
+        #[allow(unused_mut)]
+        let (mut grid_scale_factor, mut elevation_scale_factor, mut convergence) = (1., 1., 0.);
+        #[cfg(feature = "geo_ref")]
+        if let Some(epsg) = epsg_crs {
+            (grid_scale_factor, elevation_scale_factor, convergence) =
+                Self::scale_factors_and_convergence(epsg, ref_point, meters_above_sea)?;
         };
 
         Ok(Omap {
@@ -106,6 +113,7 @@ impl Omap {
     /// Merge line objects that are tip to tail   
     /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs most often meters) apart are merged.  
     /// Elevation tags are respected and only elements with equal Elevation tags can be merged
+    #[cfg(feature = "merge_lines")]
     pub fn merge_lines(&mut self, delta: f64) {
         for (key, map_objects) in self.objects.iter_mut() {
             if !key.is_line_symbol() {
@@ -191,7 +199,7 @@ impl Omap {
 
                 let mut merges = Vec::with_capacity(line_starts.len());
                 for (start_i, line_start) in line_starts.iter().enumerate() {
-                    let nn = end_tree.nearest_one::<SquaredEuclidean>(line_start);
+                    let nn = end_tree.nearest_one::<kiddo::SquaredEuclidean>(line_start);
                     if nn.distance <= delta {
                         merges.push((start_i, nn.item as usize));
                     }
@@ -408,27 +416,38 @@ impl Omap {
     fn write_header(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
         f.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<map xmlns=\"http://openorienteering.org/apps/mapper/xml/v2\" version=\"9\">\n<notes></notes>\n")?;
 
-        if let Some(epsg) = self.epsg {
-            let geographic_proj = Proj::from_epsg_code(4326)?;
-            let local_proj = Proj::from_epsg_code(epsg)?;
+        #[allow(unused_mut)]
+        let mut geo_ref_bytes = format!("<georeferencing scale=\"{}\"><projected_crs id=\"Local\"><ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n", self.scale, self.ref_point.x, self.ref_point.y).into_bytes();
+        #[cfg(feature = "geo_ref")]
+        if self.epsg.is_some() {
+            geo_ref_bytes = self.get_georef_bytes()?;
+        };
 
-            // transform ref_point to lat/lon
-            let mut geo_ref_point = (self.ref_point.x, self.ref_point.y);
-            transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
-            geo_ref_point = (geo_ref_point.0.to_degrees(), geo_ref_point.1.to_degrees());
-
-            f.write_all(format!("<georeferencing scale=\"{}\" grid_scale_factor=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\" grivation=\"{}\">\
-            <projected_crs id=\"EPSG\"><spec language=\"PROJ.4\">+init=epsg:{}</spec><parameter>{}</parameter>\
-            <ref_point x=\"{}\" y=\"{}\"/></projected_crs><geographic_crs id=\"Geographic coordinates\">\
-            <spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec>\
-            <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>\n",
-            self.scale, self.combined_scale_factor, self.elevation_scale_factor, self.declination.to_degrees(), self.grivation.to_degrees(),
-            epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).as_bytes())?;
-        } else {
-            f.write_all(format!("<georeferencing scale=\"{}\"><projected_crs id=\"Local\"><ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n", self.scale, self.ref_point.x, self.ref_point.y).as_bytes())?;
-        }
+        f.write_all(&geo_ref_bytes)?;
 
         Ok(())
+    }
+
+    #[cfg(feature = "geo_ref")]
+    fn get_georef_bytes(&self) -> OmapResult<Vec<u8>> {
+        let epsg = self.epsg.unwrap();
+
+        let geographic_proj = Proj::from_epsg_code(4326)?;
+        let local_proj = Proj::from_epsg_code(epsg)?;
+
+        // transform ref_point to lat/lon
+        let mut geo_ref_point = (self.ref_point.x, self.ref_point.y);
+        transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
+        geo_ref_point = (geo_ref_point.0.to_degrees(), geo_ref_point.1.to_degrees());
+
+        let bytes = format!("<georeferencing scale=\"{}\" grid_scale_factor=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\" grivation=\"{}\">\
+        <projected_crs id=\"EPSG\"><spec language=\"PROJ.4\">+init=epsg:{}</spec><parameter>{}</parameter>\
+        <ref_point x=\"{}\" y=\"{}\"/></projected_crs><geographic_crs id=\"Geographic coordinates\">\
+        <spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec>\
+        <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>\n",
+        self.scale, self.combined_scale_factor, self.elevation_scale_factor, self.declination.to_degrees(), self.grivation.to_degrees(),
+        epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).into_bytes();
+        Ok(bytes)
     }
 
     fn write_colors_symbols(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
@@ -478,6 +497,7 @@ impl Omap {
         Ok(())
     }
 
+    #[cfg(feature = "geo_ref")]
     fn scale_factors_and_convergence(
         epsg: u16,
         ref_point: Coord,
@@ -557,6 +577,7 @@ impl Omap {
         Ok((grid_scale_factor, elevation_scale_factor, convergence))
     }
 
+    #[cfg(feature = "geo_ref")]
     fn declination(
         epsg: u16,
         ref_point: Coord,
