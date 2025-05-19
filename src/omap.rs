@@ -23,7 +23,7 @@ use world_magnetic_model::{
 ///
 /// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point  
 ///
-/// If epsg.is_some() the map is written georeferenced
+/// The map will be georeferenced if epsg.is_some()  
 /// else it is written in Local space
 #[derive(Debug)]
 pub struct Omap {
@@ -47,28 +47,6 @@ impl Omap {
         epsg_crs: Option<u16>,
         meters_above_sea: Option<f64>,
     ) -> OmapResult<Self> {
-        // uses the world magnetic model to figure out the declination (angle between true north and magnetic north) at the ref_point at the current time
-        // and proj4rs for the convergence (angle between true north and grid north)
-        //
-        // the grivation (angle between magnetic north and grid north) must be used when calculating map coords as the axes are magnetic
-        // grivation = declination - convergence
-        //
-        // the grid scale factor is calculated by the same algorithm as in OOmapper (I tried to do a 1:1 port)
-        //
-        // further the elevation factor (called auxiliary scale factor in OOmapper) relates real distances to ellipsoid distances
-        // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid))
-        //
-        // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
-        // f = 1 / 298.257223563
-        // R_equator = 6378137.0m
-        //
-        // to calculate map units the combined scale factor and scale of map is needed to go from grid coordinates to real coordinates to map coordinates
-        //
-        // in summary to calculate map coordinates we need:
-        // - a crs
-        // - grivation (declination - convergence)
-        // - the combined scale factor
-
         let declination = if let Some(epsg) = epsg_crs {
             Self::declination(epsg, ref_point, meters_above_sea)?
         } else {
@@ -125,7 +103,9 @@ impl Omap {
         self.ref_point
     }
 
-    /// merge line objects across tile bounds
+    /// Merge line objects that are tip to tail   
+    /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs most often meters) apart are merged.  
+    /// Elevation tags are respected and only elements with equal Elevation tags can be merged
     pub fn merge_lines(&mut self, delta: f64) {
         for (key, map_objects) in self.objects.iter_mut() {
             if !key.is_line_symbol() {
@@ -284,7 +264,7 @@ impl Omap {
         }
     }
 
-    /// turn small contour loops to dotknolls and depression and remove the smallest ones
+    /// turn small contour loops to dotknolls and depressions and remove the smallest ones
     pub fn make_dotknolls_and_depressions(
         &mut self,
         min_area: f64,
@@ -395,7 +375,7 @@ impl Omap {
             .insert(Symbol::Line(LineSymbol::NegBasemapContour), neg_basemap);
     }
 
-    /// write the map an omap file,
+    /// write the map to an omap file,  
     /// if path is an invalid path then "auto_generated_map.omap" is the new path
     pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
         if path.as_os_str().is_empty() || path.is_dir() {
@@ -407,7 +387,7 @@ impl Omap {
         }
 
         // File::create might fail on some platforms if not the entire parent path exists
-        // So just to make sure they exist
+        // So just to make sure it exists
         if let Some(dir_path) = path.parent() {
             let _ = std::fs::create_dir_all(dir_path);
         }
