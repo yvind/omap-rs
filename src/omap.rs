@@ -19,8 +19,10 @@ use world_magnetic_model::{
     GeomagneticField,
 };
 
-/// Struct representing an Orienteering map
-/// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point
+/// Struct representing an Orienteering map  
+///
+/// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point  
+///
 /// If epsg.is_some() the map is written georeferenced
 /// else it is written in Local space
 #[derive(Debug)]
@@ -93,7 +95,8 @@ impl Omap {
     }
 
     /// reserve capacity for cap elements for key symbol in the objects hashmap
-    pub fn reserve_capacity(&mut self, symbol: Symbol, cap: usize) {
+    pub fn reserve_capacity(&mut self, symbol: impl Into<Symbol>, cap: usize) {
+        let symbol = symbol.into();
         if let Some(obj) = self.objects.get_mut(&symbol) {
             obj.reserve(cap);
         } else {
