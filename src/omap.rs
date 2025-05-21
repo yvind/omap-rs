@@ -24,10 +24,7 @@ use world_magnetic_model::{
 
 /// Struct representing an Orienteering map  
 ///
-/// ALL OBJECT COORDINATES ARE RELATIVE THE ref_point  
-///
-/// The map will be georeferenced if epsg.is_some()  
-/// else it is written in Local space
+/// The map will be georeferenced if epsg.is_some() or else it is written in Local space
 #[derive(Debug)]
 pub struct Omap {
     #[allow(unused)]
@@ -37,44 +34,53 @@ pub struct Omap {
     declination: f64,
     grivation: f64,
     scale: Scale,
-    epsg: Option<u16>,
+    epsg_crs: Option<u16>,
     ref_point: Coord,
+    geo_ref_point: Option<Coord>,
 
     /// the objects of the map
     pub objects: HashMap<Symbol, Vec<MapObject>>,
 }
 
 impl Omap {
-    /// Create a new map in the given scale with an optional CRS centered att ref_point which is meters_above_sea in elevation
+    /// Create a new map in the given scale centered at the `ref_point` (projected coordinates) with an optional CRS and optional `meters_above_sea_level` in elevation  
+    ///
+    /// __All coordinates of objects added to the map must be relative the `ref_point`__
+    /// The `ref_point` can be retrieved with [Self::get_ref_point]
     pub fn new(
         ref_point: Coord,
         scale: Scale,
         epsg_crs: Option<u16>,
-        #[allow(unused_variables)] meters_above_sea: Option<f64>,
+        #[allow(unused_variables)] meters_above_sea_level: Option<f64>,
     ) -> OmapResult<Self> {
-        #[allow(unused_mut)]
-        let mut declination = 0.;
-        #[cfg(feature = "geo_ref")]
-        if let Some(epsg) = epsg_crs {
-            declination = Self::declination(epsg, ref_point, meters_above_sea)?;
+        let (declination, convergence, grid_scale_factor, elevation_scale_factor, geo_ref_point) = {
+            #[cfg(feature = "geo_ref")]
+            if let Some(epsg) = epsg_crs {
+                Self::get_geo_ref_parameters(epsg, ref_point, meters_above_sea_level)?
+            } else {
+                (0., 0., 1., 1., None)
+            }
+            #[cfg(not(feature = "geo_ref"))]
+            {
+                if epsg_crs.is_some() {
+                    return Err(crate::OmapError::DisabledGeoReferencingFeature);
+                }
+                (0., 0., 1., 1., None)
+            }
         };
 
-        #[allow(unused_mut)]
-        let (mut grid_scale_factor, mut elevation_scale_factor, mut convergence) = (1., 1., 0.);
-        #[cfg(feature = "geo_ref")]
-        if let Some(epsg) = epsg_crs {
-            (grid_scale_factor, elevation_scale_factor, convergence) =
-                Self::scale_factors_and_convergence(epsg, ref_point, meters_above_sea)?;
-        };
+        let grivation = declination - convergence;
+        let combined_scale_factor = grid_scale_factor * elevation_scale_factor;
 
         Ok(Omap {
             elevation_scale_factor,
-            combined_scale_factor: grid_scale_factor * elevation_scale_factor,
+            combined_scale_factor,
             declination,
-            grivation: declination - convergence,
+            grivation,
             scale,
-            epsg: epsg_crs,
+            epsg_crs,
             ref_point,
+            geo_ref_point,
             objects: HashMap::new(),
         })
     }
@@ -89,7 +95,8 @@ impl Omap {
         }
     }
 
-    /// Insert an object in the objects hashmap
+    /// Insert an object in the objects hashmap  
+    /// __All coordinates of objects added to the map must be relative the map's `ref_point`__
     pub fn add_object(&mut self, obj: impl Into<MapObject>) {
         let obj = obj.into();
         let key = obj.symbol();
@@ -102,12 +109,18 @@ impl Omap {
 
     /// Get the CRS of the map represented by an EPSG code
     pub fn get_crs(&self) -> Option<u16> {
-        self.epsg
+        self.epsg_crs
     }
 
-    /// Get the ref point of the map
+    /// Get the projected ref point of the map
     pub fn get_ref_point(&self) -> Coord {
         self.ref_point
+    }
+
+    /// Get the geographical ref point of the map
+    #[cfg(feature = "geo_ref")]
+    pub fn get_geo_ref_point(&self) -> Option<Coord> {
+        self.geo_ref_point
     }
 
     /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature     
@@ -416,38 +429,31 @@ impl Omap {
     fn write_header(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
         f.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<map xmlns=\"http://openorienteering.org/apps/mapper/xml/v2\" version=\"9\">\n<notes></notes>\n")?;
 
-        #[allow(unused_mut)]
-        let mut geo_ref_bytes = format!("<georeferencing scale=\"{}\"><projected_crs id=\"Local\"><ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n", self.scale, self.ref_point.x, self.ref_point.y).into_bytes();
-        #[cfg(feature = "geo_ref")]
-        if self.epsg.is_some() {
-            geo_ref_bytes = self.get_georef_bytes()?;
+        let geo_ref_bytes = {
+            if let (Some(epsg), Some(geo_ref_point)) = (self.epsg_crs, self.geo_ref_point) {
+                self.get_georef_bytes(epsg, geo_ref_point)
+            } else {
+                format!(
+                    "<georeferencing scale=\"{}\"><projected_crs id=\"Local\">\
+                <ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n",
+                    self.scale, self.ref_point.x, self.ref_point.y
+                )
+                .into_bytes()
+            }
         };
-
         f.write_all(&geo_ref_bytes)?;
 
         Ok(())
     }
 
-    #[cfg(feature = "geo_ref")]
-    fn get_georef_bytes(&self) -> OmapResult<Vec<u8>> {
-        let epsg = self.epsg.unwrap();
-
-        let geographic_proj = Proj::from_epsg_code(4326)?;
-        let local_proj = Proj::from_epsg_code(epsg)?;
-
-        // transform ref_point to lat/lon
-        let mut geo_ref_point = (self.ref_point.x, self.ref_point.y);
-        transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
-        geo_ref_point = (geo_ref_point.0.to_degrees(), geo_ref_point.1.to_degrees());
-
-        let bytes = format!("<georeferencing scale=\"{}\" grid_scale_factor=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\" grivation=\"{}\">\
+    fn get_georef_bytes(&self, epsg: u16, geo_ref_point: Coord) -> Vec<u8> {
+        format!("<georeferencing scale=\"{}\" grid_scale_factor=\"{}\" auxiliary_scale_factor=\"{}\" declination=\"{}\" grivation=\"{}\">\
         <projected_crs id=\"EPSG\"><spec language=\"PROJ.4\">+init=epsg:{}</spec><parameter>{}</parameter>\
         <ref_point x=\"{}\" y=\"{}\"/></projected_crs><geographic_crs id=\"Geographic coordinates\">\
         <spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec>\
         <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>\n",
         self.scale, self.combined_scale_factor, self.elevation_scale_factor, self.declination.to_degrees(), self.grivation.to_degrees(),
-        epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.1, geo_ref_point.0).into_bytes();
-        Ok(bytes)
+        epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.y.to_degrees(), geo_ref_point.x.to_degrees()).into_bytes()
     }
 
     fn write_colors_symbols(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
@@ -498,67 +504,83 @@ impl Omap {
     }
 
     #[cfg(feature = "geo_ref")]
-    fn scale_factors_and_convergence(
+    fn get_geo_ref_parameters(
         epsg: u16,
         ref_point: Coord,
-        meters_above_sea_level: Option<f64>,
-    ) -> OmapResult<(f64, f64, f64)> {
-        let geographic_proj = Proj::from_epsg_code(4326)?;
+        meters_above_sea: Option<f64>,
+    ) -> OmapResult<(f64, f64, f64, f64, Option<Coord>)> {
+        // get geographic ref point
+        let mut geo_ref_point = ref_point;
+        let geo_proj = Proj::from_epsg_code(4326)?;
         let local_proj = Proj::from_epsg_code(epsg)?;
+        transform(&local_proj, &geo_proj, &mut geo_ref_point)?;
 
-        // transform ref_point to lat/lon
-        let mut geo_ref_point = (ref_point.x, ref_point.y);
-        transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
+        // get magnetic declination
+        let declination = Self::get_declination(geo_ref_point, meters_above_sea)?;
+        let elevation_scale_factor =
+            Self::get_elevation_scale_factor(geo_ref_point, meters_above_sea);
 
+        let (convergence, grid_scale_factor) =
+            Self::get_convergence_and_grid_scale_factor(epsg, geo_ref_point)?;
+
+        Ok((
+            declination,
+            convergence,
+            grid_scale_factor,
+            elevation_scale_factor,
+            Some(geo_ref_point),
+        ))
+    }
+
+    #[cfg(feature = "geo_ref")]
+    fn get_convergence_and_grid_scale_factor(
+        epsg: u16,
+        geo_ref_point: Coord,
+    ) -> OmapResult<(f64, f64)> {
+        let local_proj = Proj::from_epsg_code(epsg)?;
         let baseline_proj = Proj::from_proj_string(
             format!(
                 "+proj=sterea +lat_0={} +lon_0={} +ellps=WGS84 +units=m",
-                geo_ref_point.1.to_degrees(),
-                geo_ref_point.0.to_degrees()
+                geo_ref_point.y.to_degrees(),
+                geo_ref_point.x.to_degrees()
             )
             .as_str(),
         )?;
 
-        const DELTA: f64 = 1000.0;
-        let mut base_line_points = [
-            (DELTA / 2., 0.),  // EAST
-            (0., DELTA / 2.),  // NORTH
-            (-DELTA / 2., 0.), // WEST
-            (0., -DELTA / 2.), // SOUTH
-        ];
+        const D: f64 = 1000.0;
+        let mut meridian =
+            geo_types::Line::new(Coord { x: 0., y: -D / 2. }, Coord { x: 0., y: D / 2. });
+        let mut parallel =
+            geo_types::Line::new(Coord { x: -D / 2., y: 0. }, Coord { x: D / 2., y: 0. });
 
-        // Determine 1 km baselines west-east and south-north on the ellipsoid
-        transform(
-            &baseline_proj,
-            &geographic_proj,
-            base_line_points.as_mut_slice(),
-        )?;
-
-        //re-project the points down to the grid
-        transform(
-            &geographic_proj,
-            &local_proj,
-            base_line_points.as_mut_slice(),
-        )?;
+        // Project the baselines to the local grid
+        transform(&baseline_proj, &local_proj, &mut meridian)?;
+        transform(&baseline_proj, &local_proj, &mut parallel)?;
 
         // Points on the same meridian
-        let d_northing_dy = (base_line_points[1].1 - base_line_points[3].1) / DELTA;
-        let d_easting_dy = (base_line_points[1].0 - base_line_points[3].0) / DELTA;
-
-        // Points on the same parallel
-        let d_northing_dx = (base_line_points[0].1 - base_line_points[2].1) / DELTA;
-        let d_easting_dx = (base_line_points[0].0 - base_line_points[2].0) / DELTA;
+        let meridian_delta = meridian.delta() / D;
+        let parallel_delta = parallel.delta() / D;
 
         // Check determinant
-        let determinant = d_easting_dx * d_northing_dy - d_northing_dx * d_easting_dy;
+        let determinant = parallel_delta.x * meridian_delta.y - parallel_delta.y * meridian_delta.x;
         if determinant < 0.00001 {
             Err(proj4rs::errors::Error::ToleranceConditionError)?;
         }
 
-        let convergence = (d_northing_dx - d_easting_dy).atan2(d_easting_dx + d_northing_dy);
+        let convergence =
+            (parallel_delta.y - meridian_delta.x).atan2(parallel_delta.x + meridian_delta.y);
+
         let grid_scale_factor = determinant.sqrt();
 
-        let elevation_scale_factor = if let Some(meters_above_sea_level) = meters_above_sea_level {
+        Ok((convergence, grid_scale_factor))
+    }
+
+    #[cfg(feature = "geo_ref")]
+    fn get_elevation_scale_factor(
+        geo_ref_point: Coord,
+        meters_above_sea_level: Option<f64>,
+    ) -> f64 {
+        if let Some(meters_above_sea_level) = meters_above_sea_level {
             // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid))
             //
             // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
@@ -567,37 +589,27 @@ impl Omap {
             const F: f64 = 1. / 298.257223563;
             const R_EQUATOR: f64 = 6378137.;
 
-            let ellipsoid_radius = R_EQUATOR * (1. - F * geo_ref_point.0.sin().powi(2));
+            let ellipsoid_radius = R_EQUATOR * (1. - F * geo_ref_point.y.sin().powi(2));
 
             ellipsoid_radius / (ellipsoid_radius + meters_above_sea_level)
         } else {
             1.
-        };
-
-        Ok((grid_scale_factor, elevation_scale_factor, convergence))
+        }
     }
 
     #[cfg(feature = "geo_ref")]
-    fn declination(
-        epsg: u16,
-        ref_point: Coord,
+    fn get_declination(
+        geo_ref_point: Coord,
         meters_above_sea_level: Option<f64>,
     ) -> OmapResult<f64> {
-        let geographic_proj = Proj::from_epsg_code(4326)?;
-        let local_proj = Proj::from_epsg_code(epsg)?;
-
-        // transform ref_point to lat/lon
-        let mut geo_ref_point = (ref_point.x, ref_point.y);
-        transform(&local_proj, &geographic_proj, &mut geo_ref_point)?;
-
         let date = chrono::Local::now();
         let year = date.year();
         let day = date.ordinal() as u16;
 
         let field = GeomagneticField::new(
             Length::new::<meter>(meters_above_sea_level.unwrap_or(0.) as f32),
-            Angle::new::<radian>(geo_ref_point.1 as f32),
-            Angle::new::<radian>(geo_ref_point.0 as f32),
+            Angle::new::<radian>(geo_ref_point.y as f32),
+            Angle::new::<radian>(geo_ref_point.x as f32),
             Date::from_ordinal_date(year, day)
                 .unwrap_or(Date::from_ordinal_date(2025, 180).unwrap()),
         )?;

@@ -134,4 +134,7 @@ pub enum OmapError {
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
     GeoMagnetic(#[from] world_magnetic_model::Error),
+    /// The geo-referencing feature is de-activated, but an EPSG code was passed to new
+    #[error("The geo-referencing feature is de-activated (activated by default)")]
+    DisabledGeoReferencingFeature,
 }
