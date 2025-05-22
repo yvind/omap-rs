@@ -25,7 +25,7 @@ use world_magnetic_model::{
 /// Struct representing an Orienteering map  
 ///
 /// The map will be georeferenced if epsg.is_some() or else it is written in Local space
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Omap {
     #[allow(unused)]
     elevation_scale_factor: f64,
