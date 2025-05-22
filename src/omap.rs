@@ -553,7 +553,7 @@ impl Omap {
         let mut parallel =
             geo_types::Line::new(Coord { x: -D / 2., y: 0. }, Coord { x: D / 2., y: 0. });
 
-        // Project the baselines to the local grid
+        // Project the stereographic baselines to the local grid
         transform(&baseline_proj, &local_proj, &mut meridian)?;
         transform(&baseline_proj, &local_proj, &mut parallel)?;
 
