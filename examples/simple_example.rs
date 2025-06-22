@@ -8,11 +8,11 @@ use std::{path::PathBuf, str::FromStr};
 
 fn main() {
     let map_center = Coord {
-        x: 463_575.5,
-        y: 6_833_849.6,
+        x: 323_877.,
+        y: 6_399_005.,
     };
-    let map_center_elevation_meters = 2_469.;
-    let crs_epsg_code = 25832;
+    let map_center_elevation_meters = 100.;
+    let crs_epsg_code = 3006;
 
     let mut omap = Omap::new(
         map_center,
@@ -69,7 +69,7 @@ fn main() {
     let max_bezier_deviation_meters = 2.5;
 
     omap.write_to_file(
-        PathBuf::from_str("./my_map.omap").unwrap(),
+        PathBuf::from_str("./simple_example.omap").unwrap(),
         Some(max_bezier_deviation_meters),
     )
     .expect("Could not write to file");

@@ -1,5 +1,5 @@
 use super::{AreaObject, LineObject, MapObjectTrait, PointObject, TagTrait, TextObject};
-use crate::{symbols::Symbol, OmapResult, Scale};
+use crate::{symbols::Symbol, transform::Transform, OmapResult};
 use std::{fs::File, io::BufWriter};
 
 /// Enum for the different map object types
@@ -44,39 +44,21 @@ impl MapObject {
         self,
         f: &mut BufWriter<File>,
         bezier_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
         match self {
-            MapObject::LineObject(line_object) => line_object.write_to_map(
-                f,
-                bezier_error,
-                scale,
-                grivation,
-                inv_combined_scale_factor,
-            ),
-            MapObject::PointObject(point_object) => point_object.write_to_map(
-                f,
-                bezier_error,
-                scale,
-                grivation,
-                inv_combined_scale_factor,
-            ),
-            MapObject::AreaObject(area_object) => area_object.write_to_map(
-                f,
-                bezier_error,
-                scale,
-                grivation,
-                inv_combined_scale_factor,
-            ),
-            MapObject::TextObject(text_object) => text_object.write_to_map(
-                f,
-                bezier_error,
-                scale,
-                grivation,
-                inv_combined_scale_factor,
-            ),
+            MapObject::LineObject(line_object) => {
+                line_object.write_to_map(f, bezier_error, transform)
+            }
+            MapObject::PointObject(point_object) => {
+                point_object.write_to_map(f, bezier_error, transform)
+            }
+            MapObject::AreaObject(area_object) => {
+                area_object.write_to_map(f, bezier_error, transform)
+            }
+            MapObject::TextObject(text_object) => {
+                text_object.write_to_map(f, bezier_error, transform)
+            }
         }
     }
 

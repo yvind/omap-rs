@@ -2,7 +2,8 @@ use crate::{
     objects::{MapObjectTrait, TagTrait},
     serialize::{SerializeBezier, SerializePolyLine},
     symbols::{AreaSymbol, SymbolTrait},
-    OmapResult, Scale,
+    transform::Transform,
+    OmapResult,
 };
 use geo_types::Polygon;
 use std::{
@@ -48,13 +49,11 @@ impl MapObjectTrait for AreaObject {
         self,
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
-        self.write_coords(f, bez_error, scale, grivation, inv_combined_scale_factor)?;
+        self.write_coords(f, bez_error, transform)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -63,16 +62,12 @@ impl MapObjectTrait for AreaObject {
         self,
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
         let (bytes, num_coords) = if let Some(bezier_error) = bez_error {
-            self.polygon
-                .serialize_bezier(bezier_error, scale, grivation, inv_combined_scale_factor)
+            self.polygon.serialize_bezier(bezier_error, transform)
         } else {
-            self.polygon
-                .serialize_polyline(scale, grivation, inv_combined_scale_factor)
+            self.polygon.serialize_polyline(transform)
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;
@@ -81,7 +76,7 @@ impl MapObjectTrait for AreaObject {
             f.write_all(
                 format!(
                     "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern>",
-                    self.pattern_rotation + grivation
+                    self.pattern_rotation + transform.grivation
                 )
                 .as_bytes(),
             )?;

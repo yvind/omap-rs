@@ -106,6 +106,7 @@ mod scale;
 mod serialize;
 /// Symbols module
 pub mod symbols;
+mod transform;
 
 pub use self::omap::Omap;
 pub use self::scale::Scale;

@@ -2,7 +2,8 @@ use crate::{
     objects::{MapObjectTrait, TagTrait},
     serialize::SerializePolyLine,
     symbols::{PointSymbol, SymbolTrait},
-    OmapResult, Scale,
+    transform::Transform,
+    OmapResult,
 };
 use geo_types::Point;
 use std::{
@@ -47,20 +48,18 @@ impl MapObjectTrait for PointObject {
         self,
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
         f.write_all(
             format!(
                 "<object type=\"0\" symbol=\"{}\" rotation=\"{}\">",
                 self.symbol.id(),
-                self.rotation + grivation
+                self.rotation + transform.grivation
             )
             .as_bytes(),
         )?;
         self.write_tags(f)?;
-        self.write_coords(f, None, scale, grivation, inv_combined_scale_factor)?;
+        self.write_coords(f, None, transform)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -69,13 +68,9 @@ impl MapObjectTrait for PointObject {
         self,
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
-        let (bytes, _) =
-            self.point
-                .serialize_polyline(scale, grivation, inv_combined_scale_factor)?;
+        let (bytes, _) = self.point.serialize_polyline(transform)?;
 
         f.write_all(b"<coords count=\"1\">")?;
         f.write_all(&bytes)?;

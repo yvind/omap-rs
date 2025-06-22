@@ -1,6 +1,7 @@
 use crate::{
     objects::{MapObject, PointObject},
     symbols::{LineSymbol, PointSymbol, Symbol},
+    transform::Transform,
     OmapResult, Scale,
 };
 use geo_types::{Coord, LineString, Point};
@@ -479,16 +480,10 @@ impl Omap {
             .as_bytes(),
         )?;
 
-        let inv_combined_scale_factor = 1. / self.combined_scale_factor;
+        let transform = Transform::new(self.scale, self.combined_scale_factor, self.grivation);
         for sym_vals in self.objects.into_values() {
             for obj in sym_vals {
-                obj.write_to_map(
-                    f,
-                    bezier_error,
-                    self.scale,
-                    self.grivation,
-                    inv_combined_scale_factor,
-                )?;
+                obj.write_to_map(f, bezier_error, &transform)?;
             }
         }
 

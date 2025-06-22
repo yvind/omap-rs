@@ -51,6 +51,9 @@ fn main() {
     omap.add_object(dh_object);
     omap.add_object(bh_object);
 
-    omap.write_to_file(PathBuf::from_str("./jotunheimen.omap").unwrap(), None)
-        .expect("Could not write to file");
+    omap.write_to_file(
+        PathBuf::from_str("./mountain_top_triangle.omap").unwrap(),
+        None,
+    )
+    .expect("Could not write to file");
 }

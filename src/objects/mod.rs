@@ -1,4 +1,4 @@
-use crate::{OmapResult, Scale};
+use crate::{transform::Transform, OmapResult};
 use std::{fs::File, io::BufWriter};
 
 mod area_object;
@@ -18,18 +18,14 @@ pub(crate) trait MapObjectTrait {
         self,
         f: &mut BufWriter<File>,
         bezier_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()>;
 
     fn write_coords(
         self,
         f: &mut BufWriter<File>,
         bezier_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()>;
 
     fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()>;

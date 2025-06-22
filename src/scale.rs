@@ -16,3 +16,16 @@ impl fmt::Display for Scale {
         }
     }
 }
+
+// 1 map unit is 0.001mm on paper => 1000 mu = 1mm on map
+const CONVERSION_15000: f64 = 1_000. / 15.;
+const CONVERSION_10000: f64 = 1_000. / 10.;
+impl Scale {
+    /// Get scale factor for converting ground distances to map units
+    pub(crate) fn get_map_scale_factor(&self) -> f64 {
+        match self {
+            Scale::S10_000 => CONVERSION_10000,
+            Scale::S15_000 => CONVERSION_15000,
+        }
+    }
+}

@@ -2,7 +2,8 @@ use crate::{
     objects::{MapObjectTrait, TagTrait},
     serialize::{SerializeBezier, SerializePolyLine},
     symbols::{LineSymbol, SymbolTrait},
-    OmapResult, Scale,
+    transform::Transform,
+    OmapResult,
 };
 use geo_types::LineString;
 use std::{
@@ -44,13 +45,11 @@ impl MapObjectTrait for LineObject {
         self,
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
-        self.write_coords(f, bez_error, scale, grivation, inv_combined_scale_factor)?;
+        self.write_coords(f, bez_error, transform)?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -59,16 +58,12 @@ impl MapObjectTrait for LineObject {
         self,
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
-        scale: Scale,
-        grivation: f64,
-        inv_combined_scale_factor: f64,
+        transform: &Transform,
     ) -> OmapResult<()> {
         let (bytes, num_coords) = if let Some(bezier_error) = bez_error {
-            self.line
-                .serialize_bezier(bezier_error, scale, grivation, inv_combined_scale_factor)
+            self.line.serialize_bezier(bezier_error, transform)
         } else {
-            self.line
-                .serialize_polyline(scale, grivation, inv_combined_scale_factor)
+            self.line.serialize_polyline(transform)
         }?;
         f.write_all(format!("<coords count=\"{num_coords}\">").as_bytes())?;
         f.write_all(&bytes)?;
