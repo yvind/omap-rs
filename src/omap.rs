@@ -25,7 +25,7 @@ use world_magnetic_model::{
 
 /// Struct representing an Orienteering map  
 ///
-/// The map will be georeferenced if epsg.is_some() or else it is written in Local space
+/// The map will be georeferenced if self.epsg_crs.is_some() or else it is written in Local space
 #[derive(Debug, Clone)]
 pub struct Omap {
     #[allow(unused)]
@@ -110,7 +110,11 @@ impl Omap {
 
     /// Get the CRS of the map represented by an EPSG code
     pub fn get_crs(&self) -> Option<u16> {
-        self.epsg_crs
+        if cfg!(feature = "geo_ref") {
+            self.epsg_crs
+        } else {
+            None
+        }
     }
 
     /// Get the projected ref point of the map
@@ -121,11 +125,15 @@ impl Omap {
     /// Get the geographical ref point of the map
     #[cfg(feature = "geo_ref")]
     pub fn get_geo_ref_point(&self) -> Option<Coord> {
-        self.geo_ref_point
+        if cfg!(feature = "geo_ref") {
+            self.geo_ref_point
+        } else {
+            None
+        }
     }
 
     /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature     
-    /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs most often meters) apart are merged.  
+    /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs, most often meters) apart are merged.  
     /// Elevation tags are respected and only elements with equal Elevation tags can be merged
     #[cfg(feature = "merge_lines")]
     pub fn merge_lines(&mut self, delta: f64) {
@@ -341,22 +349,18 @@ impl Omap {
                     let (aspect, mid_point, rotation) =
                         line_string_aspect_midpoint_rotation(&o.line);
 
-                    if area < 0. {
-                        let u_depression =
-                            PointObject::from_point(Point(mid_point), PointSymbol::UDepression, 0.);
-                        self.add_object(MapObject::PointObject(u_depression));
+                    let map_object = if area < 0. {
+                        PointObject::from_point(Point(mid_point), PointSymbol::UDepression, 0.)
                     } else if aspect < elongated_aspect {
-                        let dot_knoll =
-                            PointObject::from_point(Point(mid_point), PointSymbol::DotKnoll, 0.);
-                        self.add_object(MapObject::PointObject(dot_knoll));
+                        PointObject::from_point(Point(mid_point), PointSymbol::DotKnoll, 0.)
                     } else {
-                        let long_dot_knoll = PointObject::from_point(
+                        PointObject::from_point(
                             Point(mid_point),
                             PointSymbol::ElongatedDotKnoll,
                             rotation,
-                        );
-                        self.add_object(MapObject::PointObject(long_dot_knoll));
-                    }
+                        )
+                    };
+                    self.add_object(MapObject::PointObject(map_object));
                 }
             }
         }
@@ -392,9 +396,16 @@ impl Omap {
             }
         }
 
-        let _ = self
+        if let Some(existing_neg) = self
             .objects
-            .insert(Symbol::Line(LineSymbol::NegBasemapContour), neg_basemap);
+            .get_mut(&Symbol::Line(LineSymbol::NegBasemapContour))
+        {
+            existing_neg.extend(neg_basemap);
+        } else {
+            let _ = self
+                .objects
+                .insert(Symbol::Line(LineSymbol::NegBasemapContour), neg_basemap);
+        }
     }
 
     /// Write the map to an omap file,  
