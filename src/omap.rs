@@ -481,7 +481,11 @@ impl Omap {
         Ok(())
     }
 
-    fn write_objects(self, f: &mut BufWriter<File>, bezier_error: Option<f64>) -> OmapResult<()> {
+    fn write_objects(
+        mut self,
+        f: &mut BufWriter<File>,
+        bezier_error: Option<f64>,
+    ) -> OmapResult<()> {
         let num_objects = self.objects.values().fold(0, |acc, v| acc + v.len());
 
         f.write_all(
@@ -492,9 +496,15 @@ impl Omap {
         )?;
 
         let transform = Transform::new(self.scale, self.combined_scale_factor, self.grivation);
-        for sym_vals in self.objects.into_values() {
-            for obj in sym_vals {
-                obj.write_to_map(f, bezier_error, &transform)?;
+        for (sym, val) in self.objects.drain() {
+            if sym.is_basemap_symbol() {
+                for obj in val {
+                    obj.write_to_map(f, None, &transform)?;
+                }
+            } else {
+                for obj in val {
+                    obj.write_to_map(f, bezier_error, &transform)?;
+                }
             }
         }
 

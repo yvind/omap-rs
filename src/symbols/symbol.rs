@@ -35,6 +35,16 @@ impl Symbol {
     pub fn is_text_symbol(&self) -> bool {
         matches!(self, Symbol::Text(_))
     }
+
+    pub(crate) fn is_basemap_symbol(&self) -> bool {
+        match self {
+            Symbol::Line(line_symbol) => matches!(
+                line_symbol,
+                LineSymbol::BasemapContour | LineSymbol::NegBasemapContour
+            ),
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Symbol {
