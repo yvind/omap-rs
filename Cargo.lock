@@ -348,9 +348,9 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "linestring2bezier"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea29447adbc9121e646dc7cfd2280ebea15839439a384c83446bbaba8fce0559"
+checksum = "dded0070902f7364352b8ad26ea211f37fb9b9aa0fccaaa718374d813062c895"
 dependencies = [
  "geo-types",
 ]
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "omap"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "chrono",
  "geo-types",
