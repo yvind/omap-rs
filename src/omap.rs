@@ -295,6 +295,7 @@ impl Omap {
     }
 
     /// Turn small contour loops to dotknolls and depressions and remove the smallest ones
+    /// dot_knolls smaller than (min+max)/2 + min will never be drawn as elongated
     pub fn make_dotknolls_and_depressions(
         &mut self,
         min_area: f64,
@@ -306,6 +307,8 @@ impl Omap {
             Symbol::Line(LineSymbol::FormLine),
             Symbol::Line(LineSymbol::IndexContour),
         ];
+
+        let min_elongated_area = (max_area + min_area) / 2. + min_area;
 
         for key in keys {
             let contours = self.objects.get_mut(&key);
@@ -351,7 +354,7 @@ impl Omap {
 
                     let map_object = if area < 0. {
                         PointObject::from_point(Point(mid_point), PointSymbol::UDepression, 0.)
-                    } else if aspect < elongated_aspect {
+                    } else if aspect < elongated_aspect || area < min_elongated_area {
                         PointObject::from_point(Point(mid_point), PointSymbol::DotKnoll, 0.)
                     } else {
                         PointObject::from_point(
@@ -648,27 +651,32 @@ fn line_string_signed_area(line: &LineString) -> f64 {
 
 fn line_string_aspect_midpoint_rotation(line: &LineString) -> (f64, Coord, f64) {
     let mut midpoint = Coord::zero();
+
+    let len_f64 = line.0.len() as f64;
     for c in line.0.iter() {
         midpoint = midpoint + *c;
     }
-    midpoint = midpoint / line.0.len() as f64;
+    midpoint = midpoint / len_f64;
 
     // Calculate second moments
     let mu20 = line
         .0
         .iter()
         .map(|p| (p.x - midpoint.x).powi(2))
-        .sum::<f64>();
+        .sum::<f64>()
+        / len_f64;
     let mu02 = line
         .0
         .iter()
         .map(|p| (p.y - midpoint.y).powi(2))
-        .sum::<f64>();
+        .sum::<f64>()
+        / len_f64;
     let mu11 = line
         .0
         .iter()
         .map(|p| (p.x - midpoint.x) * (p.y - midpoint.y))
-        .sum::<f64>();
+        .sum::<f64>()
+        / len_f64;
 
     // Calculate elongation using eigenvalues of the covariance matrix
     let temp = ((mu20 - mu02).powi(2) + 4.0 * mu11.powi(2)).sqrt();
@@ -676,27 +684,51 @@ fn line_string_aspect_midpoint_rotation(line: &LineString) -> (f64, Coord, f64) 
     let lambda2 = (mu20 + mu02 - temp) / 2.0;
 
     // Handle potential numerical issues
-    if lambda2.abs() <= 2. * f64::EPSILON
-        || ((mu20 - mu02).abs() <= 2. * f64::EPSILON && mu11.abs() <= 2. * f64::EPSILON)
-    {
-        return (1., midpoint, 0.);
+    const EPS: f64 = 1000. * f64::EPSILON;
+    if lambda2.abs() <= EPS {
+        // colinear points
+        if mu11.abs() <= EPS {
+            // horizontal or vertical
+            return (
+                f64::INFINITY,
+                midpoint,
+                if mu20 > mu02 {
+                    0.0
+                } else {
+                    std::f64::consts::FRAC_PI_2
+                },
+            );
+        } else {
+            // Diagonal line
+            let angle = 0.5 * f64::atan2(2.0 * mu11, mu20 - mu02);
+            return (f64::INFINITY, midpoint, normalize_angle(angle));
+        }
     }
 
-    let elongation = (lambda1 / lambda2).sqrt();
+    let elongation = lambda1 / lambda2;
 
-    // Calculate the angle of the major axis (in radians)
-    // The eigenvector corresponding to the largest eigenvalue gives the direction
-    let mut angle = 0.5 * f64::atan2(2.0 * mu11, mu20 - mu02);
+    // Calculate the angle of the major axis
+    // The eigenvector for the larger eigenvalue gives the major axis direction
+    let angle = if mu11.abs() <= EPS {
+        // Principal axes are aligned with coordinate axes
+        if mu20 >= mu02 {
+            0.0
+        } else {
+            std::f64::consts::FRAC_PI_2
+        }
+    } else {
+        // General case: use eigenvector of larger eigenvalue
+        // For 2x2 symmetric matrix, eigenvector is [mu11, lambda1 - mu20]
+        f64::atan2(lambda1 - mu20, mu11) + std::f64::consts::FRAC_PI_2
+    };
 
-    // Ensure the angle corresponds to the major (not minor) axis
-    if !(mu20 < mu02 || mu11 >= 0.0) {
-        angle += std::f64::consts::FRAC_PI_2;
+    (elongation, midpoint, normalize_angle(angle))
+}
+
+fn normalize_angle(angle: f64) -> f64 {
+    let mut normalized = angle % std::f64::consts::PI;
+    if normalized < 0.0 {
+        normalized += std::f64::consts::PI;
     }
-
-    angle %= std::f64::consts::PI;
-    if angle < 0.0 {
-        angle += std::f64::consts::PI;
-    }
-
-    (elongation, midpoint, angle)
+    normalized
 }
