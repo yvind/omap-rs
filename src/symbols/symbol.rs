@@ -36,13 +36,21 @@ impl Symbol {
         matches!(self, Symbol::Text(_))
     }
 
-    pub(crate) fn is_basemap_symbol(&self) -> bool {
+    pub(crate) fn is_not_bezier_symbol(&self) -> bool {
         match self {
             Symbol::Line(line_symbol) => matches!(
                 line_symbol,
                 LineSymbol::BasemapContour | LineSymbol::NegBasemapContour
             ),
-            _ => false,
+            Symbol::Area(area_symbol) => matches!(
+                area_symbol,
+                AreaSymbol::CanopyWithOutline
+                    | AreaSymbol::CanopyWithoutOutline
+                    | AreaSymbol::Building
+                    | AreaSymbol::LargeBuildingWithOutline
+                    | AreaSymbol::LargeBuildingWithoutOutline
+            ),
+            _ => true,
         }
     }
 }

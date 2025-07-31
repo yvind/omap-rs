@@ -68,9 +68,11 @@ fn main() {
 
     let max_bezier_deviation_meters = 2.5;
 
+    let bez_error = omap::BezierError::new(Some(max_bezier_deviation_meters), None);
+
     omap.write_to_file(
         PathBuf::from_str("./simple_example.omap").unwrap(),
-        Some(max_bezier_deviation_meters),
+        bez_error,
     )
     .expect("Could not write to file");
 }

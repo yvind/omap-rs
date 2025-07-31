@@ -2,7 +2,7 @@ use crate::{
     objects::{MapObject, PointObject},
     symbols::{LineSymbol, PointSymbol, Symbol},
     transform::Transform,
-    OmapResult, Scale,
+    BezierError, OmapResult, Scale,
 };
 use geo_types::{Coord, LineString, Point};
 use std::{
@@ -425,7 +425,7 @@ impl Omap {
     }
     /// Write the map to an omap file,  
     /// if `path` is an invalid path then "auto_generated_map.omap" is the new path
-    pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
+    pub fn write_to_file(self, mut path: PathBuf, bezier_error: BezierError) -> OmapResult<()> {
         if path.as_os_str().is_empty() || path.is_dir() {
             path.push("auto_generated_map.omap");
         }
@@ -504,7 +504,7 @@ impl Omap {
     fn write_objects(
         mut self,
         f: &mut BufWriter<File>,
-        bezier_error: Option<f64>,
+        bezier_error: BezierError,
     ) -> OmapResult<()> {
         let num_objects = self.objects.values().fold(0, |acc, v| acc + v.len());
 
@@ -517,9 +517,9 @@ impl Omap {
 
         let transform = Transform::new(self.scale, self.combined_scale_factor, self.grivation);
         for (sym, val) in self.objects.drain() {
-            if sym.is_basemap_symbol() {
+            if sym.is_not_bezier_symbol() {
                 for obj in val {
-                    obj.write_to_map(f, None, &transform)?;
+                    obj.write_to_map(f, Default::default(), &transform)?;
                 }
             } else {
                 for obj in val {

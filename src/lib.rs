@@ -99,6 +99,7 @@
     warnings
 )]
 
+mod bezier_error;
 /// Objects module
 pub mod objects;
 mod omap;
@@ -108,8 +109,9 @@ mod serialize;
 pub mod symbols;
 mod transform;
 
-pub use self::omap::Omap;
-pub use self::scale::Scale;
+pub use crate::bezier_error::BezierError;
+pub use crate::omap::Omap;
+pub use crate::scale::Scale;
 
 /// crate result
 pub type OmapResult<T> = Result<T, OmapError>;

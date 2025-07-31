@@ -53,7 +53,7 @@ fn main() {
 
     omap.write_to_file(
         PathBuf::from_str("./mountain_top_triangle.omap").unwrap(),
-        None,
+        Default::default(),
     )
     .expect("Could not write to file");
 }

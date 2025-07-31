@@ -1,5 +1,5 @@
 use super::{AreaObject, LineObject, MapObjectTrait, PointObject, TagTrait, TextObject};
-use crate::{symbols::Symbol, transform::Transform, OmapError, OmapResult};
+use crate::{symbols::Symbol, transform::Transform, BezierError, OmapError, OmapResult};
 use std::{fs::File, io::BufWriter};
 
 /// Enum for the different map object types
@@ -43,22 +43,18 @@ impl MapObject {
     pub(crate) fn write_to_map(
         self,
         f: &mut BufWriter<File>,
-        bezier_error: Option<f64>,
+        bezier_error: BezierError,
         transform: &Transform,
     ) -> OmapResult<()> {
         match self {
             MapObject::LineObject(line_object) => {
-                line_object.write_to_map(f, bezier_error, transform)
+                line_object.write_to_map(f, bezier_error.get_line_error(), transform)
             }
-            MapObject::PointObject(point_object) => {
-                point_object.write_to_map(f, bezier_error, transform)
-            }
+            MapObject::PointObject(point_object) => point_object.write_to_map(f, None, transform),
             MapObject::AreaObject(area_object) => {
-                area_object.write_to_map(f, bezier_error, transform)
+                area_object.write_to_map(f, bezier_error.get_area_error(), transform)
             }
-            MapObject::TextObject(text_object) => {
-                text_object.write_to_map(f, bezier_error, transform)
-            }
+            MapObject::TextObject(text_object) => text_object.write_to_map(f, None, transform),
         }
     }
 
