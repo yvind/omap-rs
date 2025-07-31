@@ -138,4 +138,7 @@ pub enum OmapError {
     /// The geo-referencing feature is de-activated, but an EPSG code was passed to new
     #[error("The geo-referencing feature is de-activated (activated by default)")]
     DisabledGeoReferencingFeature,
+    /// The symbol type and the object type do not match
+    #[error("Wrong Symbol type for object")]
+    MismatchingSymbolAndObject,
 }

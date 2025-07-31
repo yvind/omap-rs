@@ -1,5 +1,5 @@
 use super::{AreaObject, LineObject, MapObjectTrait, PointObject, TagTrait, TextObject};
-use crate::{symbols::Symbol, transform::Transform, OmapResult};
+use crate::{symbols::Symbol, transform::Transform, OmapError, OmapResult};
 use std::{fs::File, io::BufWriter};
 
 /// Enum for the different map object types
@@ -70,6 +70,31 @@ impl MapObject {
             MapObject::AreaObject(area_object) => area_object.symbol.into(),
             MapObject::TextObject(text_object) => text_object.symbol.into(),
         }
+    }
+
+    /// change the symbol of a map object
+    /// returns Err MismatchingSymbolAndObject if the object type and symbol type do not match
+    /// nothing happens in that case
+    pub fn change_symbol(&mut self, new_symbol: impl Into<Symbol>) -> OmapResult<()> {
+        let new_symbol = new_symbol.into();
+
+        match (self, new_symbol) {
+            (MapObject::LineObject(line_object), Symbol::Line(line_symbol)) => {
+                line_object.change_symbol(line_symbol)
+            }
+            (MapObject::PointObject(point_object), Symbol::Point(point_symbol)) => {
+                point_object.change_symbol(point_symbol)
+            }
+            (MapObject::AreaObject(area_object), Symbol::Area(area_symbol)) => {
+                area_object.change_symbol(area_symbol)
+            }
+            (MapObject::TextObject(text_object), Symbol::Text(text_symbol)) => {
+                text_object.change_symbol(text_symbol)
+            }
+            _ => return Err(OmapError::MismatchingSymbolAndObject),
+        };
+
+        Ok(())
     }
 }
 

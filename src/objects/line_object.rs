@@ -32,6 +32,11 @@ impl LineObject {
             tags: HashMap::new(),
         }
     }
+
+    /// change the symbol of a line object
+    pub fn change_symbol(&mut self, symbol: LineSymbol) {
+        self.symbol = symbol;
+    }
 }
 
 impl TagTrait for LineObject {

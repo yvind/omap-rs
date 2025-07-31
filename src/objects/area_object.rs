@@ -36,6 +36,11 @@ impl AreaObject {
             tags: HashMap::new(),
         }
     }
+
+    /// change the symbol of a area object
+    pub fn change_symbol(&mut self, symbol: AreaSymbol) {
+        self.symbol = symbol;
+    }
 }
 
 impl TagTrait for AreaObject {

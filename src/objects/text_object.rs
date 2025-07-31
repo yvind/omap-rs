@@ -35,6 +35,11 @@ impl TextObject {
             tags: HashMap::new(),
         }
     }
+
+    /// change the symbol of a text object
+    pub fn change_symbol(&mut self, symbol: TextSymbol) {
+        self.symbol = symbol;
+    }
 }
 
 impl TagTrait for TextObject {

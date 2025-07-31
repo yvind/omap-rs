@@ -40,7 +40,7 @@ pub struct Omap {
     geo_ref_point: Option<Coord>,
 
     /// the objects of the map
-    pub objects: HashMap<Symbol, Vec<MapObject>>,
+    objects: HashMap<Symbol, Vec<MapObject>>,
 }
 
 impl Omap {
@@ -374,10 +374,10 @@ impl Omap {
         let basemap = self
             .objects
             .get_mut(&Symbol::Line(LineSymbol::BasemapContour));
+
         if basemap.is_none() {
             return;
         }
-
         let basemap = basemap.unwrap();
 
         let mut neg_basemap = Vec::new();
@@ -387,15 +387,18 @@ impl Omap {
             if let MapObject::LineObject(o) = &basemap[i] {
                 if o.line.is_closed() {
                     if line_string_signed_area(&o.line) < 0. {
-                        neg_basemap.push(basemap.swap_remove(i));
+                        let mut neg = basemap.swap_remove(i);
+
+                        // ignore the returned result as this cannot fail, as the only way to add objects is through Omap::add_object
+                        let _ = neg.change_symbol(LineSymbol::NegBasemapContour);
+
+                        neg_basemap.push(neg);
                     } else {
                         i += 1;
                     }
                 } else {
                     i += 1;
                 }
-            } else {
-                panic!("Non LineObject under Basemap symbol in objects hashmap");
             }
         }
 
@@ -411,6 +414,15 @@ impl Omap {
         }
     }
 
+    /// Remove all keys without any objects in it
+    pub fn remove_empty_keys(&mut self) {
+        self.objects.retain(|_, v| !v.is_empty());
+    }
+
+    /// Get the number of map objects for a given symbol in the map
+    pub fn num_entries(&self, key: impl Into<Symbol>) -> Option<usize> {
+        self.objects.get(&key.into()).map(|v| v.len())
+    }
     /// Write the map to an omap file,  
     /// if `path` is an invalid path then "auto_generated_map.omap" is the new path
     pub fn write_to_file(self, mut path: PathBuf, bezier_error: Option<f64>) -> OmapResult<()> {
@@ -436,6 +448,11 @@ impl Omap {
         self.write_objects(&mut f, bezier_error)?;
         Self::write_end_of_file(&mut f)?;
         Ok(())
+    }
+
+    /// Consume the omap object and get the object hashmap
+    pub fn into_objects(self) -> HashMap<Symbol, Vec<MapObject>> {
+        self.objects
     }
 }
 

@@ -35,6 +35,11 @@ impl PointObject {
             tags: HashMap::new(),
         }
     }
+
+    /// change the symbol of a point object
+    pub fn change_symbol(&mut self, symbol: PointSymbol) {
+        self.symbol = symbol;
+    }
 }
 
 impl TagTrait for PointObject {
