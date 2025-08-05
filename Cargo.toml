@@ -1,10 +1,10 @@
 [package]
 name = "omap"
-version = "0.4.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Øyvind Hjermstad <@yvind>"]
 
-description = "Open Orienteering Mapper omap file writer"
+description = "Interact with or write new Open Orienteering Mapper omap files"
 homepage = "https://github.com/yvind/omap-rs"
 repository = "https://github.com/yvind/omap-rs"
 readme = "README.md"
@@ -22,6 +22,7 @@ proj4rs = { version = "0.1.5", features = [
 ], optional = true }
 chrono = { version = "0.4.39", optional = true }
 world_magnetic_model = { version = "0.2.0", optional = true }
+quick-xml = "0.38.0"
 
 [features]
 default = ["geo_ref"]

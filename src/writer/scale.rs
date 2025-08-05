@@ -1,9 +1,10 @@
 /// Map scale
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum Scale {
     /// 1:10_000
     S10_000,
     /// 1:15_000
+    #[default]
     S15_000,
 }
 

@@ -1,9 +1,9 @@
-use crate::{
-    objects::{MapObjectTrait, TagTrait},
+use super::{MapObjectTrait, TagTrait};
+use crate::writer::{
     serialize::SerializePolyLine,
-    symbols::{SymbolTrait, TextSymbol},
+    symbols::{PointSymbol, SymbolTrait},
     transform::Transform,
-    OmapResult,
+    Result,
 };
 use geo_types::Point;
 use std::{
@@ -12,60 +12,59 @@ use std::{
     io::{BufWriter, Write},
 };
 
-/// A TextObject representing anything that has a TextSymbol
+/// A PointObject representing anything that has a PointSymbol
 #[derive(Debug, Clone)]
-pub struct TextObject {
+pub struct PointObject {
     /// the coordinate (relative the ref point of the map)
     pub point: Point,
     /// the symbol
-    pub symbol: TextSymbol,
-    /// the actual text to display,
-    pub text: String,
+    pub symbol: PointSymbol,
+    /// a rotation in radians
+    pub rotation: f64,
     /// tags for this object
     pub tags: HashMap<String, String>,
 }
 
-impl TextObject {
-    /// create a text object from a geo_types::Point and String
-    pub fn from_point(point: Point, symbol: TextSymbol, text: String) -> Self {
+impl PointObject {
+    /// create a point object from a geo_types::Point
+    pub fn from_point(point: Point, symbol: PointSymbol, rotation: f64) -> Self {
         Self {
             point,
             symbol,
-            text,
+            rotation,
             tags: HashMap::new(),
         }
     }
 
-    /// change the symbol of a text object
-    pub fn change_symbol(&mut self, symbol: TextSymbol) {
+    /// change the symbol of a point object
+    pub fn change_symbol(&mut self, symbol: PointSymbol) {
         self.symbol = symbol;
     }
 }
 
-impl TagTrait for TextObject {
+impl TagTrait for PointObject {
     fn add_tag(&mut self, k: impl Into<String>, v: impl Into<String>) {
         let _ = self.tags.insert(k.into(), v.into());
     }
 }
 
-impl MapObjectTrait for TextObject {
+impl MapObjectTrait for PointObject {
     fn write_to_map(
         self,
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
         f.write_all(
             format!(
-                "<object type=\"4\" symbol=\"{}\" h_align=\"1\" v_align=\"2\">",
+                "<object type=\"0\" symbol=\"{}\" rotation=\"{}\">",
                 self.symbol.id(),
+                self.rotation + transform.grivation
             )
             .as_bytes(),
         )?;
         self.write_tags(f)?;
-        let text = self.text.clone();
         self.write_coords(f, None, transform)?;
-        f.write_all(format!("<text>{}</text>", text).as_bytes())?;
         f.write_all(b"</object>\n")?;
         Ok(())
     }
@@ -75,16 +74,17 @@ impl MapObjectTrait for TextObject {
         f: &mut BufWriter<File>,
         _as_bezier: Option<f64>,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
         let (bytes, _) = self.point.serialize_polyline(transform)?;
 
         f.write_all(b"<coords count=\"1\">")?;
         f.write_all(&bytes)?;
         f.write_all(b"</coords>")?;
+
         Ok(())
     }
 
-    fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
+    fn write_tags(&self, f: &mut BufWriter<File>) -> Result<()> {
         if self.tags.is_empty() {
             return Ok(());
         }

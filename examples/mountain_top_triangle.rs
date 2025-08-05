@@ -1,8 +1,8 @@
 use geo_types::{Coord, Point};
-use omap::{
+use omap::writer::{
     objects::{PointObject, TagTrait},
     symbols::PointSymbol,
-    Omap, Scale,
+    OmapWriter, Scale,
 };
 use std::{path::PathBuf, str::FromStr};
 
@@ -27,7 +27,7 @@ fn main() {
     let map_center_elevation_meters = 2_182.;
     let crs_epsg_code = 25832;
 
-    let mut omap = Omap::new(
+    let mut omap = OmapWriter::new(
         map_center,
         Scale::S15_000,
         Some(crs_epsg_code),

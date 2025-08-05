@@ -10,10 +10,12 @@ pub use point_symbol::PointSymbol;
 pub use symbol::Symbol;
 pub use text_symbol::TextSymbol;
 
+use crate::writer::Scale;
+
 /// trait defining the three functions all symbol types must have
 pub trait SymbolTrait {
     /// minimum size of an object with the symbol at the scale
-    fn min_size(&self, _scale: crate::Scale) -> f64 {
+    fn min_size(&self, _scale: Scale) -> f64 {
         0.
     }
 

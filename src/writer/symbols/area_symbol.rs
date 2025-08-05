@@ -1,5 +1,5 @@
 use super::SymbolTrait;
-use crate::Scale;
+use crate::writer::Scale;
 
 /// Symbols for area objects
 #[allow(missing_docs)]

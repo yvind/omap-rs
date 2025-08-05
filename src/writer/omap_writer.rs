@@ -1,8 +1,8 @@
-use crate::{
+use crate::writer::{
     objects::{MapObject, PointObject},
     symbols::{LineSymbol, PointSymbol, Symbol},
     transform::Transform,
-    BezierError, OmapResult, Scale,
+    BezierError, Result, Scale,
 };
 use geo_types::{Coord, LineString, Point};
 use std::{
@@ -27,7 +27,7 @@ use world_magnetic_model::{
 ///
 /// The map will be georeferenced if self.epsg_crs.is_some() or else it is written in Local space
 #[derive(Debug, Clone)]
-pub struct Omap {
+pub struct OmapWriter {
     #[allow(unused)]
     elevation_scale_factor: f64,
     combined_scale_factor: f64,
@@ -43,7 +43,7 @@ pub struct Omap {
     objects: HashMap<Symbol, Vec<MapObject>>,
 }
 
-impl Omap {
+impl OmapWriter {
     /// Create a new map in the given scale centered at the `ref_point` (projected coordinates) with an optional CRS and optional `meters_above_sea_level` in elevation  
     ///
     /// __All coordinates of objects added to the map must be relative the `ref_point`__
@@ -53,7 +53,7 @@ impl Omap {
         scale: Scale,
         epsg_crs: Option<u16>,
         #[allow(unused_variables)] meters_above_sea_level: Option<f64>,
-    ) -> OmapResult<Self> {
+    ) -> Result<Self> {
         let (declination, convergence, grid_scale_factor, elevation_scale_factor, geo_ref_point) = {
             #[cfg(feature = "geo_ref")]
             if let Some(epsg) = epsg_crs {
@@ -73,7 +73,7 @@ impl Omap {
         let grivation = declination - convergence;
         let combined_scale_factor = grid_scale_factor * elevation_scale_factor;
 
-        Ok(Omap {
+        Ok(OmapWriter {
             elevation_scale_factor,
             combined_scale_factor,
             declination,
@@ -425,7 +425,7 @@ impl Omap {
     }
     /// Write the map to an omap file,  
     /// if `path` is an invalid path then "auto_generated_map.omap" is the new path
-    pub fn write_to_file(self, mut path: PathBuf, bezier_error: BezierError) -> OmapResult<()> {
+    pub fn write_to_file(self, mut path: PathBuf, bezier_error: BezierError) -> Result<()> {
         if path.as_os_str().is_empty() || path.is_dir() {
             path.push("auto_generated_map.omap");
         }
@@ -457,8 +457,8 @@ impl Omap {
 }
 
 // private functions
-impl Omap {
-    fn write_header(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
+impl OmapWriter {
+    fn write_header(&self, f: &mut BufWriter<File>) -> Result<()> {
         f.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<map xmlns=\"http://openorienteering.org/apps/mapper/xml/v2\" version=\"9\">\n<notes></notes>\n")?;
 
         let geo_ref_bytes = {
@@ -488,7 +488,7 @@ impl Omap {
         epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.y.to_degrees(), geo_ref_point.x.to_degrees()).into_bytes()
     }
 
-    fn write_colors_symbols(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
+    fn write_colors_symbols(&self, f: &mut BufWriter<File>) -> Result<()> {
         f.write_all(include_str!("colors.txt").as_bytes())?;
         match self.scale {
             Scale::S10_000 => {
@@ -501,11 +501,7 @@ impl Omap {
         Ok(())
     }
 
-    fn write_objects(
-        mut self,
-        f: &mut BufWriter<File>,
-        bezier_error: BezierError,
-    ) -> OmapResult<()> {
+    fn write_objects(mut self, f: &mut BufWriter<File>, bezier_error: BezierError) -> Result<()> {
         let num_objects = self.objects.values().fold(0, |acc, v| acc + v.len());
 
         f.write_all(
@@ -532,7 +528,7 @@ impl Omap {
         Ok(())
     }
 
-    fn write_end_of_file(f: &mut BufWriter<File>) -> OmapResult<()> {
+    fn write_end_of_file(f: &mut BufWriter<File>) -> Result<()> {
         f.write_all(b"<templates count=\"0\" first_front_template=\"0\">\n<defaults use_meters_per_pixel=\"true\" meters_per_pixel=\"0\" dpi=\"0\" scale=\"0\"/></templates>\n<view>\n")?;
         f.write_all(b"<grid color=\"#646464\" display=\"0\" alignment=\"0\" additional_rotation=\"0\" unit=\"1\" h_spacing=\"500\" v_spacing=\"500\" h_offset=\"0\" v_offset=\"0\" snapping_enabled=\"true\"/>\n")?;
         f.write_all(b"<map_view zoom=\"1\" position_x=\"0\" position_y=\"0\"><map opacity=\"1\" visible=\"true\"/><templates count=\"0\"/></map_view>\n</view>\n</barrier>\n</map>")?;
@@ -544,7 +540,7 @@ impl Omap {
         epsg: u16,
         ref_point: Coord,
         meters_above_sea: Option<f64>,
-    ) -> OmapResult<(f64, f64, f64, f64, Option<Coord>)> {
+    ) -> Result<(f64, f64, f64, f64, Option<Coord>)> {
         // get geographic ref point
         let mut geo_ref_point = ref_point;
         let geo_proj = Proj::from_epsg_code(4326)?;
@@ -572,7 +568,7 @@ impl Omap {
     fn get_convergence_and_grid_scale_factor(
         epsg: u16,
         geo_ref_point: Coord,
-    ) -> OmapResult<(f64, f64)> {
+    ) -> Result<(f64, f64)> {
         let local_proj = Proj::from_epsg_code(epsg)?;
         let baseline_proj = Proj::from_proj_string(
             format!(
@@ -634,10 +630,7 @@ impl Omap {
     }
 
     #[cfg(feature = "geo_ref")]
-    fn get_declination(
-        geo_ref_point: Coord,
-        meters_above_sea_level: Option<f64>,
-    ) -> OmapResult<f64> {
+    fn get_declination(geo_ref_point: Coord, meters_above_sea_level: Option<f64>) -> Result<f64> {
         let date = chrono::Local::now();
         let year = date.year();
         let day = date.ordinal() as u16;

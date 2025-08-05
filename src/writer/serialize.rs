@@ -1,20 +1,20 @@
 use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
 
-use crate::{transform::Transform, OmapError, OmapResult};
+use crate::writer::{transform::Transform, Error, Result};
 
-trait MapCoord {
-    fn to_map_coordinates(self, transform: &Transform) -> OmapResult<(i32, i32)>;
+pub(crate) trait MapCoord {
+    fn to_map_coordinates(self, transform: &Transform) -> Result<(i32, i32)>;
 }
 
 const MAX_MU: f64 = i32::MAX as f64;
 
 impl MapCoord for Coord {
-    fn to_map_coordinates(self, transform: &Transform) -> OmapResult<(i32, i32)> {
+    fn to_map_coordinates(self, transform: &Transform) -> Result<(i32, i32)> {
         let coord = transform.world_to_map(self);
 
         if (coord.x.abs() > MAX_MU) || (coord.y.abs() > MAX_MU) {
-            Err(OmapError::MapCoordinateOverflow)
+            Err(Error::MapCoordinateOverflow)
         } else {
             Ok((coord.x as i32, coord.y as i32))
         }
@@ -22,19 +22,16 @@ impl MapCoord for Coord {
 }
 
 pub(crate) trait SerializePolyLine {
-    fn serialize_polyline(self, transform: &Transform) -> OmapResult<(Vec<u8>, usize)>;
+    fn serialize_polyline(self, transform: &Transform) -> Result<(Vec<u8>, usize)>;
 }
 
 pub(crate) trait SerializeBezier {
-    fn serialize_bezier(
-        self,
-        bezier_error: f64,
-        transform: &Transform,
-    ) -> OmapResult<(Vec<u8>, usize)>;
+    fn serialize_bezier(self, bezier_error: f64, transform: &Transform)
+        -> Result<(Vec<u8>, usize)>;
 }
 
 impl SerializePolyLine for LineString {
-    fn serialize_polyline(self, transform: &Transform) -> OmapResult<(Vec<u8>, usize)> {
+    fn serialize_polyline(self, transform: &Transform) -> Result<(Vec<u8>, usize)> {
         let num_coords = self.0.len();
 
         let mut byte_vec = Vec::with_capacity(num_coords * 10);
@@ -62,7 +59,7 @@ impl SerializeBezier for LineString {
         self,
         bezier_error: f64,
         transform: &Transform,
-    ) -> OmapResult<(Vec<u8>, usize)> {
+    ) -> Result<(Vec<u8>, usize)> {
         let is_closed = self.is_closed();
         let bezier = BezierString::from_linestring(self, bezier_error);
 
@@ -143,7 +140,7 @@ impl SerializeBezier for LineString {
 }
 
 impl SerializePolyLine for Polygon {
-    fn serialize_polyline(self, transform: &Transform) -> OmapResult<(Vec<u8>, usize)> {
+    fn serialize_polyline(self, transform: &Transform) -> Result<(Vec<u8>, usize)> {
         let (exterior, interiors) = self.into_inner();
 
         let (mut bytes_vec, mut num_coords) = exterior.serialize_polyline(transform)?;
@@ -162,7 +159,7 @@ impl SerializeBezier for Polygon {
         self,
         bezier_error: f64,
         transform: &Transform,
-    ) -> OmapResult<(Vec<u8>, usize)> {
+    ) -> Result<(Vec<u8>, usize)> {
         let (exterior, interiors) = self.into_inner();
 
         let (mut bytes_vec, mut num_coords) = exterior.serialize_bezier(bezier_error, transform)?;
@@ -177,7 +174,7 @@ impl SerializeBezier for Polygon {
 }
 
 impl SerializePolyLine for Point {
-    fn serialize_polyline(self, transform: &Transform) -> OmapResult<(Vec<u8>, usize)> {
+    fn serialize_polyline(self, transform: &Transform) -> Result<(Vec<u8>, usize)> {
         let c = self.0.to_map_coordinates(transform)?;
         let bytes = format!("{} {};", c.0, c.1).into_bytes();
 

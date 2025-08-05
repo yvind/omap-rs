@@ -1,11 +1,11 @@
-use crate::{
-    objects::{MapObjectTrait, TagTrait},
-    serialize::{SerializeBezier, SerializePolyLine},
+use super::{MapObjectTrait, TagTrait};
+use crate::writer::{
+    serialize::{MapCoord, SerializeBezier, SerializePolyLine},
     symbols::{AreaSymbol, SymbolTrait},
     transform::Transform,
-    OmapResult,
+    Result,
 };
-use geo_types::Polygon;
+use geo_types::{Coord, Polygon};
 use std::{
     collections::HashMap,
     fs::File,
@@ -55,7 +55,7 @@ impl MapObjectTrait for AreaObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
         self.write_coords(f, bez_error, transform)?;
@@ -68,7 +68,20 @@ impl MapObjectTrait for AreaObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
+        let centroid = if self.symbol.is_rotatable() {
+            let c = self
+                .polygon
+                .exterior()
+                .coords()
+                .fold(Coord::zero(), |acc, c| acc + *c)
+                / (self.polygon.exterior().0.len() as f64);
+
+            c.to_map_coordinates(transform)?
+        } else {
+            (0, 0)
+        };
+
         let (bytes, num_coords) = if let Some(bezier_error) = bez_error {
             self.polygon.serialize_bezier(bezier_error, transform)
         } else {
@@ -80,8 +93,10 @@ impl MapObjectTrait for AreaObject {
         if self.symbol.is_rotatable() {
             f.write_all(
                 format!(
-                    "<pattern rotation=\"{}\"><coord x=\"0\" y=\"0\"/></pattern>",
-                    self.pattern_rotation + transform.grivation
+                    "<pattern rotation=\"{}\"><coord x=\"{}\" y=\"{}\"/></pattern>",
+                    self.pattern_rotation + transform.grivation,
+                    centroid.0,
+                    centroid.1,
                 )
                 .as_bytes(),
             )?;
@@ -89,7 +104,7 @@ impl MapObjectTrait for AreaObject {
         Ok(())
     }
 
-    fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
+    fn write_tags(&self, f: &mut BufWriter<File>) -> Result<()> {
         if self.tags.is_empty() {
             return Ok(());
         }

@@ -1,8 +1,8 @@
 use geo_types::{Coord, LineString, Point, Polygon};
-use omap::{
+use omap::writer::{
     objects::{AreaObject, LineObject, PointObject, TagTrait, TextObject},
     symbols::{AreaSymbol, LineSymbol, PointSymbol, TextSymbol},
-    Omap, Scale,
+    BezierError, OmapWriter, Scale,
 };
 use std::{path::PathBuf, str::FromStr};
 
@@ -14,7 +14,7 @@ fn main() {
     let map_center_elevation_meters = 100.;
     let crs_epsg_code = 3006;
 
-    let mut omap = Omap::new(
+    let mut omap = OmapWriter::new(
         map_center,
         Scale::S15_000,
         Some(crs_epsg_code),
@@ -68,7 +68,7 @@ fn main() {
 
     let max_bezier_deviation_meters = 2.5;
 
-    let bez_error = omap::BezierError::new(Some(max_bezier_deviation_meters), None);
+    let bez_error = BezierError::new(Some(max_bezier_deviation_meters), None);
 
     omap.write_to_file(
         PathBuf::from_str("./simple_example.omap").unwrap(),

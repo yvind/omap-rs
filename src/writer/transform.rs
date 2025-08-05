@@ -19,7 +19,7 @@ impl Default for Transform {
 
 impl Transform {
     pub(crate) fn new(
-        scale: crate::Scale,
+        scale: crate::writer::Scale,
         combined_scale_factor: f64,
         grivation: f64,
     ) -> Transform {

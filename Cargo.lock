@@ -427,13 +427,14 @@ dependencies = [
 
 [[package]]
 name = "omap"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "geo-types",
  "kiddo",
  "linestring2bezier",
  "proj4rs",
+ "quick-xml",
  "thiserror 2.0.12",
  "world_magnetic_model",
 ]
@@ -500,6 +501,15 @@ dependencies = [
  "thiserror 1.0.69",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8927b0664f5c5a98265138b7e3f90aa19a6b21353182469ace36d4ac527b7b1b"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

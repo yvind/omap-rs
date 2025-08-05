@@ -1,9 +1,9 @@
-use crate::{
-    objects::{MapObjectTrait, TagTrait},
+use super::{MapObjectTrait, TagTrait};
+use crate::writer::{
     serialize::{SerializeBezier, SerializePolyLine},
     symbols::{LineSymbol, SymbolTrait},
     transform::Transform,
-    OmapResult,
+    Result,
 };
 use geo_types::LineString;
 use std::{
@@ -51,7 +51,7 @@ impl MapObjectTrait for LineObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
         f.write_all(format!("<object type=\"1\" symbol=\"{}\">", self.symbol.id()).as_bytes())?;
         self.write_tags(f)?;
         self.write_coords(f, bez_error, transform)?;
@@ -64,7 +64,7 @@ impl MapObjectTrait for LineObject {
         f: &mut BufWriter<File>,
         bez_error: Option<f64>,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
         let (bytes, num_coords) = if let Some(bezier_error) = bez_error {
             self.line.serialize_bezier(bezier_error, transform)
         } else {
@@ -76,7 +76,7 @@ impl MapObjectTrait for LineObject {
         Ok(())
     }
 
-    fn write_tags(&self, f: &mut BufWriter<File>) -> OmapResult<()> {
+    fn write_tags(&self, f: &mut BufWriter<File>) -> Result<()> {
         if self.tags.is_empty() {
             return Ok(());
         }

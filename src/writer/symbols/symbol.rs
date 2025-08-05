@@ -1,5 +1,5 @@
 use super::{AreaSymbol, LineSymbol, PointSymbol, SymbolTrait, TextSymbol};
-use crate::Scale;
+use crate::writer::Scale;
 use std::fmt;
 
 /// Orienteering map symbols higher order enum

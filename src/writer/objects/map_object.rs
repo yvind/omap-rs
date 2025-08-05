@@ -1,5 +1,5 @@
 use super::{AreaObject, LineObject, MapObjectTrait, PointObject, TagTrait, TextObject};
-use crate::{symbols::Symbol, transform::Transform, BezierError, OmapError, OmapResult};
+use crate::writer::{symbols::Symbol, transform::Transform, BezierError, Error, Result};
 use std::{fs::File, io::BufWriter};
 
 /// Enum for the different map object types
@@ -45,7 +45,7 @@ impl MapObject {
         f: &mut BufWriter<File>,
         bezier_error: BezierError,
         transform: &Transform,
-    ) -> OmapResult<()> {
+    ) -> Result<()> {
         match self {
             MapObject::LineObject(line_object) => {
                 line_object.write_to_map(f, bezier_error.get_line_error(), transform)
@@ -71,7 +71,7 @@ impl MapObject {
     /// change the symbol of a map object
     /// returns Err MismatchingSymbolAndObject if the object type and symbol type do not match
     /// nothing happens in that case
-    pub fn change_symbol(&mut self, new_symbol: impl Into<Symbol>) -> OmapResult<()> {
+    pub fn change_symbol(&mut self, new_symbol: impl Into<Symbol>) -> Result<()> {
         let new_symbol = new_symbol.into();
 
         match (self, new_symbol) {
@@ -87,7 +87,7 @@ impl MapObject {
             (MapObject::TextObject(text_object), Symbol::Text(text_symbol)) => {
                 text_object.change_symbol(text_symbol)
             }
-            _ => return Err(OmapError::MismatchingSymbolAndObject),
+            _ => return Err(Error::MismatchingSymbolAndObject),
         };
 
         Ok(())
