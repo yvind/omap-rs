@@ -1,4 +1,4 @@
-use crate::editor::Transform;
+use crate::editor::{Result, Transform};
 use geo_types::Point;
 
 #[derive(Debug, Clone)]
@@ -55,9 +55,9 @@ impl TextObject {
 
     pub(crate) fn write<W: std::io::Write>(
         self,
-        write: &mut W,
+        writer: &mut W,
         transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
+    ) -> Result<()> {
         let coords_tag = match self.geometry {
             TextGeomtry::SingleAnchor(p) => {
                 let map_coords = transform.to_map_coords(p.0);
@@ -78,6 +78,7 @@ impl TextObject {
             }
         };
 
-        write.write_all(format!("{}<text>{}</text>", coords_tag, self.text).as_bytes())
+        writer.write_all(format!("{}<text>{}</text>", coords_tag, self.text).as_bytes())?;
+        Ok(())
     }
 }

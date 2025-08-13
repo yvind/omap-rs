@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use quick_xml::events::BytesStart;
 
 use crate::editor::objects::MapObject;
-use crate::editor::symbols::{Symbol, SymbolId};
+use crate::editor::symbols::SymbolId;
 use crate::editor::{Result, Transform};
 
 #[derive(Debug, Clone)]
@@ -41,10 +41,10 @@ impl MapPart {
 
     pub(super) fn write<W: std::io::Write>(
         self,
-        write: &mut W,
+        writer: &mut W,
         transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
-        write.write_all(
+    ) -> Result<()> {
+        writer.write_all(
             format!(
                 "<part name=\"{}\"><objects count=\"{}\">\n",
                 self.name,
@@ -53,12 +53,13 @@ impl MapPart {
             .as_bytes(),
         )?;
 
-        for (symbol_id, objects) in self.objects {
+        for (_, objects) in self.objects {
             for object in objects {
-                object.write(write, transform)?;
+                object.write(writer, transform)?;
             }
         }
 
-        write.write_all("</objects></part>\n".as_bytes())
+        writer.write_all("</objects></part>\n".as_bytes())?;
+        Ok(())
     }
 }

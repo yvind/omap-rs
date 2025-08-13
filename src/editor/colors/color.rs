@@ -42,10 +42,8 @@ impl Color {
         todo!()
     }
 
-    pub(super) fn write<W: std::io::Write>(
-        self,
-        write: &mut W,
-    ) -> std::result::Result<(), std::io::Error> {
-        write.write_all(self.xml_def.as_bytes())
+    pub(super) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
+        writer.write_all(self.xml_def.as_bytes())?;
+        Ok(())
     }
 }

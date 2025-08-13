@@ -41,16 +41,12 @@ impl ObjectGeometry {
         }
     }
 
-    fn write<W: std::io::Write>(
-        self,
-        write: &mut W,
-        transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
+    fn write<W: std::io::Write>(self, writer: &mut W, transform: &Transform) -> Result<()> {
         match self {
-            ObjectGeometry::Area(area_object) => area_object.write(write, transform),
-            ObjectGeometry::Line(line_object) => line_object.write(write, transform),
-            ObjectGeometry::Point(point_object) => point_object.write(write, transform),
-            ObjectGeometry::Text(text_object) => text_object.write(write, transform),
+            ObjectGeometry::Area(area_object) => area_object.write(writer, transform),
+            ObjectGeometry::Line(line_object) => line_object.write(writer, transform),
+            ObjectGeometry::Point(point_object) => point_object.write(writer, transform),
+            ObjectGeometry::Text(text_object) => text_object.write(writer, transform),
         }
     }
 }

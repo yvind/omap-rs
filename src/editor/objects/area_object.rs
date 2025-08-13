@@ -12,9 +12,10 @@ pub struct AreaObject {
 impl AreaObject {
     pub(super) fn write<W: std::io::Write>(
         &self,
-        write: &mut W,
+        writer: &mut W,
         transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
+    ) -> Result<()> {
+        Ok(())
     }
 }
 

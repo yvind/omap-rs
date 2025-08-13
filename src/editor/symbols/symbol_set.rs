@@ -1,7 +1,7 @@
 use super::{Symbol, SymbolCode, SymbolId, SymbolType};
-use crate::editor::{colors::Color, Result};
+use crate::editor::{Result, colors::Color};
 
-use quick_xml::events::BytesStart;
+use quick_xml::{Reader, events::BytesStart};
 
 #[derive(Debug, Clone)]
 pub struct SymbolSet {
@@ -96,15 +96,15 @@ impl SymbolSet {
 }
 
 impl SymbolSet {
-    pub(crate) fn parse_symbol_set(element: &BytesStart) -> Result<SymbolSet> {
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        element: &BytesStart,
+    ) -> Result<SymbolSet> {
         todo!()
     }
 
-    pub(crate) fn write<W: std::io::Write>(
-        self,
-        write: &mut W,
-    ) -> std::result::Result<(), std::io::Error> {
-        write.write_all(
+    pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
+        writer.write_all(
             format!(
                 "<symbols count=\"{}\" id=\"{}\">\n",
                 self.num_symbols(),
@@ -113,8 +113,9 @@ impl SymbolSet {
             .as_bytes(),
         )?;
         for symbol in self.symbols {
-            symbol.write(write)?;
+            symbol.write(writer)?;
         }
-        write.write_all("</symbols>\n".as_bytes())
+        writer.write_all("</symbols>\n".as_bytes())?;
+        Ok(())
     }
 }

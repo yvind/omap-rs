@@ -1,8 +1,8 @@
-mod barrier;
 mod colors;
 mod format_info;
 mod geo_ref;
 mod map_parts;
+mod notes;
 mod objects;
 mod omap_editor;
 mod symbols;
@@ -36,4 +36,12 @@ pub enum Error {
     EncodingError(#[from] quick_xml::encoding::EncodingError),
     #[error("Could not merge map parts. Check that the indices are different and in range")]
     MapPartMergeError,
+    #[error("XML-encoding {0} is not supported")]
+    UnsupportedEncoding(String),
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error(transparent)]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("Part {0} of file could not parsed")]
+    ParseOmapFileError(String),
 }

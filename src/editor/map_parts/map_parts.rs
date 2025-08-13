@@ -1,3 +1,5 @@
+use quick_xml::{Reader, events::BytesStart};
+
 use super::MapPart;
 use crate::editor::{Error, Result, Transform};
 
@@ -90,15 +92,24 @@ impl MapParts {
 impl MapParts {
     pub(crate) fn write<W: std::io::Write>(
         self,
-        write: &mut W,
+        writer: &mut W,
         transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
-        write.write_all(format!("<parts count=\"{}\" current\"0\">\n", self.0.len()).as_bytes())?;
+    ) -> Result<()> {
+        writer
+            .write_all(format!("<parts count=\"{}\" current\"0\">\n", self.0.len()).as_bytes())?;
 
         for part in self.0 {
-            part.write(write, transform)?;
+            part.write(writer, transform)?;
         }
 
-        write.write_all("</parts>\n".as_bytes())
+        writer.write_all("</parts>\n".as_bytes())?;
+        Ok(())
+    }
+
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        element: &BytesStart,
+    ) -> Result<Self> {
+        todo!()
     }
 }

@@ -1,16 +1,16 @@
 use quick_xml::{
-    events::{BytesStart, Event},
     Reader,
+    events::{BytesStart, Event},
 };
 use std::{collections::HashMap, io::BufRead};
 
 use super::{AreaObject, LineObject, ObjectGeometry, PointObject, TextObject};
 
-use crate::editor::{
-    symbols::{Symbol, SymbolType},
-    Transform,
-};
 use crate::editor::{Error, Result};
+use crate::editor::{
+    Transform,
+    symbols::{Symbol, SymbolType},
+};
 
 #[derive(Debug, Clone)]
 pub struct MapObject {
@@ -25,10 +25,10 @@ pub struct MapObject {
 impl MapObject {
     pub(crate) fn write<W: std::io::Write>(
         self,
-        write: &mut W,
+        writer: &mut W,
         transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
-        write.write_all(
+    ) -> Result<()> {
+        writer.write_all(
             format!(
                 "<object type=\"{}\" symbol=\"{}\"",
                 self.geometry.type_value(),
@@ -38,26 +38,27 @@ impl MapObject {
         )?;
 
         if let Some(str) = self.geometry.get_special_keys() {
-            write.write_all(format!(" {str}>").as_bytes())?;
+            writer.write_all(format!(" {str}>").as_bytes())?;
         } else {
-            write.write_all(">".as_bytes())?;
+            writer.write_all(">".as_bytes())?;
         }
 
         if !self.tags.is_empty() {
-            write.write_all("<tags>".as_bytes())?;
+            writer.write_all("<tags>".as_bytes())?;
             for (key, value) in self.tags {
-                write.write_all(format!("<t k=\"{key}\">{value}</t>").as_bytes())?;
+                writer.write_all(format!("<t k=\"{key}\">{value}</t>").as_bytes())?;
             }
-            write.write_all("</tags>".as_bytes())?;
+            writer.write_all("</tags>".as_bytes())?;
         }
 
         if self.is_coords_touched {
-            self.geometry.write(write, transform)?;
+            self.geometry.write(writer, transform)?;
         } else {
-            write.write_all(self.coords_xml_def.as_bytes())?;
+            writer.write_all(self.coords_xml_def.as_bytes())?;
         }
 
-        write.write_all("</object>\n".as_bytes())
+        writer.write_all("</object>\n".as_bytes())?;
+        Ok(())
     }
 }
 

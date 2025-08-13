@@ -15,17 +15,18 @@ impl PointObject {
 
     pub(super) fn write<W: std::io::Write>(
         self,
-        write: &mut W,
+        writer: &mut W,
         transform: &Transform,
-    ) -> std::result::Result<(), std::io::Error> {
+    ) -> Result<()> {
         let map_coords = transform.to_map_coords(self.point.0);
-        write.write_all(
+        writer.write_all(
             format!(
                 "<coords count=\"1\">{} {};</coords>",
                 map_coords.0, map_coords.1
             )
             .as_bytes(),
-        )
+        )?;
+        Ok(())
     }
 }
 

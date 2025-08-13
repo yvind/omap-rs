@@ -1,4 +1,4 @@
-use quick_xml::events::BytesStart;
+use quick_xml::{Reader, events::BytesStart};
 
 use super::{Cmyk, Color};
 use crate::editor::Result;
@@ -11,7 +11,10 @@ impl ColorSet {
     pub fn push_color(&mut self, name: String, cmyk: Cmyk) {
         let [c, m, y, k] = cmyk.as_rounded_fractions(2);
 
-        let def = format!("<color priority=\"{}\" name=\"{name}\" c=\"{c}\" m=\"{m}\" y=\"{y}\" k=\"{k}\" opacity=\"1\"><cmyk method=\"custom\"/></color>\n", self.num_colors());
+        let def = format!(
+            "<color priority=\"{}\" name=\"{name}\" c=\"{c}\" m=\"{m}\" y=\"{y}\" k=\"{k}\" opacity=\"1\"><cmyk method=\"custom\"/></color>\n",
+            self.num_colors()
+        );
 
         self.0.push(Color::new(name, cmyk, def, self.num_colors()));
     }
@@ -40,20 +43,21 @@ impl ColorSet {
 }
 
 impl ColorSet {
-    pub(crate) fn parse_color_set(element: &BytesStart) -> Result<ColorSet> {
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        element: &BytesStart,
+    ) -> Result<ColorSet> {
         todo!()
     }
 
-    pub(crate) fn write<W: std::io::Write>(
-        self,
-        write: &mut W,
-    ) -> std::result::Result<(), std::io::Error> {
-        write.write_all(format!("<colors count=\"{}\">\n", self.num_colors()).as_bytes())?;
+    pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
+        writer.write_all(format!("<colors count=\"{}\">\n", self.num_colors()).as_bytes())?;
 
         for color in self.0 {
-            color.write(write)?;
+            color.write(writer)?;
         }
 
-        write.write_all("</colors>\n".as_bytes())
+        writer.write_all("</colors>\n".as_bytes())?;
+        Ok(())
     }
 }
