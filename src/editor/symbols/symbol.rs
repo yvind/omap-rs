@@ -1,7 +1,12 @@
-use super::{SymbolCode, SymbolId, SymbolType};
-use crate::editor::Result;
+use std::{io::BufRead, str::FromStr};
 
-use quick_xml::events::BytesStart;
+use super::{SymbolCode, SymbolId, SymbolType};
+use crate::editor::{Error, Result, notes};
+
+use quick_xml::{
+    Reader,
+    events::{BytesStart, Event},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol {
@@ -54,53 +59,97 @@ impl Symbol {
 }
 
 impl Symbol {
-    pub(super) fn parse_symbol(element: &BytesStart) -> Result<Symbol> {
-        todo!();
-
-        /*
-        let mut symbol_type = SymbolType::Point;
-        let mut definition = String::new();
+    pub(super) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        element: &BytesStart,
+    ) -> Result<Symbol> {
+        let mut symbol_type = None;
         let mut description = String::new();
         let mut name = String::new();
+        let mut id = SymbolId::MAX;
+        let mut code = None;
+        let mut xml_def = String::new();
 
         // Parse attributes
         for attr in element.attributes() {
             let attr = attr?;
-            let key = std::str::from_utf8(attr.key.as_ref())?;
-            let value = std::str::from_utf8(&attr.value)?;
 
-            match key {
-                "type" => {
-                    symbol_type = match value {
-                        "1" => SymbolType::Point,
-                        "2" => SymbolType::Line,
-                        "4" => SymbolType::Area,
-                        "8" => SymbolType::Text,
-                        _ => SymbolType::Area,
+            match attr.key.local_name().as_ref() {
+                b"type" => {
+                    symbol_type = match attr.value.as_ref() {
+                        b"1" => Some(SymbolType::Point),
+                        b"2" => Some(SymbolType::Line),
+                        b"4" => Some(SymbolType::Area),
+                        b"8" => Some(SymbolType::Text),
+                        _ => None,
                     };
                 }
-                "id" => {
-                    definition = value.to_string();
+                b"id" => {
+                    id = SymbolId::from_str(std::str::from_utf8(&attr.value)?)?;
                 }
-                "name" => {
-                    name = value.to_string();
+                b"name" => {
+                    name = String::from_utf8(attr.value.to_vec())?;
                 }
-                "code" => {
-                    if name.is_empty() {
-                        name = format!("Symbol {}", value);
+                b"code" => {
+                    let mut parts = [0, 0, 0];
+                    for (i, part) in std::str::from_utf8(&attr.value)?
+                        .split('.')
+                        .enumerate()
+                        .take(3)
+                    {
+                        parts[i] = u16::from_str(part)?;
                     }
+
+                    code = Some(SymbolCode::from(parts));
                 }
                 _ => {}
             }
         }
 
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
+                    b"description" => description = notes::parse(reader)?,
+                    name => {
+                        xml_def.push_str(
+                            format!(
+                                "<{}{}>",
+                                std::str::from_utf8(name)?,
+                                std::str::from_utf8(bytes_start.attributes_raw())?,
+                            )
+                            .as_str(),
+                        );
+                        let _ = reader.stream().read_line(&mut xml_def);
+                        break;
+                    }
+                },
+                Event::End(bytes_end) => {
+                    if matches!(bytes_end.local_name().as_ref(), b"symbol") {
+                        break;
+                    }
+                }
+                Event::Eof => {
+                    return Err(Error::ParseOmapFileError(
+                        "Unexpected EOF in symbol parsing".to_string(),
+                    ));
+                }
+                _ => (),
+            }
+        }
+
         Ok(Symbol {
-            symbol_type,
-            definition,
+            symbol_type: symbol_type.ok_or(Error::ParseOmapFileError(
+                "Unknown symbol type for a symbol".to_string(),
+            ))?,
+            code: code.ok_or(Error::ParseOmapFileError(
+                "Unknown symbol code for a symbol".to_string(),
+            ))?,
+            id,
             description,
             name,
+            xml_def,
         })
-         */
     }
 
     pub(super) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {

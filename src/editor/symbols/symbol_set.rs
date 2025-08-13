@@ -1,7 +1,12 @@
-use super::{Symbol, SymbolCode, SymbolId, SymbolType};
-use crate::editor::{Result, colors::Color};
+use std::str::FromStr;
 
-use quick_xml::{Reader, events::BytesStart};
+use super::{Symbol, SymbolCode, SymbolId, SymbolType};
+use crate::editor::{Error, Result, colors::Color};
+
+use quick_xml::{
+    Reader,
+    events::{BytesStart, Event},
+};
 
 #[derive(Debug, Clone)]
 pub struct SymbolSet {
@@ -100,7 +105,44 @@ impl SymbolSet {
         reader: &mut Reader<R>,
         element: &BytesStart,
     ) -> Result<SymbolSet> {
-        todo!()
+        let mut id = String::new();
+        let mut count = 0;
+
+        for attr in element.attributes() {
+            let attr = attr?;
+
+            match attr.key.local_name().as_ref() {
+                b"id" => id = attr.unescape_value()?.into_owned(),
+                b"count" => count = usize::from_str(&attr.unescape_value()?)?,
+                _ => (),
+            }
+        }
+
+        let mut symbols = Vec::with_capacity(count);
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(bytes_start) => {
+                    if matches!(bytes_start.local_name().as_ref(), b"symbol") {
+                        symbols.push(Symbol::parse(reader, &bytes_start)?);
+                    }
+                }
+                Event::End(bytes_end) => {
+                    if matches!(bytes_end.local_name().as_ref(), b"symbols") {
+                        break;
+                    }
+                }
+                Event::Eof => {
+                    return Err(Error::ParseOmapFileError(
+                        "Unexpected EOF in symbols parsing".to_string(),
+                    ));
+                }
+                _ => (),
+            }
+        }
+
+        Ok(SymbolSet { symbols, id })
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {

@@ -51,7 +51,7 @@ impl OmapEditor {
                     b"map" => omap_version = Some(OmapVersion::parse(&bytes_start)?),
                     b"notes" => notes = Some(notes::parse(&mut reader)?),
                     b"georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
-                    b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
+                    b"colors" => colors = Some(ColorSet::parse(&mut reader)?),
                     b"barrier" => {
                         barrier = Some(format!(
                             "<barrier{}>",

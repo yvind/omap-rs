@@ -1,22 +1,23 @@
-use quick_xml::{Reader, events::BytesStart};
+use quick_xml::{Reader, events::Event};
 
 use super::{Cmyk, Color};
-use crate::editor::Result;
+use crate::editor::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct ColorSet(Vec<Color>);
 
 impl ColorSet {
     /// Add a simple color to the end of the color list
-    pub fn push_color(&mut self, name: String, cmyk: Cmyk) {
+    pub fn push_color(&mut self, name: String, cmyk: Cmyk, opacity: f64) {
         let [c, m, y, k] = cmyk.as_rounded_fractions(2);
 
         let def = format!(
-            "<color priority=\"{}\" name=\"{name}\" c=\"{c}\" m=\"{m}\" y=\"{y}\" k=\"{k}\" opacity=\"1\"><cmyk method=\"custom\"/></color>\n",
+            "<color priority=\"{}\" name=\"{name}\" c=\"{c}\" m=\"{m}\" y=\"{y}\" k=\"{k}\" opacity=\"{opacity}\"><cmyk method=\"custom\"/></color>\n",
             self.num_colors()
         );
 
-        self.0.push(Color::new(name, cmyk, def, self.num_colors()));
+        self.0
+            .push(Color::new(name, cmyk, def, self.num_colors(), opacity));
     }
 
     pub fn num_colors(&self) -> usize {
@@ -43,11 +44,33 @@ impl ColorSet {
 }
 
 impl ColorSet {
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        element: &BytesStart,
-    ) -> Result<ColorSet> {
-        todo!()
+    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<ColorSet> {
+        let mut buf = Vec::new();
+
+        let mut colors = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(bytes_start) => {
+                    if matches!(bytes_start.local_name().as_ref(), b"color") {
+                        colors.push(Color::parse_color(reader, &bytes_start)?)
+                    }
+                }
+                Event::End(bytes_end) => {
+                    if matches!(bytes_end.local_name().as_ref(), b"colors") {
+                        break;
+                    }
+                }
+                Event::Eof => {
+                    return Err(Error::ParseOmapFileError(
+                        "Unexpected EOF in color set parsing".to_string(),
+                    ));
+                }
+                _ => (),
+            }
+        }
+
+        Ok(ColorSet(colors))
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
