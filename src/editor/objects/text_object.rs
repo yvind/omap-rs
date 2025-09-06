@@ -1,5 +1,6 @@
 use crate::editor::{Result, Transform};
 use geo_types::Point;
+use quick_xml::Reader;
 
 #[derive(Debug, Clone)]
 pub enum TextGeomtry {
@@ -21,12 +22,35 @@ pub enum HorizontalAlign {
     AlignRight = 2,
 }
 
+impl HorizontalAlign {
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            b"0" => Some(HorizontalAlign::AlignLeft),
+            b"1" => Some(HorizontalAlign::AlignHCenter),
+            b"2" => Some(HorizontalAlign::AlignRight),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerticalAlign {
     AlignBaseline = 0,
     AlignTop = 1,
     AlignVCenter = 2,
     AlignBottom = 3,
+}
+
+impl VerticalAlign {
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            b"0" => Some(VerticalAlign::AlignBaseline),
+            b"1" => Some(VerticalAlign::AlignTop),
+            b"2" => Some(VerticalAlign::AlignVCenter),
+            b"3" => Some(VerticalAlign::AlignBottom),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,11 +77,7 @@ impl TextObject {
         }
     }
 
-    pub(crate) fn write<W: std::io::Write>(
-        self,
-        writer: &mut W,
-        transform: &Transform,
-    ) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
         let coords_tag = match self.geometry {
             TextGeomtry::SingleAnchor(p) => {
                 let map_coords = transform.to_map_coords(p.0);
@@ -80,5 +100,13 @@ impl TextObject {
 
         writer.write_all(format!("{}<text>{}</text>", coords_tag, self.text).as_bytes())?;
         Ok(())
+    }
+
+    pub(super) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        h_align: Option<HorizontalAlign>,
+        v_align: Option<VerticalAlign>,
+        rotation: f64,
+    ) -> Result<(Self, String)> {
     }
 }

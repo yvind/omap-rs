@@ -348,9 +348,8 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "linestring2bezier"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dded0070902f7364352b8ad26ea211f37fb9b9aa0fccaaa718374d813062c895"
+version = "0.3.0"
+source = "git+https://github.com/yvind/linestring2bezier#32773a7e43e89e4eff6e774663df579705e25538"
 dependencies = [
  "geo-types",
 ]

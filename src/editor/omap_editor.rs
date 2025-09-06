@@ -4,8 +4,6 @@ use std::io::{BufWriter, Read, Write};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::editor::Transform;
-
 use super::colors::ColorSet;
 use super::format_info::{OmapVersion, XmlVersion};
 use super::geo_ref::GeoRef;
@@ -15,6 +13,16 @@ use super::symbols::SymbolSet;
 
 use super::{Error, Result};
 
+/// All objects are in map coordinates i.e given in mm of paper
+/// relative the ref point with positive y towards the magnetic north
+///
+/// To transform the coordinates to projected coordinates get the transform
+/// from GeoRef::get_transform(&self) and pass it to the MapObject::to_proj_object(self, transform: &Transform) -> ProjObject
+///
+/// For converting the other way use the inverse functions:
+/// GeoRef::get_inverse_transform(&self)
+/// ProjObject::to_map_object(self, inv_transform: &Transform) -> MapObject
+///
 #[derive(Debug, Clone)]
 pub struct OmapEditor {
     pub notes: String,
@@ -58,8 +66,24 @@ impl OmapEditor {
                             std::str::from_utf8(bytes_start.attributes_raw())?
                         ));
                     }
-                    b"symbols" => symbols = Some(SymbolSet::parse(&mut reader, &bytes_start)?),
-                    b"parts" => parts = Some(MapParts::parse(&mut reader, &bytes_start)?),
+                    b"symbols" => {
+                        if let Some(colors) = &colors {
+                            symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
+                        } else {
+                            return Err(Error::ParseOmapFileError(
+                                "Encountered Symbols before Colors".to_string(),
+                            ));
+                        }
+                    }
+                    b"parts" => {
+                        if let Some(symbols) = &symbols {
+                            parts = Some(MapParts::parse(&mut reader, symbols)?);
+                        } else {
+                            return Err(Error::ParseOmapFileError(
+                                "Encountered Map parts before symbols".to_string(),
+                            ));
+                        }
+                    }
                     b"templates" => {
                         let mut tav = format!(
                             "<templates{}>",
@@ -100,8 +124,6 @@ impl OmapEditor {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
 
-        let transform = Transform::new(&self.geo_info);
-
         self.xml_version.write(&mut writer)?;
         self.omap_version.write(&mut writer)?;
         writer.write_all(
@@ -109,8 +131,6 @@ impl OmapEditor {
                 "<notes>{}</notes>\n",
                 quick_xml::escape::escape(self.notes.as_str())
             )
-            .escape_default()
-            .to_string()
             .as_bytes(),
         )?;
 
@@ -120,7 +140,7 @@ impl OmapEditor {
         writer.write_all(self.barrier.as_bytes())?;
 
         self.symbols.write(&mut writer)?;
-        self.parts.write(&mut writer, &transform)?;
+        self.parts.write(&mut writer)?;
 
         writer.write_all(self.templates_and_view.as_bytes())?;
         writer.write_all("</barrier>\n</map>".as_bytes())?;

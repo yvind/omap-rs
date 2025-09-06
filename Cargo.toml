@@ -14,7 +14,7 @@ keywords = ["orienteering", "map", "mapping"]
 [dependencies]
 geo-types = "0.7.16"
 thiserror = "2.0.11"
-linestring2bezier = "0.2.1"
+linestring2bezier = { git = "https://github.com/yvind/linestring2bezier" }
 kiddo = { version = "5.0.3", optional = true }
 proj4rs = { version = "0.1.5", features = [
     "crs-definitions",

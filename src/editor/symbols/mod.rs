@@ -8,10 +8,11 @@ pub type SymbolId = usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolType {
-    Area,
-    Line,
-    Point,
-    Text,
+    Point = 1,
+    Line = 2,
+    Area = 4,
+    Text = 8,
+    Combined = 16,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

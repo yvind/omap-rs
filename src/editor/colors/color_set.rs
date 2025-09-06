@@ -16,8 +16,7 @@ impl ColorSet {
             self.num_colors()
         );
 
-        self.0
-            .push(Color::new(name, cmyk, def, self.num_colors(), opacity));
+        self.0.push(Color::new(name, cmyk, def, opacity));
     }
 
     pub fn num_colors(&self) -> usize {
@@ -40,6 +39,14 @@ impl ColorSet {
     /// Access the colors through an iterator
     pub fn iter(&self) -> std::slice::Iter<'_, Color> {
         self.0.iter()
+    }
+
+    pub fn get_color_priority(&self, color: &Color) -> Option<usize> {
+        self.0
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c == &color)
+            .map(|(i, _)| i)
     }
 }
 

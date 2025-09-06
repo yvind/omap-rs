@@ -1,7 +1,7 @@
 use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
 
-use crate::writer::{transform::Transform, Error, Result};
+use crate::writer::{Error, Result, transform::Transform};
 
 pub(crate) trait MapCoord {
     fn to_map_coordinates(self, transform: &Transform) -> Result<(i32, i32)>;
@@ -27,7 +27,7 @@ pub(crate) trait SerializePolyLine {
 
 pub(crate) trait SerializeBezier {
     fn serialize_bezier(self, bezier_error: f64, transform: &Transform)
-        -> Result<(Vec<u8>, usize)>;
+    -> Result<(Vec<u8>, usize)>;
 }
 
 impl SerializePolyLine for LineString {
@@ -61,7 +61,7 @@ impl SerializeBezier for LineString {
         transform: &Transform,
     ) -> Result<(Vec<u8>, usize)> {
         let is_closed = self.is_closed();
-        let bezier = BezierString::from_linestring(self, bezier_error);
+        let bezier = BezierString::from_line_string(self, bezier_error);
 
         let num_coords = bezier.num_points();
         let num_segments = bezier.0.len();

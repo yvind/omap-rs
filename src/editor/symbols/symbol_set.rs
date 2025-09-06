@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use super::{Symbol, SymbolCode, SymbolId, SymbolType};
-use crate::editor::{Error, Result, colors::Color};
+use super::{Symbol, SymbolCode, SymbolType};
+use crate::editor::{Error, Result, colors::ColorSet};
 
 use quick_xml::{
     Reader,
@@ -20,8 +20,12 @@ impl SymbolSet {
         &self.id
     }
 
-    pub fn get_symbol_by_id(&self, id: SymbolId) -> Option<&Symbol> {
-        self.symbols.iter().find(|&s| s.get_id() == id)
+    pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
+        if self.num_symbols() <= id {
+            None
+        } else {
+            Some(&self.symbols[id])
+        }
     }
 
     pub fn get_symbol_by_code(&self, code: SymbolCode) -> Option<&Symbol> {
@@ -47,17 +51,19 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color: &Color,
-        width: f32,
+        color_priority: usize,
+        width: u32,
+        description: String,
     ) {
-        let def = format!("<symbol type=\"2\" ...</symbol>\n");
+        let def = format!(
+            "<line_symbol color=\"{color_priority}\" line_width=\"{width}\" join_style=\"2\" cap_style=\"1\"/>",
+        );
 
         self.symbols.push(Symbol::new(
             SymbolType::Line,
             def,
-            self.num_symbols(),
             symbol_code.into(),
-            String::new(),
+            description,
             name,
         ));
     }
@@ -66,16 +72,16 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color: &Color,
+        color_priority: usize,
+        description: String,
     ) {
-        let def = format!("<symbol type=\"4\" ...</symbol>\n");
+        let def = format!("<area_symbol inner_color=\"{color_priority}\"/>");
 
         self.symbols.push(Symbol::new(
             SymbolType::Area,
             def,
-            self.num_symbols(),
             symbol_code.into(),
-            String::new(),
+            description,
             name,
         ));
     }
@@ -84,17 +90,39 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color: &Color,
-        radius: f32,
+        color_priority: usize,
+        radius: u32,
+        description: String,
     ) {
-        let def = format!("<symbol type=\"1\" ...</symbol>\n");
+        let def =
+            format!("<point_symbol inner_radius=\"{radius}\" inner_color=\"{color_priority}\"/>",);
 
         self.symbols.push(Symbol::new(
             SymbolType::Point,
             def,
-            self.num_symbols(),
             symbol_code.into(),
-            String::new(),
+            description,
+            name,
+        ));
+    }
+
+    pub fn push_simple_text_symbol(
+        &mut self,
+        symbol_code: impl Into<SymbolCode>,
+        name: String,
+        size: u32,
+        color_priority: usize,
+        description: String,
+    ) {
+        let def = format!(
+            "<text_symbol icon_text=\"A\"><font family=\"Sans Serif\" size=\"{size}\"/><text color=\"{color_priority}\"/></text_symbol>"
+        );
+
+        self.symbols.push(Symbol::new(
+            SymbolType::Text,
+            def,
+            symbol_code.into(),
+            description,
             name,
         ));
     }
@@ -104,6 +132,7 @@ impl SymbolSet {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart,
+        colors: &ColorSet,
     ) -> Result<SymbolSet> {
         let mut id = String::new();
         let mut count = 0;

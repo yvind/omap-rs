@@ -1,7 +1,7 @@
-use quick_xml::{Reader, events::BytesStart};
+use quick_xml::Reader;
 
 use super::MapPart;
-use crate::editor::{Error, Result, Transform};
+use crate::editor::{Error, Result, symbols::SymbolSet};
 
 #[derive(Debug, Clone)]
 pub struct MapParts(Vec<MapPart>);
@@ -90,16 +90,12 @@ impl MapParts {
 }
 
 impl MapParts {
-    pub(crate) fn write<W: std::io::Write>(
-        self,
-        writer: &mut W,
-        transform: &Transform,
-    ) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
         writer
             .write_all(format!("<parts count=\"{}\" current\"0\">\n", self.0.len()).as_bytes())?;
 
         for part in self.0 {
-            part.write(writer, transform)?;
+            part.write(writer)?;
         }
 
         writer.write_all("</parts>\n".as_bytes())?;
@@ -108,8 +104,28 @@ impl MapParts {
 
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        symbols: &SymbolSet,
     ) -> Result<Self> {
-        todo!()
+        let mut parts = Vec::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                quick_xml::events::Event::Start(bytes_start) => {
+                    if matches!(bytes_start.local_name().as_ref(), b"part") {
+                        parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
+                    }
+                }
+                quick_xml::events::Event::End(_) => break,
+                quick_xml::events::Event::Eof => {
+                    return Err(Error::ParseOmapFileError(
+                        "Unexpected EOF in parsing MapParts".to_string(),
+                    ));
+                }
+                _ => (),
+            }
+        }
+
+        Ok(MapParts(parts))
     }
 }

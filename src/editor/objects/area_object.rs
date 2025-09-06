@@ -1,4 +1,5 @@
-use geo_types::Polygon;
+use geo_types::{LineString, Polygon};
+use quick_xml::Reader;
 
 use super::PatternRotation;
 use crate::editor::{Error, Result, Transform};
@@ -10,17 +11,13 @@ pub struct AreaObject {
 }
 
 impl AreaObject {
-    pub(super) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut W,
-        transform: &Transform,
-    ) -> Result<()> {
+    pub(super) fn write<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         Ok(())
     }
 }
 
 impl AreaObject {
-    fn parse_polygon(coords_str: &str) -> Result<Polygon<f64>> {
+    pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<(Self, String)> {
         let coords = super::parse_coordinates(coords_str)?;
 
         if coords.len() < 6 || coords.len() % 2 != 0 {

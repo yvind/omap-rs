@@ -2,19 +2,21 @@ use quick_xml::{
     Reader,
     events::{BytesStart, Event},
 };
-use std::{collections::HashMap, io::BufRead};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 use super::{AreaObject, LineObject, ObjectGeometry, PointObject, TextObject};
 
-use crate::editor::{Error, Result};
+use crate::editor::symbols::SymbolType;
 use crate::editor::{
-    Transform,
-    symbols::{Symbol, SymbolType},
+    Error, Result,
+    objects::text_object::{HorizontalAlign, VerticalAlign},
+    symbols::{SymbolId, SymbolSet},
 };
 
 #[derive(Debug, Clone)]
 pub struct MapObject {
-    symbol_id: usize,
+    symbol_id: SymbolId,
     pub tags: HashMap<String, String>,
     geometry: ObjectGeometry,
     // store the initial xml so that the object can be written back without being changed if the coords are not changed
@@ -23,11 +25,7 @@ pub struct MapObject {
 }
 
 impl MapObject {
-    pub(crate) fn write<W: std::io::Write>(
-        self,
-        writer: &mut W,
-        transform: &Transform,
-    ) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
         writer.write_all(
             format!(
                 "<object type=\"{}\" symbol=\"{}\"",
@@ -52,7 +50,7 @@ impl MapObject {
         }
 
         if self.is_coords_touched {
-            self.geometry.write(writer, transform)?;
+            self.geometry.write(writer)?;
         } else {
             writer.write_all(self.coords_xml_def.as_bytes())?;
         }
@@ -63,210 +61,121 @@ impl MapObject {
 }
 
 impl MapObject {
-    pub fn get_symbol_id(&self) -> usize {
+    pub fn get_symbol_id(&self) -> SymbolId {
         self.symbol_id
     }
 }
 
 impl MapObject {
-    pub(crate) fn parse_object<R: BufRead>(
-        element: &BytesStart,
-        symbol_map: &HashMap<String, Symbol>,
-        xml_reader: &mut Reader<R>,
-        buf: &mut Vec<u8>,
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        bytes_start: &BytesStart,
+        symbols: &SymbolSet,
     ) -> Result<MapObject> {
-        let mut tags = HashMap::new();
-        let mut symbol_id = String::new();
-        let mut object_type_str = String::new();
-        let mut rotation: Option<f64> = None;
+        let mut object_type = None;
+        let mut symbol_id = SymbolId::MAX;
+        let mut rotation = 0.;
+        let mut h_align = None;
+        let mut v_align = None;
 
-        // Parse object attributes
-        for attr in element.attributes() {
+        for attr in bytes_start.attributes() {
             let attr = attr?;
-            let key = std::str::from_utf8(attr.key.as_ref())?;
-            let value = std::str::from_utf8(&attr.value)?;
 
-            match key {
-                "symbol" => {
-                    symbol_id = value.to_string();
-                    tags.insert("symbol_id".to_string(), value.to_string());
-                }
-                "type" => {
-                    object_type_str = value.to_string();
-                }
-                "rotation" => {
-                    rotation = value.parse().ok();
-                }
-                _ => {
-                    tags.insert(key.to_string(), value.to_string());
-                }
+            match attr.key.local_name().as_ref() {
+                b"type" => match attr.value.as_ref() {
+                    b"0" => object_type = Some(SymbolType::Point),
+                    b"1" => object_type = Some(SymbolType::Area),
+                    b"4" => object_type = Some(SymbolType::Text),
+                    _ => (),
+                },
+
+                b"symbol" => symbol_id = usize::from_str(std::str::from_utf8(&attr.value)?)?,
+
+                b"rotation" => rotation = f64::from_str(std::str::from_utf8(&attr.value)?)?,
+                b"h_align" => h_align = HorizontalAlign::from_bytes(&attr.value),
+                b"v_align" => v_align = VerticalAlign::from_bytes(&attr.value),
+                _ => (),
             }
         }
 
-        // Get the symbol from the map
-        let symbol = symbol_map
-            .get(&symbol_id)
-            .cloned()
-            .unwrap_or_else(|| Symbol {
-                symbol_type: SymbolType::Point,
-                definition: symbol_id.clone(),
-                description: String::new(),
-                name: format!("Unknown symbol {}", symbol_id),
-            });
+        if symbol_id == SymbolId::MAX || object_type.is_none() {
+            return Err(Error::ParseOmapFileError(
+                "Could not parse object".to_string(),
+            ));
+        }
 
-        // Parse object content
-        let mut coords_str = String::new();
-        let mut text_content = String::new();
+        let mut object_type = object_type.unwrap();
 
+        // Mapper does not discern between area and line objects. But we do (Polygon vs LineString in object geometry)!
+        if let SymbolType::Area = object_type {
+            if let Some(symbol) = symbols.get_symbol_by_id(symbol_id) {
+                object_type = symbol.get_symbol_type();
+            } else {
+                return Err(Error::ParseOmapFileError(
+                    "Unknown symbol detected for object".to_string(),
+                ));
+            }
+        }
+
+        let mut geometry = None;
+        let mut coords_xml_def = None;
+        let mut tags = None;
+
+        let mut buf = Vec::new();
         loop {
-            match xml_reader.read_event_into(buf)? {
-                Event::Start(ref e) => {
-                    let tag_name = std::str::from_utf8(e.local_name().into_inner())?;
-                    match tag_name {
-                        "coords" => {
-                            // Read coordinates
-                            loop {
-                                match xml_reader.read_event_into(buf)? {
-                                    Event::Text(e) => {
-                                        coords_str.push_str(e.decode()?.as_ref());
-                                        break;
-                                    }
-                                    Event::End(_) => break,
-                                    _ => {}
-                                }
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
+                    b"tags" => tags = Some(super::parse_tags(reader)?),
+                    b"coords" => {
+                        (geometry, coords_xml_def) = match object_type {
+                            SymbolType::Point => {
+                                let (po, xml) = PointObject::parse(reader, rotation)?;
+                                (Some(ObjectGeometry::Point(po)), Some(xml))
                             }
-                        }
-                        "text" => {
-                            // Read text content
-                            loop {
-                                match xml_reader.read_event_into(buf)? {
-                                    Event::Text(e) => {
-                                        text_content.push_str(e.decode()?.as_ref());
-                                        break;
-                                    }
-                                    Event::End(_) => break,
-                                    _ => {}
-                                }
+                            SymbolType::Line => {
+                                let (lo, xml) = LineObject::parse(reader)?;
+                                (Some(ObjectGeometry::Line(lo)), Some(xml))
                             }
-                        }
-                        "tags" => {
-                            // Parse tags
-                            loop {
-                                match xml_reader.read_event_into(buf)? {
-                                    Event::Start(ref tag_elem) => {
-                                        if std::str::from_utf8(tag_elem.local_name().as_ref())?
-                                            == "t"
-                                        {
-                                            let mut key = String::new();
-                                            let mut value = String::new();
-
-                                            for attr in tag_elem.attributes() {
-                                                let attr = attr?;
-                                                let attr_key =
-                                                    std::str::from_utf8(attr.key.as_ref())?;
-                                                let attr_value = std::str::from_utf8(&attr.value)?;
-
-                                                if attr_key == "k" {
-                                                    key = attr_value.to_string();
-                                                }
-                                            }
-
-                                            // Read tag value
-                                            loop {
-                                                match xml_reader.read_event_into(buf)? {
-                                                    Event::Text(e) => {
-                                                        value.push_str(e.decode()?.as_ref());
-                                                        break;
-                                                    }
-                                                    Event::End(_) => break,
-                                                    _ => {}
-                                                }
-                                            }
-
-                                            if !key.is_empty() {
-                                                tags.insert(key, value);
-                                            }
-                                        }
-                                    }
-                                    Event::End(ref e) => {
-                                        if std::str::from_utf8(e.local_name().as_ref())? == "tags" {
-                                            break;
-                                        }
-                                    }
-                                    _ => {}
-                                }
+                            SymbolType::Area | SymbolType::Combined => {
+                                let (ao, xml) = AreaObject::parse(reader)?;
+                                (Some(ObjectGeometry::Area(ao)), Some(xml))
                             }
-                        }
-                        _ => {
-                            // Skip other elements
-                        }
+                            SymbolType::Text => {
+                                let (to, xml) =
+                                    TextObject::parse(reader, h_align, v_align, rotation)?;
+                                (Some(ObjectGeometry::Text(to)), Some(xml))
+                            }
+                        };
+                        break;
                     }
-                }
-                Event::End(ref e) => {
-                    if std::str::from_utf8(e.local_name().as_ref())? == "object" {
+                    _ => (),
+                },
+                Event::End(bytes_end) => {
+                    if matches!(bytes_end.local_name().as_ref(), b"object") {
                         break;
                     }
                 }
-                _ => {}
+                Event::Eof => {
+                    return Err(Error::ParseOmapFileError(
+                        "Unexpected EOF in object parsing".to_string(),
+                    ));
+                }
+                _ => (),
             }
-            buf.clear();
         }
 
-        // Create object based on type
-        let object_type = match object_type_str.as_str() {
-            "0" => {
-                // Point object
-                let point = PointObject::parse_point(&coords_str)?;
-                ObjectGeometry::Point(PointObject { point })
-            }
-            "1" => {
-                // Line object
-                let line = LineObject::parse_linestring(&coords_str)?;
-                ObjectGeometry::Line(LineObject { line })
-            }
-            "2" => {
-                // Area object
-                let polygon = AreaObject::parse_polygon(&coords_str)?;
-                ObjectGeometry::Area(AreaObject { polygon })
-            }
-            "4" => {
-                // Text object
-                let point = PointObject::parse_point(&coords_str)?;
-                ObjectGeometry::Text(TextObject {
-                    point,
-                    text: text_content,
-                })
-            }
-            _ => {
-                // Default to point based on symbol type
-                match symbol.get_symbol_type() {
-                    SymbolType::Point => {
-                        let point = PointObject::parse_point(&coords_str)?;
-                        ObjectGeometry::Point(PointObject { point })
-                    }
-                    SymbolType::Line => {
-                        let line = LineObject::parse_linestring(&coords_str)?;
-                        ObjectGeometry::Line(LineObject { line })
-                    }
-                    SymbolType::Area => {
-                        let polygon = AreaObject::parse_polygon(&coords_str)?;
-                        ObjectGeometry::Area(AreaObject { polygon })
-                    }
-                    SymbolType::Text => {
-                        let point = PointObject::parse_point(&coords_str)?;
-                        ObjectGeometry::Text(TextObject {
-                            point,
-                            text: text_content,
-                        })
-                    }
-                }
-            }
-        };
+        if geometry.is_none() || coords_xml_def.is_none() {
+            return Err(Error::ParseOmapFileError(
+                "Invalid object geometry".to_string(),
+            ));
+        }
 
         Ok(MapObject {
-            symbol,
-            tags,
-            object: object_type,
+            symbol_id,
+            tags: tags.unwrap_or_default(),
+            geometry: geometry.unwrap(),
+            coords_xml_def: coords_xml_def.unwrap(),
+            is_coords_touched: false,
         })
     }
 }

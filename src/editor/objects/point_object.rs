@@ -1,4 +1,5 @@
 use geo_types::Point;
+use quick_xml::Reader;
 
 use crate::editor::{Error, Result, Transform};
 
@@ -13,11 +14,7 @@ impl PointObject {
         Some(format!("rotation=\"{}\"", self.rotation))
     }
 
-    pub(super) fn write<W: std::io::Write>(
-        self,
-        writer: &mut W,
-        transform: &Transform,
-    ) -> Result<()> {
+    pub(super) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
         let map_coords = transform.to_map_coords(self.point.0);
         writer.write_all(
             format!(
@@ -31,7 +28,10 @@ impl PointObject {
 }
 
 impl PointObject {
-    fn parse_point(coords_str: &str) -> Result<Point<f64>> {
+    pub(super) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        rotation: f64,
+    ) -> Result<(Self, String)> {
         let coords: Vec<f64> = super::parse_coordinates(coords_str)?;
 
         if coords.len() >= 2 {

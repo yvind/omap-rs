@@ -4,7 +4,7 @@ mod color_set;
 pub use color::Color;
 pub use color_set::ColorSet;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cmyk {
     pub c: f64,
     pub m: f64,

@@ -4,26 +4,18 @@ use std::{io::BufRead, str::FromStr};
 use super::Cmyk;
 use crate::editor::Result;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Color {
     name: String,
-    priority: usize,
     opacity: f64,
     cmyk: Cmyk,
     xml_def: String,
 }
 
 impl Color {
-    pub(super) fn new(
-        name: String,
-        cmyk: Cmyk,
-        xml_def: String,
-        priority: usize,
-        opacity: f64,
-    ) -> Color {
+    pub(super) fn new(name: String, cmyk: Cmyk, xml_def: String, opacity: f64) -> Color {
         Color {
             name,
-            priority,
             cmyk,
             opacity,
             xml_def,
@@ -52,7 +44,6 @@ impl Color {
         element: &BytesStart,
     ) -> Result<Color> {
         let mut xml_def = format!("<color{}>", std::str::from_utf8(element.attributes_raw())?);
-        let mut priority = usize::MAX;
         let mut name = String::new();
         let mut cmyk = Cmyk::new(0., 0., 0., 0.);
         let mut opacity = 1.;
@@ -61,9 +52,6 @@ impl Color {
             let attr = attr?;
 
             match attr.key.local_name().as_ref() {
-                b"priority" => {
-                    priority = usize::from_str(std::str::from_utf8(attr.value.as_ref())?)?
-                }
                 b"name" => name.push_str(std::str::from_utf8(&attr.value)?),
                 b"c" => cmyk.c = f64::from_str(std::str::from_utf8(attr.value.as_ref())?)?,
                 b"m" => cmyk.m = f64::from_str(std::str::from_utf8(attr.value.as_ref())?)?,
@@ -78,7 +66,6 @@ impl Color {
 
         Ok(Color {
             name,
-            priority,
             cmyk,
             xml_def,
             opacity,

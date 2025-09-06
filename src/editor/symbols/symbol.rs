@@ -1,6 +1,6 @@
 use std::{io::BufRead, str::FromStr};
 
-use super::{SymbolCode, SymbolId, SymbolType};
+use super::{SymbolCode, SymbolType};
 use crate::editor::{Error, Result, notes};
 
 use quick_xml::{
@@ -12,7 +12,6 @@ use quick_xml::{
 pub struct Symbol {
     symbol_type: SymbolType,
     xml_def: String,
-    id: SymbolId,
     code: SymbolCode,
     pub description: String,
     name: String,
@@ -22,7 +21,6 @@ impl Symbol {
     pub(super) fn new(
         symbol_type: SymbolType,
         xml_def: String,
-        id: SymbolId,
         code: SymbolCode,
         description: String,
         name: String,
@@ -30,7 +28,6 @@ impl Symbol {
         Symbol {
             symbol_type,
             xml_def,
-            id,
             code,
             description,
             name,
@@ -39,10 +36,6 @@ impl Symbol {
 
     pub fn get_symbol_type(&self) -> SymbolType {
         self.symbol_type
-    }
-
-    pub fn get_id(&self) -> SymbolId {
-        self.id
     }
 
     pub fn get_code(&self) -> SymbolCode {
@@ -66,7 +59,6 @@ impl Symbol {
         let mut symbol_type = None;
         let mut description = String::new();
         let mut name = String::new();
-        let mut id = SymbolId::MAX;
         let mut code = None;
         let mut xml_def = String::new();
 
@@ -83,9 +75,6 @@ impl Symbol {
                         b"8" => Some(SymbolType::Text),
                         _ => None,
                     };
-                }
-                b"id" => {
-                    id = SymbolId::from_str(std::str::from_utf8(&attr.value)?)?;
                 }
                 b"name" => {
                     name = String::from_utf8(attr.value.to_vec())?;
@@ -104,6 +93,12 @@ impl Symbol {
                 }
                 _ => {}
             }
+        }
+
+        if symbol_type.is_none() || code.is_none() || name.is_empty() {
+            return Err(Error::ParseOmapFileError(
+                "Could not parse symbol".to_string(),
+            ));
         }
 
         let mut buf = Vec::new();
@@ -139,13 +134,8 @@ impl Symbol {
         }
 
         Ok(Symbol {
-            symbol_type: symbol_type.ok_or(Error::ParseOmapFileError(
-                "Unknown symbol type for a symbol".to_string(),
-            ))?,
-            code: code.ok_or(Error::ParseOmapFileError(
-                "Unknown symbol code for a symbol".to_string(),
-            ))?,
-            id,
+            symbol_type: symbol_type.unwrap(),
+            code: code.unwrap(),
             description,
             name,
             xml_def,
