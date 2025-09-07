@@ -1,8 +1,8 @@
 use crate::writer::{
+    BezierError, Result, Scale,
     objects::{MapObject, PointObject},
     symbols::{LineSymbol, PointSymbol, Symbol},
     transform::Transform,
-    BezierError, Result, Scale,
 };
 use geo_types::{Coord, LineString, Point};
 use std::{
@@ -14,13 +14,13 @@ use std::{ffi::OsStr, fs::File, path::PathBuf};
 #[cfg(feature = "geo_ref")]
 use chrono::Datelike;
 #[cfg(feature = "geo_ref")]
-use proj4rs::{transform::transform, Proj};
+use proj4rs::{Proj, transform::transform};
 #[cfg(feature = "geo_ref")]
 use world_magnetic_model::{
+    GeomagneticField,
     time::Date,
     uom::si::f32::{Angle, Length},
     uom::si::{angle::radian, length::meter},
-    GeomagneticField,
 };
 
 /// Struct representing an Orienteering map  
