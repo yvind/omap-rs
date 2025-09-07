@@ -6,7 +6,7 @@
 //! use omap::{
 //!     objects::{AreaObject, LineObject, PointObject, TextObject, TagTrait},
 //!     symbols::{AreaSymbol, LineSymbol, PointSymbol, TextSymbol},
-//!     Omap, Scale,
+//!     Omap, Scale, BezierError,
 //!     };
 //! use geo_types::{Coord, LineString, Polygon, Point};
 //! use std::{path::PathBuf, str::FromStr};
@@ -61,11 +61,11 @@
 //! omap.add_object(point_object);
 //! omap.add_object(text_object);
 //!
-//! let max_bezier_deviation_meters = 2.5;
+//! let bez_error = BezierError::new(Some(2.5), None);
 //!
 //! omap.write_to_file(
 //!     PathBuf::from_str("./my_map.omap").unwrap(),
-//!     Some(max_bezier_deviation_meters)
+//!     bez_error
 //! ).expect("Could not write to file");
 //! ```
 
