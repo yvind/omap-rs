@@ -1,7 +1,7 @@
 use quick_xml::{Reader, events::Event};
 
 use super::{Cmyk, Color};
-use crate::editor::{Error, Result};
+use crate::editor::{Error, Result, colors::ColorId};
 
 #[derive(Debug, Clone)]
 pub struct ColorSet(Vec<Color>);
@@ -41,12 +41,12 @@ impl ColorSet {
         self.0.iter()
     }
 
-    pub fn get_color_priority(&self, color: &Color) -> Option<usize> {
+    pub fn get_color_priority(&self, color: &Color) -> Option<ColorId> {
         self.0
             .iter()
             .enumerate()
             .find(|(_, c)| c == &color)
-            .map(|(i, _)| i)
+            .map(|(i, _)| ColorId(i))
     }
 }
 

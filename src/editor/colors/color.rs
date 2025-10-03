@@ -48,9 +48,7 @@ impl Color {
         let mut cmyk = Cmyk::new(0., 0., 0., 0.);
         let mut opacity = 1.;
 
-        for attr in element.attributes() {
-            let attr = attr?;
-
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"name" => name.push_str(std::str::from_utf8(&attr.value)?),
                 b"c" => cmyk.c = f64::from_str(std::str::from_utf8(attr.value.as_ref())?)?,

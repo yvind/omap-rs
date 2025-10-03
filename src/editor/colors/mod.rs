@@ -1,8 +1,19 @@
 mod color;
 mod color_set;
 
+use std::fmt::Display;
+
 pub use color::Color;
 pub use color_set::ColorSet;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ColorId(usize);
+
+impl Display for ColorId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cmyk {
@@ -18,7 +29,7 @@ impl Cmyk {
         Cmyk { c, m, y, k }
     }
 
-    /// Get the CMYK values as fractions rounded to the nearest 'decimals' decimals
+    /// Get the CMYK values as fractions rounded to the nearest `decimals` decimals
     pub fn as_rounded_fractions(self, decimals: u8) -> [f64; 4] {
         let factor = 10_f64.powi(decimals as i32);
         let inv_factor = 1. / factor;

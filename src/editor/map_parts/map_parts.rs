@@ -10,18 +10,18 @@ impl MapParts {
     /// Merge all map parts into a single part
     /// If new_name is some, then the new name is applied, else the name of the first map part is kept
     pub fn merge_all_parts(&mut self, new_name: Option<String>) {
-        if self.0.is_empty() {
-            return;
+        while let Some(part) = self.0.pop() {
+            if let Some(first) = self.0.first_mut() {
+                first.merge(part);
+            } else {
+                self.0.push(part);
+            }
         }
 
-        while self.0.len() > 1 {
-            let part = self.0.pop().unwrap();
-
-            self.0[0].merge(part);
-        }
-
-        if let Some(name) = new_name {
-            self.0[0].name = name;
+        if let Some(name) = new_name
+            && let Some(first) = self.0.first_mut()
+        {
+            first.name = name;
         }
     }
 

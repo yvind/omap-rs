@@ -72,8 +72,7 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
         match reader.read_event_into(&mut buf)? {
             quick_xml::events::Event::Start(bytes_start) => {
                 if matches!(bytes_start.local_name().as_ref(), b"t") {
-                    for attr in bytes_start.attributes() {
-                        let attr = attr?;
+                    for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
                         key = Some(
                             attr.decode_and_unescape_value(bytes_start.decoder())?
                                 .to_string(),

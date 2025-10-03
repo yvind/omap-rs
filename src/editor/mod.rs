@@ -6,10 +6,8 @@ mod notes;
 mod objects;
 mod omap_editor;
 mod symbols;
-mod transform;
 
 pub use omap_editor::OmapEditor;
-pub use transform::Transform;
 
 /// editor results
 pub type Result<T> = std::result::Result<T, Error>;

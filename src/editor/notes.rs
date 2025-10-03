@@ -1,4 +1,5 @@
 use crate::editor::{Error, Result};
+use std::io::{BufWriter, Write};
 use quick_xml::Reader;
 
 pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
@@ -21,4 +22,15 @@ pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Strin
         }
     }
     Ok(notes)
+}
+
+pub(super) fn write<W: std::io::Write>(notes: &str, writer: &mut BufWriter<W>) -> Result<()> {
+        writer.write_all(
+            format!(
+                "<notes>{}</notes>\n",
+                quick_xml::escape::escape(notes)
+            )
+            .as_bytes(),
+        )?;
+        Ok(())
 }

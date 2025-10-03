@@ -31,9 +31,7 @@ impl LineObject {
 
         let mut num_coords = 0;
 
-        for attr in element.attributes() {
-            let attr = attr?;
-
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
             if matches!(attr.key.local_name().as_ref(), b"count") {
                 num_coords = std::str::from_utf8(&attr.value)?.parse()?;
             }
@@ -46,9 +44,7 @@ impl LineObject {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"pattern") {
-                        for attr in bytes_start.attributes() {
-                            let attr = attr?;
-
+                        for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
                             if matches!(attr.key.local_name().as_ref(), b"rotation") {
                                 pr.rotation = std::str::from_utf8(&attr.value)?.parse()?;
                             }
@@ -62,9 +58,7 @@ impl LineObject {
                 }
                 Event::Empty(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"coord") {
-                        for attr in bytes_start.attributes() {
-                            let attr = attr?;
-
+                        for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
                             let mut x = None;
                             let mut y = None;
                             match attr.key.local_name().as_ref() {
@@ -73,10 +67,12 @@ impl LineObject {
                                 _ => (),
                             }
 
-                            if x.is_some() && y.is_some() {
+                            if let Some(x) = x
+                                && let Some(y) = y
+                            {
                                 pr.coord = Coord {
-                                    x: x.unwrap() as f64 / 1_000.,
-                                    y: -y.unwrap() as f64 / 1_000.,
+                                    x: x as f64 / 1_000.,
+                                    y: -y as f64 / 1_000.,
                                 }
                             }
                         }

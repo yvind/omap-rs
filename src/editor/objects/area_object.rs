@@ -1,8 +1,10 @@
 use geo_types::{LineString, Polygon};
 use quick_xml::Reader;
+use quick_xml::events::BytesStart;
 
 use super::PatternRotation;
-use crate::editor::{Error, Result, Transform};
+use crate::editor::geo_ref::Transform;
+use crate::editor::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct AreaObject {
@@ -17,7 +19,10 @@ impl AreaObject {
 }
 
 impl AreaObject {
-    pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<(Self, String)> {
+    pub(super) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        element: &BytesStart,
+    ) -> Result<(Self, String)> {
         let coords = super::parse_coordinates(coords_str)?;
 
         if coords.len() < 6 || coords.len() % 2 != 0 {

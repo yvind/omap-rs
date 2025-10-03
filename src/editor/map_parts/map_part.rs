@@ -27,9 +27,7 @@ impl MapPart {
     ) -> Result<MapPart> {
         let mut name = String::new();
 
-        for attr in element.attributes() {
-            let attr = attr?;
-
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
             if matches!(attr.key.local_name().as_ref(), b"name") {
                 name = String::from_utf8(attr.value.to_vec())?;
             }

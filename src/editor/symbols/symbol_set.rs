@@ -1,7 +1,11 @@
 use std::str::FromStr;
 
 use super::{Symbol, SymbolCode, SymbolType};
-use crate::editor::{Error, Result, colors::ColorSet};
+use crate::editor::{
+    Error, Result,
+    colors::{ColorId, ColorSet},
+    symbols::SymbolId,
+};
 
 use quick_xml::{
     Reader,
@@ -11,21 +15,17 @@ use quick_xml::{
 #[derive(Debug, Clone)]
 pub struct SymbolSet {
     symbols: Vec<Symbol>,
-    id: String,
+    name: String,
 }
 
 impl SymbolSet {
-    /// Get the symbol set name/id
-    pub fn get_symbol_set_id(&self) -> &str {
-        &self.id
+    /// Get the symbol set name
+    pub fn get_symbol_set_name(&self) -> &str {
+        &self.name
     }
 
-    pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
-        if self.num_symbols() <= id {
-            None
-        } else {
-            Some(&self.symbols[id])
-        }
+    pub fn get_symbol_by_id(&self, id: SymbolId) -> &Symbol {
+        &self.symbols[id.0]
     }
 
     pub fn get_symbol_by_code(&self, code: SymbolCode) -> Option<&Symbol> {
@@ -34,6 +34,14 @@ impl SymbolSet {
 
     pub fn get_symbol_by_name(&self, name: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|&s| s.get_name() == name)
+    }
+
+    pub fn get_symbol_id(&self, symbol: &Symbol) -> Option<SymbolId> {
+        self.symbols
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s == &symbol)
+            .map(|(i, _)| SymbolId(i))
     }
 
     /// Access the symbols through an iterator
@@ -51,12 +59,12 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color_priority: usize,
+        color: ColorId,
         width: u32,
         description: String,
     ) {
         let def = format!(
-            "<line_symbol color=\"{color_priority}\" line_width=\"{width}\" join_style=\"2\" cap_style=\"1\"/>",
+            "<line_symbol color=\"{color}\" line_width=\"{width}\" join_style=\"2\" cap_style=\"1\"/>",
         );
 
         self.symbols.push(Symbol::new(
@@ -72,10 +80,10 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color_priority: usize,
+        color: ColorId,
         description: String,
     ) {
-        let def = format!("<area_symbol inner_color=\"{color_priority}\"/>");
+        let def = format!("<area_symbol inner_color=\"{color}\"/>");
 
         self.symbols.push(Symbol::new(
             SymbolType::Area,
@@ -90,12 +98,11 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color_priority: usize,
+        color: ColorId,
         radius: u32,
         description: String,
     ) {
-        let def =
-            format!("<point_symbol inner_radius=\"{radius}\" inner_color=\"{color_priority}\"/>",);
+        let def = format!("<point_symbol inner_radius=\"{radius}\" inner_color=\"{color}\"/>",);
 
         self.symbols.push(Symbol::new(
             SymbolType::Point,
@@ -111,11 +118,11 @@ impl SymbolSet {
         symbol_code: impl Into<SymbolCode>,
         name: String,
         size: u32,
-        color_priority: usize,
+        color: ColorId,
         description: String,
     ) {
         let def = format!(
-            "<text_symbol icon_text=\"A\"><font family=\"Sans Serif\" size=\"{size}\"/><text color=\"{color_priority}\"/></text_symbol>"
+            "<text_symbol icon_text=\"A\"><font family=\"Sans Serif\" size=\"{size}\"/><text color=\"{color}\"/></text_symbol>"
         );
 
         self.symbols.push(Symbol::new(
@@ -137,9 +144,7 @@ impl SymbolSet {
         let mut id = String::new();
         let mut count = 0;
 
-        for attr in element.attributes() {
-            let attr = attr?;
-
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"id" => id = attr.unescape_value()?.into_owned(),
                 b"count" => count = usize::from_str(&attr.unescape_value()?)?,
@@ -171,7 +176,7 @@ impl SymbolSet {
             }
         }
 
-        Ok(SymbolSet { symbols, id })
+        Ok(SymbolSet { symbols, name: id })
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
@@ -179,7 +184,7 @@ impl SymbolSet {
             format!(
                 "<symbols count=\"{}\" id=\"{}\">\n",
                 self.num_symbols(),
-                self.id
+                self.name
             )
             .as_bytes(),
         )?;

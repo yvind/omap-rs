@@ -63,9 +63,7 @@ impl Symbol {
         let mut xml_def = String::new();
 
         // Parse attributes
-        for attr in element.attributes() {
-            let attr = attr?;
-
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"type" => {
                     symbol_type = match attr.value.as_ref() {
@@ -100,6 +98,8 @@ impl Symbol {
                 "Could not parse symbol".to_string(),
             ));
         }
+        let symbol_type = symbol_type.unwrap();
+        let code = code.unwrap();
 
         let mut buf = Vec::new();
         loop {
@@ -134,8 +134,8 @@ impl Symbol {
         }
 
         Ok(Symbol {
-            symbol_type: symbol_type.unwrap(),
-            code: code.unwrap(),
+            symbol_type,
+            code,
             description,
             name,
             xml_def,

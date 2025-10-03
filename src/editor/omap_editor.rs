@@ -16,6 +16,8 @@ use super::{Error, Result};
 /// All objects are in map coordinates i.e given in mm of paper
 /// relative the ref point with positive y towards the magnetic north
 ///
+/// The Undo history is wiped
+///
 /// To transform the coordinates to projected coordinates get the transform
 /// from GeoRef::get_transform(&self) and pass it to the MapObject::to_proj_object(self, transform: &Transform) -> ProjObject
 ///
@@ -32,8 +34,7 @@ pub struct OmapEditor {
     pub parts: MapParts,
     pub omap_version: OmapVersion,
     pub xml_version: XmlVersion,
-    // These fields are not exposed
-    barrier: String,
+    // These kept, but not exposed
     templates_and_view: String,
 }
 
@@ -42,30 +43,29 @@ impl OmapEditor {
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let mut reader = Reader::from_file(path)?;
 
-        let mut xml_version = None;
-        let mut omap_version = None;
-        let mut notes = None;
+        // these must be parsed successfully
         let mut georef = None;
         let mut colors = None;
         let mut symbols = None;
         let mut parts = None;
-        let mut templates_and_view = None;
-        let mut barrier = None;
+
+        // these have sensible defaults and are not worth bailing over if parsing fails
+        let mut xml_version = XmlVersion::default();
+        let mut omap_version = OmapVersion::default();
+        let mut notes = String::new();
+        let mut templates_and_view = include_str!("./templates_and_view_default.txt").to_string();
 
         let mut xml_buf = Vec::new();
         loop {
             match reader.read_event_into(&mut xml_buf)? {
+                Event::Decl(dec) => {
+                    xml_version = XmlVersion::parse(dec)?;
+                }
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    b"map" => omap_version = Some(OmapVersion::parse(&bytes_start)?),
-                    b"notes" => notes = Some(notes::parse(&mut reader)?),
+                    b"map" => omap_version = OmapVersion::parse(&bytes_start)?,
+                    b"notes" => notes = notes::parse(&mut reader)?,
                     b"georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
                     b"colors" => colors = Some(ColorSet::parse(&mut reader)?),
-                    b"barrier" => {
-                        barrier = Some(format!(
-                            "<barrier{}>",
-                            std::str::from_utf8(bytes_start.attributes_raw())?
-                        ));
-                    }
                     b"symbols" => {
                         if let Some(colors) = &colors {
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
@@ -93,30 +93,25 @@ impl OmapEditor {
 
                         if let Some(index) = tav.find("</view>") {
                             let _ = tav.split_off(index + 7);
+                            templates_and_view = tav;
                         }
-
-                        templates_and_view = Some(tav);
                     }
                     _ => (),
                 },
-                Event::Decl(dec) => {
-                    xml_version = Some(XmlVersion::parse(dec)?);
-                }
                 Event::Eof => break,
                 _ => (),
             }
         }
 
         Ok(OmapEditor {
-            notes: notes.unwrap_or_default(),
+            notes,
             geo_info: georef.ok_or(Error::ParseOmapFileError("Georeferencing".to_string()))?,
             colors: colors.ok_or(Error::ParseOmapFileError("Colors".to_string()))?,
             symbols: symbols.ok_or(Error::ParseOmapFileError("Symbols".to_string()))?,
             parts: parts.ok_or(Error::ParseOmapFileError("Parts".to_string()))?,
-            barrier: barrier.unwrap_or_default(),
-            omap_version: omap_version.unwrap_or_default(),
-            xml_version: xml_version.unwrap_or_default(),
-            templates_and_view: templates_and_view.unwrap_or_default(),
+            omap_version,
+            xml_version,
+            templates_and_view,
         })
     }
 
@@ -126,24 +121,19 @@ impl OmapEditor {
 
         self.xml_version.write(&mut writer)?;
         self.omap_version.write(&mut writer)?;
-        writer.write_all(
-            format!(
-                "<notes>{}</notes>\n",
-                quick_xml::escape::escape(self.notes.as_str())
-            )
-            .as_bytes(),
-        )?;
+
+        notes::write(self.notes.as_str(), &mut writer)?;
 
         self.geo_info.write(&mut writer)?;
         self.colors.write(&mut writer)?;
 
-        writer.write_all(self.barrier.as_bytes())?;
+        writer.write_all("\n<barrier version=\"6\" required=\"0.6.0\">".as_bytes())?;
 
         self.symbols.write(&mut writer)?;
         self.parts.write(&mut writer)?;
 
         writer.write_all(self.templates_and_view.as_bytes())?;
-        writer.write_all("</barrier>\n</map>".as_bytes())?;
+        writer.write_all("\n</barrier>\n</map>".as_bytes())?;
 
         Ok(())
     }

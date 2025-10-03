@@ -19,7 +19,7 @@ pub struct MapObject {
     symbol_id: SymbolId,
     pub tags: HashMap<String, String>,
     geometry: ObjectGeometry,
-    // store the initial xml so that the object can be written back without being changed if the coords are not changed
+    // store the initial xml so that the object can be written back unchanged if the coords are untouched
     coords_xml_def: String,
     is_coords_touched: bool,
 }
@@ -73,14 +73,12 @@ impl MapObject {
         symbols: &SymbolSet,
     ) -> Result<MapObject> {
         let mut object_type = None;
-        let mut symbol_id = SymbolId::MAX;
+        let mut symbol_id = None;
         let mut rotation = 0.;
         let mut h_align = None;
         let mut v_align = None;
 
-        for attr in bytes_start.attributes() {
-            let attr = attr?;
-
+        for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"type" => match attr.value.as_ref() {
                     b"0" => object_type = Some(SymbolType::Point),
@@ -89,7 +87,9 @@ impl MapObject {
                     _ => (),
                 },
 
-                b"symbol" => symbol_id = usize::from_str(std::str::from_utf8(&attr.value)?)?,
+                b"symbol" => {
+                    symbol_id = Some(SymbolId::from_str(std::str::from_utf8(&attr.value)?)?)
+                }
 
                 b"rotation" => rotation = f64::from_str(std::str::from_utf8(&attr.value)?)?,
                 b"h_align" => h_align = HorizontalAlign::from_bytes(&attr.value),
@@ -98,23 +98,17 @@ impl MapObject {
             }
         }
 
-        if symbol_id == SymbolId::MAX || object_type.is_none() {
+        if symbol_id.is_none() || object_type.is_none() {
             return Err(Error::ParseOmapFileError(
                 "Could not parse object".to_string(),
             ));
         }
-
         let mut object_type = object_type.unwrap();
+        let symbol_id = symbol_id.unwrap();
 
         // Mapper does not discern between area and line objects. But we do (Polygon vs LineString in object geometry)!
         if let SymbolType::Area = object_type {
-            if let Some(symbol) = symbols.get_symbol_by_id(symbol_id) {
-                object_type = symbol.get_symbol_type();
-            } else {
-                return Err(Error::ParseOmapFileError(
-                    "Unknown symbol detected for object".to_string(),
-                ));
-            }
+            object_type = symbols.get_symbol_by_id(symbol_id).get_symbol_type();
         }
 
         let mut geometry = None;
@@ -133,11 +127,11 @@ impl MapObject {
                                 (Some(ObjectGeometry::Point(po)), Some(xml))
                             }
                             SymbolType::Line => {
-                                let (lo, xml) = LineObject::parse(reader)?;
+                                let (lo, xml) = LineObject::parse(reader, &bytes_start)?;
                                 (Some(ObjectGeometry::Line(lo)), Some(xml))
                             }
                             SymbolType::Area | SymbolType::Combined => {
-                                let (ao, xml) = AreaObject::parse(reader)?;
+                                let (ao, xml) = AreaObject::parse(reader, &bytes_start)?;
                                 (Some(ObjectGeometry::Area(ao)), Some(xml))
                             }
                             SymbolType::Text => {
@@ -164,18 +158,19 @@ impl MapObject {
             }
         }
 
-        if geometry.is_none() || coords_xml_def.is_none() {
-            return Err(Error::ParseOmapFileError(
-                "Invalid object geometry".to_string(),
-            ));
+        if let Some(geometry) = geometry
+            && let Some(coords_xml_def) = coords_xml_def
+        {
+            return Ok(MapObject {
+                symbol_id,
+                tags: tags.unwrap_or_default(),
+                geometry,
+                coords_xml_def,
+                is_coords_touched: false,
+            });
         }
-
-        Ok(MapObject {
-            symbol_id,
-            tags: tags.unwrap_or_default(),
-            geometry: geometry.unwrap(),
-            coords_xml_def: coords_xml_def.unwrap(),
-            is_coords_touched: false,
-        })
+        Err(Error::ParseOmapFileError(
+            "Invalid object geometry".to_string(),
+        ))
     }
 }

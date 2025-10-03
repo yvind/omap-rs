@@ -15,9 +15,7 @@ impl OmapVersion {
         let mut xmlns = None;
         let mut version = None;
 
-        for attr in element.attributes() {
-            let attr = attr?;
-
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"xmlns" => xmlns = Some(String::from_utf8(attr.value.into_owned())?),
                 b"version" => {
@@ -27,11 +25,10 @@ impl OmapVersion {
             }
         }
 
-        if xmlns.is_some() && version.is_some() {
-            Ok(OmapVersion {
-                xmlns: xmlns.unwrap(),
-                version: version.unwrap(),
-            })
+        if let Some(xmlns) = xmlns
+            && let Some(version) = version
+        {
+            Ok(OmapVersion { xmlns, version })
         } else {
             Err(Error::InvalidFormat(
                 "Could not read Omap version".to_string(),

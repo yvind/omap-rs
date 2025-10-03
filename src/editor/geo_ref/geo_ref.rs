@@ -52,10 +52,10 @@ impl CrsType {
                         }
                     }
 
-                    if code < 1024 || code > 32767 {
-                        None
-                    } else {
+                    if code >= 1024 && code <= 32767 {
                         Some(code)
+                    } else {
+                        None
                     }
                 } else {
                     None
@@ -79,7 +79,16 @@ impl CrsType {
                     lon, x
                 ))
             }
-            CrsType::UTM(code) => Some(format!("+proj=utm +datum=WGS84 +zone={}", code.abs())),
+            CrsType::UTM(code) => {
+                if *code < 0 {
+                    Some(format!(
+                        "+proj=utm +datum=WGS84 +zone={} +south",
+                        code.abs()
+                    ))
+                } else {
+                    Some(format!("+proj=utm +datum=WGS84 +zone={}", code.abs()))
+                }
+            }
         }
     }
 
@@ -196,9 +205,7 @@ impl GeoRef {
         let mut declination = 0.;
         let mut grivation = 0.;
 
-        for attr in event.attributes() {
-            let attr = attr?;
-
+        for attr in event.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"scale" => scale = Some(u32::from_str(&attr.unescape_value()?)?),
                 b"grid_scale_factor" => {
@@ -217,6 +224,7 @@ impl GeoRef {
             // early escape if no scale is found
             return Err(Error::ParseOmapFileError("No scale found".to_string()));
         }
+        let scale = scale.unwrap();
 
         let mut crs_type = CrsType::Local;
         let mut map_ref_point = Coord::zero();
@@ -244,20 +252,17 @@ impl GeoRef {
                     b"ref_point" => {
                         let mut x = None;
                         let mut y = None;
-                        for attr in bytes_start.attributes() {
-                            let attr = attr?;
-
+                        for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
                             match attr.key.local_name().as_ref() {
                                 b"x" => x = Some(f64::from_str(attr.unescape_value()?.as_ref())?),
                                 b"y" => y = Some(f64::from_str(attr.unescape_value()?.as_ref())?),
                                 _ => (),
                             }
                         }
-                        if x.is_some() && y.is_some() {
-                            map_ref_point = Coord {
-                                x: x.unwrap(),
-                                y: y.unwrap(),
-                            };
+                        if let Some(x) = x
+                            && let Some(y) = y
+                        {
+                            map_ref_point = Coord { x, y };
                         }
                     }
                     b"projected_crs" => crs_type = CrsType::Local,
@@ -273,7 +278,7 @@ impl GeoRef {
         }
 
         Ok(GeoRef {
-            scale: scale.unwrap(),
+            scale,
             combined_scale_factor,
             auxiliary_scale_factor,
             declination,
@@ -293,9 +298,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
     let mut buf = Vec::new();
 
     let mut crs_type = CrsType::Local;
-    for attr in bytes_start.attributes() {
-        let attr = attr?;
-
+    for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
         if matches!(attr.key.local_name().as_ref(), b"id") {
             let mut string = get_projected_crs_parameter_string(reader)?;
             match attr.value.as_ref() {
@@ -331,9 +334,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
         match event {
             Event::Empty(bytes_start) => {
                 if matches!(bytes_start.name().local_name().as_ref(), b"ref_point") {
-                    for attr in bytes_start.attributes() {
-                        let attr = attr?;
-
+                    for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
                         match attr.key.local_name().as_ref() {
                             b"y" => {
                                 proj_ref_point.y = f64::from_str(std::str::from_utf8(&attr.value)?)?
@@ -372,9 +373,7 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
         match event {
             Event::Empty(bytes_start) => {
                 if matches!(bytes_start.name().local_name().as_ref(), b"ref_point_deg") {
-                    for attr in bytes_start.attributes() {
-                        let attr = attr?;
-
+                    for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
                         match attr.key.local_name().as_ref() {
                             b"lat" => {
                                 geo_ref_point.y = f64::from_str(std::str::from_utf8(&attr.value)?)?
