@@ -1,19 +1,8 @@
 mod color;
 mod color_set;
 
-use std::fmt::Display;
-
 pub use color::Color;
 pub use color_set::ColorSet;
-
-#[derive(Debug, Clone, Copy)]
-pub struct ColorId(usize);
-
-impl Display for ColorId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cmyk {

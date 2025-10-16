@@ -1,10 +1,13 @@
-use std::str::FromStr;
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    rc::{Rc, Weak},
+    str::FromStr,
+};
 
 use super::{Symbol, SymbolCode, SymbolType};
 use crate::editor::{
     Error, Result,
-    colors::{ColorId, ColorSet},
-    symbols::SymbolId,
+    colors::{Color, ColorSet},
 };
 
 use quick_xml::{
@@ -14,39 +17,68 @@ use quick_xml::{
 
 #[derive(Debug, Clone)]
 pub struct SymbolSet {
-    symbols: Vec<Symbol>,
+    symbols: Vec<Rc<RefCell<Symbol>>>,
     name: String,
 }
 
-impl SymbolSet {
+impl<'a> SymbolSet {
     /// Get the symbol set name
     pub fn get_symbol_set_name(&self) -> &str {
         &self.name
     }
 
-    pub fn get_symbol_by_id(&self, id: SymbolId) -> &Symbol {
-        &self.symbols[id.0]
-    }
-
-    pub fn get_symbol_by_code(&self, code: SymbolCode) -> Option<&Symbol> {
-        self.symbols.iter().find(|&s| s.get_code() == code)
-    }
-
-    pub fn get_symbol_by_name(&self, name: &str) -> Option<&Symbol> {
-        self.symbols.iter().find(|&s| s.get_name() == name)
-    }
-
-    pub fn get_symbol_id(&self, symbol: &Symbol) -> Option<SymbolId> {
+    pub fn get_symbol_by_id(&self, id: usize) -> Option<Ref<Symbol>> {
         self.symbols
             .iter()
-            .enumerate()
-            .find(|(_, s)| s == &symbol)
-            .map(|(i, _)| SymbolId(i))
+            .filter_map(|s| s.try_borrow().ok())
+            .find(|s| s.get_id() == id)
+    }
+
+    pub(crate) fn get_weak_symbol_by_id(&self, id: usize) -> Option<Weak<RefCell<Symbol>>> {
+        self.symbols
+            .iter()
+            .find(|&s| s.clone().borrow().get_id() == id)
+            .map(|s| Rc::downgrade(s))
+    }
+
+    pub fn get_symbol_by_code(&self, code: SymbolCode) -> Option<Ref<Symbol>> {
+        self.symbols
+            .iter()
+            .filter_map(|s| s.try_borrow().ok())
+            .find(|s| s.get_code() == code)
+    }
+
+    pub fn get_symbol_by_name(&self, name: &str) -> Option<Ref<Symbol>> {
+        self.symbols
+            .iter()
+            .filter_map(|s| s.try_borrow().ok())
+            .find(|s| s.get_name() == name)
     }
 
     /// Access the symbols through an iterator
-    pub fn iter(&self) -> std::slice::Iter<'_, Symbol> {
-        self.symbols.iter()
+    pub fn iter(
+        &'a self,
+    ) -> std::iter::Map<
+        std::slice::Iter<'a, Rc<RefCell<Symbol>>>,
+        impl FnMut(&'a Rc<RefCell<Symbol>>) -> Result<Ref<'a, Symbol>>,
+    > {
+        self.symbols.iter().map(|s| {
+            let s = s.try_borrow()?;
+            Ok(s)
+        })
+    }
+
+    /// Access the mutable symbols through an iterator
+    pub fn iter_mut(
+        &'a mut self,
+    ) -> std::iter::Map<
+        std::slice::Iter<'a, Rc<RefCell<Symbol>>>,
+        impl FnMut(&'a Rc<RefCell<Symbol>>) -> Result<RefMut<'a, Symbol>>,
+    > {
+        self.symbols.iter().map(|s| {
+            let s = s.try_borrow_mut()?;
+            Ok(s)
+        })
     }
 
     /// Get the number of symbol in the symbol set
@@ -59,58 +91,89 @@ impl SymbolSet {
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color: ColorId,
+        color: Weak<RefCell<Color>>,
         width: u32,
         description: String,
-    ) {
+    ) -> Result<()> {
+        let id = color
+            .upgrade()
+            .ok_or(Error::ParseOmapFileError(
+                "Could not upgrade color pointer as the data has been dropped".to_string(),
+            ))?
+            .try_borrow()?
+            .get_id();
         let def = format!(
-            "<line_symbol color=\"{color}\" line_width=\"{width}\" join_style=\"2\" cap_style=\"1\"/>",
+            "<line_symbol color=\"{id}\" line_width=\"{width}\" join_style=\"2\" cap_style=\"1\"/>",
         );
 
-        self.symbols.push(Symbol::new(
+        self.symbols.push(Rc::new(RefCell::new(Symbol::new(
             SymbolType::Line,
             def,
             symbol_code.into(),
             description,
             name,
-        ));
+            vec![color],
+            self.num_symbols(),
+        ))));
+        Ok(())
     }
 
     pub fn push_simple_area_symbol(
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color: ColorId,
+        color: Weak<RefCell<Color>>,
         description: String,
-    ) {
-        let def = format!("<area_symbol inner_color=\"{color}\"/>");
+    ) -> Result<()> {
+        let id = color
+            .upgrade()
+            .ok_or(Error::ParseOmapFileError(
+                "Could not upgrade color pointer as the data has been dropped".to_string(),
+            ))?
+            .try_borrow()?
+            .get_id();
+        let def = format!("<area_symbol inner_color=\"{id}\"/>");
 
-        self.symbols.push(Symbol::new(
+        self.symbols.push(Rc::new(RefCell::new(Symbol::new(
             SymbolType::Area,
             def,
             symbol_code.into(),
             description,
             name,
-        ));
+            vec![color],
+            self.num_symbols(),
+        ))));
+
+        Ok(())
     }
 
     pub fn push_simple_point_symbol(
         &mut self,
         symbol_code: impl Into<SymbolCode>,
         name: String,
-        color: ColorId,
+        color: Weak<RefCell<Color>>,
         radius: u32,
         description: String,
-    ) {
-        let def = format!("<point_symbol inner_radius=\"{radius}\" inner_color=\"{color}\"/>",);
+    ) -> Result<()> {
+        let id = color
+            .upgrade()
+            .ok_or(Error::ParseOmapFileError(
+                "Could not upgrade color pointer as the data has been dropped".to_string(),
+            ))?
+            .try_borrow()?
+            .get_id();
+        let def = format!("<point_symbol inner_radius=\"{radius}\" inner_color=\"{id}\"/>",);
 
-        self.symbols.push(Symbol::new(
+        self.symbols.push(Rc::new(RefCell::new(Symbol::new(
             SymbolType::Point,
             def,
             symbol_code.into(),
             description,
             name,
-        ));
+            vec![color],
+            self.num_symbols(),
+        ))));
+        Ok(())
     }
 
     pub fn push_simple_text_symbol(
@@ -118,20 +181,31 @@ impl SymbolSet {
         symbol_code: impl Into<SymbolCode>,
         name: String,
         size: u32,
-        color: ColorId,
+        color: Weak<RefCell<Color>>,
         description: String,
-    ) {
+    ) -> Result<()> {
+        let id = color
+            .upgrade()
+            .ok_or(Error::ParseOmapFileError(
+                "Could not upgrade color pointer as the data has been dropped".to_string(),
+            ))?
+            .try_borrow()?
+            .get_id();
+
         let def = format!(
-            "<text_symbol icon_text=\"A\"><font family=\"Sans Serif\" size=\"{size}\"/><text color=\"{color}\"/></text_symbol>"
+            "<text_symbol icon_text=\"A\"><font family=\"Sans Serif\" size=\"{size}\"/><text color=\"{id}\"/></text_symbol>"
         );
 
-        self.symbols.push(Symbol::new(
+        self.symbols.push(Rc::new(RefCell::new(Symbol::new(
             SymbolType::Text,
             def,
             symbol_code.into(),
             description,
             name,
-        ));
+            vec![color],
+            self.num_symbols(),
+        ))));
+        Ok(())
     }
 }
 
@@ -159,7 +233,11 @@ impl SymbolSet {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"symbol") {
-                        symbols.push(Symbol::parse(reader, &bytes_start)?);
+                        symbols.push(Rc::new(RefCell::new(Symbol::parse(
+                            reader,
+                            &bytes_start,
+                            colors,
+                        )?)));
                     }
                 }
                 Event::End(bytes_end) => {
@@ -189,7 +267,12 @@ impl SymbolSet {
             .as_bytes(),
         )?;
         for symbol in self.symbols {
-            symbol.write(writer)?;
+            Rc::into_inner(symbol)
+                .ok_or(Error::ParseOmapFileError(
+                    "Stray reference to symbol somewhere".to_string(),
+                ))?
+                .into_inner()
+                .write(writer)?;
         }
         writer.write_all("</symbols>\n".as_bytes())?;
         Ok(())

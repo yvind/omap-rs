@@ -1,12 +1,21 @@
-use quick_xml::{Reader, events::Event};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    rc::{Rc, Weak},
+    str::FromStr,
+};
+
+use quick_xml::{
+    Reader,
+    events::{BytesStart, Event},
+};
 
 use super::{Cmyk, Color};
-use crate::editor::{Error, Result, colors::ColorId};
+use crate::editor::{Error, Result};
 
 #[derive(Debug, Clone)]
-pub struct ColorSet(Vec<Color>);
+pub struct ColorSet(Vec<Rc<RefCell<Color>>>);
 
-impl ColorSet {
+impl<'a> ColorSet {
     /// Add a simple color to the end of the color list
     pub fn push_color(&mut self, name: String, cmyk: Cmyk, opacity: f64) {
         let [c, m, y, k] = cmyk.as_rounded_fractions(2);
@@ -16,51 +25,91 @@ impl ColorSet {
             self.num_colors()
         );
 
-        self.0.push(Color::new(name, cmyk, def, opacity));
+        self.0.push(Rc::new(RefCell::new(Color::new(
+            name,
+            cmyk,
+            def,
+            opacity,
+            self.num_colors(),
+        ))));
     }
 
     pub fn num_colors(&self) -> usize {
         self.0.len()
     }
 
-    pub fn get_color_by_priority(&self, index: usize) -> Option<&Color> {
-        if index >= self.num_colors() {
-            None
-        } else {
-            Some(&self.0[index])
-        }
+    pub fn get_color_by_id(&self, id: usize) -> Option<Ref<Color>> {
+        self.0
+            .iter()
+            .filter_map(|c| c.try_borrow().ok())
+            .find(|c| c.get_id() == id)
+    }
+
+    pub(crate) fn get_weak_color_by_id(&self, id: usize) -> Option<Weak<RefCell<Color>>> {
+        self.0
+            .iter()
+            .find(|&c| c.clone().borrow().get_id() == id)
+            .map(|c| Rc::downgrade(c))
     }
 
     /// Get the first color with an exact name match
-    pub fn get_color_by_name(&self, name: &str) -> Option<&Color> {
-        self.0.iter().find(|&c| c.get_name() == name)
+    pub fn get_color_by_name(&self, name: &str) -> Option<Ref<Color>> {
+        self.0
+            .iter()
+            .filter_map(|c| c.try_borrow().ok())
+            .find(|c| c.get_name() == name)
     }
 
     /// Access the colors through an iterator
-    pub fn iter(&self) -> std::slice::Iter<'_, Color> {
-        self.0.iter()
+    pub fn iter(
+        &'a self,
+    ) -> std::iter::Map<
+        std::slice::Iter<'a, Rc<RefCell<Color>>>,
+        impl FnMut(&'a Rc<RefCell<Color>>) -> Result<Ref<'a, Color>>,
+    > {
+        self.0.iter().map(|s| {
+            let s = s.try_borrow()?;
+            Ok(s)
+        })
     }
 
-    pub fn get_color_priority(&self, color: &Color) -> Option<ColorId> {
-        self.0
-            .iter()
-            .enumerate()
-            .find(|(_, c)| c == &color)
-            .map(|(i, _)| ColorId(i))
+    /// Access the mutable colors through an iterator
+    pub fn iter_mut(
+        &'a mut self,
+    ) -> std::iter::Map<
+        std::slice::Iter<'a, Rc<RefCell<Color>>>,
+        impl FnMut(&'a Rc<RefCell<Color>>) -> Result<RefMut<'a, Color>>,
+    > {
+        self.0.iter().map(|s| {
+            let s = s.try_borrow_mut()?;
+            Ok(s)
+        })
     }
 }
 
 impl ColorSet {
-    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<ColorSet> {
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        element: &BytesStart,
+    ) -> Result<ColorSet> {
+        let mut num_colors = 0;
+        for attr in element.attributes().filter_map(std::result::Result::ok) {
+            match attr.key.local_name().as_ref() {
+                b"count" => num_colors = usize::from_str(&attr.unescape_value()?)?,
+                _ => (),
+            }
+        }
+
+        let mut colors = Vec::with_capacity(num_colors);
         let mut buf = Vec::new();
-
-        let mut colors = Vec::new();
-
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"color") {
-                        colors.push(Color::parse_color(reader, &bytes_start)?)
+                        colors.push(Rc::new(RefCell::new(Color::parse_color(
+                            reader,
+                            &bytes_start,
+                        )?)))
                     }
                 }
                 Event::End(bytes_end) => {
@@ -76,7 +125,6 @@ impl ColorSet {
                 _ => (),
             }
         }
-
         Ok(ColorSet(colors))
     }
 
@@ -84,7 +132,12 @@ impl ColorSet {
         writer.write_all(format!("<colors count=\"{}\">\n", self.num_colors()).as_bytes())?;
 
         for color in self.0 {
-            color.write(writer)?;
+            Rc::into_inner(color)
+                .ok_or(Error::ParseOmapFileError(
+                    "Stray strong references to the colors somewhere".to_string(),
+                ))?
+                .into_inner()
+                .write(writer)?;
         }
 
         writer.write_all("</colors>\n".as_bytes())?;

@@ -34,7 +34,7 @@ pub struct OmapEditor {
     pub parts: MapParts,
     pub omap_version: OmapVersion,
     pub xml_version: XmlVersion,
-    // These kept, but not exposed
+    // These are kept, but not exposed
     templates_and_view: String,
 }
 
@@ -65,7 +65,7 @@ impl OmapEditor {
                     b"map" => omap_version = OmapVersion::parse(&bytes_start)?,
                     b"notes" => notes = notes::parse(&mut reader)?,
                     b"georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
-                    b"colors" => colors = Some(ColorSet::parse(&mut reader)?),
+                    b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
                     b"symbols" => {
                         if let Some(colors) = &colors {
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);

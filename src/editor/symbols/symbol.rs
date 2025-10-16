@@ -1,20 +1,41 @@
-use std::{io::BufRead, str::FromStr};
+use std::{cell::RefCell, hash::Hash, io::BufRead, rc::Weak, str::FromStr, usize};
 
 use super::{SymbolCode, SymbolType};
-use crate::editor::{Error, Result, notes};
+use crate::editor::{
+    Error, Result,
+    colors::{Color, ColorSet},
+    notes,
+};
 
 use quick_xml::{
     Reader,
     events::{BytesStart, Event},
 };
+use regex::Regex;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
+    id: usize,
     symbol_type: SymbolType,
     xml_def: String,
     code: SymbolCode,
     pub description: String,
     name: String,
+    colors: Vec<Weak<RefCell<Color>>>,
+}
+
+impl PartialEq for Symbol {
+    fn eq(&self, other: &Self) -> bool {
+        self.xml_def == other.xml_def
+    }
+}
+
+impl Eq for Symbol {}
+
+impl Hash for Symbol {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.xml_def.hash(state);
+    }
 }
 
 impl Symbol {
@@ -24,6 +45,8 @@ impl Symbol {
         code: SymbolCode,
         description: String,
         name: String,
+        colors: Vec<Weak<RefCell<Color>>>,
+        id: usize,
     ) -> Symbol {
         Symbol {
             symbol_type,
@@ -31,7 +54,13 @@ impl Symbol {
             code,
             description,
             name,
+            colors,
+            id,
         }
+    }
+
+    pub fn get_id(&self) -> usize {
+        self.id
     }
 
     pub fn get_symbol_type(&self) -> SymbolType {
@@ -55,7 +84,9 @@ impl Symbol {
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart,
+        color_set: &ColorSet,
     ) -> Result<Symbol> {
+        let mut id = usize::MAX;
         let mut symbol_type = None;
         let mut description = String::new();
         let mut name = String::new();
@@ -78,22 +109,21 @@ impl Symbol {
                     name = String::from_utf8(attr.value.to_vec())?;
                 }
                 b"code" => {
-                    let mut parts = [0, 0, 0];
-                    for (i, part) in std::str::from_utf8(&attr.value)?
+                    let parts = std::str::from_utf8(&attr.value)?
                         .split('.')
-                        .enumerate()
                         .take(3)
-                    {
-                        parts[i] = u16::from_str(part)?;
-                    }
+                        .map(|s| u16::from_str(s).unwrap_or(0));
 
                     code = Some(SymbolCode::from(parts));
+                }
+                b"id" => {
+                    id = usize::from_str(std::str::from_utf8(&attr.value)?)?;
                 }
                 _ => {}
             }
         }
 
-        if symbol_type.is_none() || code.is_none() || name.is_empty() {
+        if symbol_type.is_none() || code.is_none() || name.is_empty() || id == usize::MAX {
             return Err(Error::ParseOmapFileError(
                 "Could not parse symbol".to_string(),
             ));
@@ -133,12 +163,26 @@ impl Symbol {
             }
         }
 
+        let mut colors = Vec::new();
+
+        let re = Regex::new("color=\"([-?][0-9+])\"").unwrap();
+        for (_, [color_index]) in re.captures_iter(&xml_def).map(|n| n.extract()) {
+            let index = i16::from_str(color_index)?;
+            if index >= 0 {
+                colors.push(color_set.get_weak_color_by_id(index as usize).ok_or(
+                    Error::ParseOmapFileError("Bad color in symbol parsing".to_string()),
+                )?);
+            }
+        }
+
         Ok(Symbol {
             symbol_type,
             code,
             description,
             name,
             xml_def,
+            colors,
+            id,
         })
     }
 

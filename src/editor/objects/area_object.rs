@@ -3,7 +3,6 @@ use quick_xml::Reader;
 use quick_xml::events::BytesStart;
 
 use super::PatternRotation;
-use crate::editor::geo_ref::Transform;
 use crate::editor::{Error, Result};
 
 #[derive(Debug, Clone)]

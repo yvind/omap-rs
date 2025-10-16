@@ -1,7 +1,7 @@
 use geo_types::Point;
 use quick_xml::Reader;
 
-use crate::editor::{Error, Result, Transform};
+use crate::editor::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct PointObject {

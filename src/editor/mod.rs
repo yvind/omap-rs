@@ -42,4 +42,8 @@ pub enum Error {
     ParseFloatError(#[from] std::num::ParseFloatError),
     #[error("Part {0} of file could not parsed")]
     ParseOmapFileError(String),
+    #[error(transparent)]
+    BorrowError(#[from] std::cell::BorrowError),
+    #[error(transparent)]
+    BorrowMutError(#[from] std::cell::BorrowMutError),
 }

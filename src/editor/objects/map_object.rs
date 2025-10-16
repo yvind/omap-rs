@@ -2,21 +2,20 @@ use quick_xml::{
     Reader,
     events::{BytesStart, Event},
 };
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 
 use super::{AreaObject, LineObject, ObjectGeometry, PointObject, TextObject};
 
-use crate::editor::symbols::SymbolType;
+use crate::editor::symbols::{Symbol, SymbolType};
 use crate::editor::{
     Error, Result,
     objects::text_object::{HorizontalAlign, VerticalAlign},
-    symbols::{SymbolId, SymbolSet},
+    symbols::SymbolSet,
 };
 
 #[derive(Debug, Clone)]
 pub struct MapObject {
-    symbol_id: SymbolId,
+    symbol: Weak<RefCell<Symbol>>,
     pub tags: HashMap<String, String>,
     geometry: ObjectGeometry,
     // store the initial xml so that the object can be written back unchanged if the coords are untouched
@@ -26,14 +25,20 @@ pub struct MapObject {
 
 impl MapObject {
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
-        writer.write_all(
-            format!(
-                "<object type=\"{}\" symbol=\"{}\"",
-                self.geometry.type_value(),
-                self.symbol_id
-            )
-            .as_bytes(),
-        )?;
+        if let Some(symbol) = self.symbol.upgrade() {
+            writer.write_all(
+                format!(
+                    "<object type=\"{}\" symbol=\"{}\"",
+                    self.geometry.type_value(),
+                    symbol.try_borrow()?.get_id()
+                )
+                .as_bytes(),
+            )?;
+        } else {
+            return Err(Error::ParseOmapFileError(
+                "Invalid symbol pointer".to_string(),
+            ));
+        }
 
         if let Some(str) = self.geometry.get_special_keys() {
             writer.write_all(format!(" {str}>").as_bytes())?;
@@ -61,8 +66,8 @@ impl MapObject {
 }
 
 impl MapObject {
-    pub fn get_symbol_id(&self) -> SymbolId {
-        self.symbol_id
+    pub fn get_symbol(&self) -> Weak<RefCell<Symbol>> {
+        self.symbol.clone()
     }
 }
 
@@ -87,9 +92,7 @@ impl MapObject {
                     _ => (),
                 },
 
-                b"symbol" => {
-                    symbol_id = Some(SymbolId::from_str(std::str::from_utf8(&attr.value)?)?)
-                }
+                b"symbol" => symbol_id = Some(usize::from_str(std::str::from_utf8(&attr.value)?)?),
 
                 b"rotation" => rotation = f64::from_str(std::str::from_utf8(&attr.value)?)?,
                 b"h_align" => h_align = HorizontalAlign::from_bytes(&attr.value),
@@ -106,9 +109,21 @@ impl MapObject {
         let mut object_type = object_type.unwrap();
         let symbol_id = symbol_id.unwrap();
 
+        let symbol = symbols
+            .get_weak_symbol_by_id(symbol_id)
+            .ok_or(Error::ParseOmapFileError(
+                "Unknown Symbol in MapObject parsing".to_string(),
+            ))?;
+
         // Mapper does not discern between area and line objects. But we do (Polygon vs LineString in object geometry)!
         if let SymbolType::Area = object_type {
-            object_type = symbols.get_symbol_by_id(symbol_id).get_symbol_type();
+            object_type = symbol
+                .upgrade()
+                .ok_or(Error::ParseOmapFileError(
+                    "Unknown Symbol in MapObject parsing".to_string(),
+                ))?
+                .try_borrow()?
+                .get_symbol_type();
         }
 
         let mut geometry = None;
@@ -162,7 +177,7 @@ impl MapObject {
             && let Some(coords_xml_def) = coords_xml_def
         {
             return Ok(MapObject {
-                symbol_id,
+                symbol,
                 tags: tags.unwrap_or_default(),
                 geometry,
                 coords_xml_def,

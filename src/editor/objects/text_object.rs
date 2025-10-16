@@ -1,4 +1,4 @@
-use crate::editor::{Result, Transform};
+use crate::editor::Result;
 use geo_types::Point;
 use quick_xml::Reader;
 
