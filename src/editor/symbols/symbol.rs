@@ -1,6 +1,11 @@
-use std::{cell::RefCell, hash::Hash, io::BufRead, rc::Weak, str::FromStr, usize};
+use std::{
+    cell::{Ref, RefCell},
+    io::BufRead,
+    rc::Weak,
+    str::FromStr,
+};
 
-use super::{SymbolCode, SymbolType};
+use super::{CombinedSymbolType, SymbolCode, SymbolType};
 use crate::editor::{
     Error, Result,
     colors::{Color, ColorSet},
@@ -16,8 +21,8 @@ use regex::Regex;
 #[derive(Debug, Clone)]
 pub struct Symbol {
     id: usize,
-    symbol_type: SymbolType,
-    xml_def: String,
+    pub(super) symbol_type: SymbolType,
+    pub(super) xml_def: String,
     code: SymbolCode,
     pub description: String,
     name: String,
@@ -31,12 +36,6 @@ impl PartialEq for Symbol {
 }
 
 impl Eq for Symbol {}
-
-impl Hash for Symbol {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.xml_def.hash(state);
-    }
-}
 
 impl Symbol {
     pub(super) fn new(
@@ -78,6 +77,16 @@ impl Symbol {
     pub fn get_name(&self) -> &str {
         &self.name
     }
+
+    pub fn get_type(&self) -> SymbolType {
+        self.symbol_type
+    }
+
+    pub fn contains_color(&self, color: Ref<'_, Color>) -> bool {
+        self.colors
+            .iter()
+            .any(|c| c.upgrade().unwrap().borrow().get_id() == color.get_id())
+    }
 }
 
 impl Symbol {
@@ -102,6 +111,7 @@ impl Symbol {
                         b"2" => Some(SymbolType::Line),
                         b"4" => Some(SymbolType::Area),
                         b"8" => Some(SymbolType::Text),
+                        b"16" => Some(SymbolType::Combined(CombinedSymbolType::Line)), // we assume this for now (is checked after all symbols have been parsed)
                         _ => None,
                     };
                 }

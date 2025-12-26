@@ -1,9 +1,9 @@
 use super::{MapObjectTrait, TagTrait};
 use crate::writer::{
+    Result,
     serialize::SerializePolyLine,
     symbols::{SymbolTrait, TextSymbol},
     transform::Transform,
-    Result,
 };
 use geo_types::Point;
 use std::{
@@ -37,8 +37,10 @@ impl TextObject {
     }
 
     /// change the symbol of a text object
-    pub fn change_symbol(&mut self, symbol: TextSymbol) {
+    pub fn change_symbol(&mut self, symbol: TextSymbol) -> TextSymbol {
+        let old = self.symbol;
         self.symbol = symbol;
+        old
     }
 }
 

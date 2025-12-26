@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
@@ -12,7 +11,7 @@ use crate::editor::{Error, Result};
 #[derive(Debug, Clone)]
 pub struct MapPart {
     pub name: String,
-    pub objects: HashMap<Rc<Symbol>, Vec<MapObject>>, // checkout weaktables crate
+    pub objects: HashMap<*const RefCell<Symbol>, Vec<MapObject>>,
 }
 
 impl MapPart {
@@ -35,7 +34,7 @@ impl MapPart {
             }
         }
 
-        let mut objects: HashMap<Rc<RefCell<Symbol>>, Vec<MapObject>> = HashMap::new();
+        let mut objects: HashMap<*const RefCell<Symbol>, Vec<MapObject>> = HashMap::new();
 
         let mut buf = Vec::new();
         loop {
@@ -44,15 +43,9 @@ impl MapPart {
                     if matches!(bytes_start.local_name().as_ref(), b"object") {
                         let object = MapObject::parse(reader, &bytes_start, symbols)?;
 
-                        let symbol =
-                            object
-                                .get_symbol()
-                                .upgrade()
-                                .ok_or(Error::ParseOmapFileError(
-                                    "Unknown symbol in parsed object".to_string(),
-                                ))?;
+                        let symbol = object.get_symbol().as_ptr();
 
-                        if let Some(contained) = objects.get_mut(symbol.as_ref()) {
+                        if let Some(contained) = objects.get_mut(&symbol) {
                             contained.push(object);
                         } else {
                             let _ = objects.insert(symbol, vec![object]);

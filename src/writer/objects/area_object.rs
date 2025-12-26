@@ -1,9 +1,9 @@
 use super::{MapObjectTrait, TagTrait};
 use crate::writer::{
+    Result,
     serialize::{MapCoord, SerializeBezier, SerializePolyLine},
     symbols::{AreaSymbol, SymbolTrait},
     transform::Transform,
-    Result,
 };
 use geo_types::{Coord, Polygon};
 use std::{
@@ -38,8 +38,10 @@ impl AreaObject {
     }
 
     /// change the symbol of a area object
-    pub fn change_symbol(&mut self, symbol: AreaSymbol) {
+    pub fn change_symbol(&mut self, symbol: AreaSymbol) -> AreaSymbol {
+        let old = self.symbol;
         self.symbol = symbol;
+        old
     }
 }
 

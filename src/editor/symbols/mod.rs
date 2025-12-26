@@ -6,11 +6,29 @@ pub use symbol_set::SymbolSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolType {
-    Point = 1,
-    Line = 2,
-    Area = 4,
-    Text = 8,
-    Combined = 16,
+    Point,
+    Line,
+    Area,
+    Text,
+    Combined(CombinedSymbolType),
+}
+
+impl SymbolType {
+    pub fn get_id(&self) -> usize {
+        match self {
+            SymbolType::Point => 1,
+            SymbolType::Line => 2,
+            SymbolType::Area => 4,
+            SymbolType::Text => 8,
+            SymbolType::Combined(_) => 16,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CombinedSymbolType {
+    Area,
+    Line,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

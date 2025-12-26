@@ -46,4 +46,6 @@ pub enum Error {
     BorrowError(#[from] std::cell::BorrowError),
     #[error(transparent)]
     BorrowMutError(#[from] std::cell::BorrowMutError),
+    #[error(transparent)]
+    BezierConversionError(#[from] linestring2bezier::Error),
 }

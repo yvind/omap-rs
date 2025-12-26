@@ -1,9 +1,9 @@
 use super::{MapObjectTrait, TagTrait};
 use crate::writer::{
+    Result,
     serialize::{SerializeBezier, SerializePolyLine},
     symbols::{LineSymbol, SymbolTrait},
     transform::Transform,
-    Result,
 };
 use geo_types::LineString;
 use std::{
@@ -34,8 +34,10 @@ impl LineObject {
     }
 
     /// change the symbol of a line object
-    pub fn change_symbol(&mut self, symbol: LineSymbol) {
+    pub fn change_symbol(&mut self, symbol: LineSymbol) -> LineSymbol {
+        let old = self.symbol;
         self.symbol = symbol;
+        old
     }
 }
 

@@ -4,7 +4,7 @@ use super::MapPart;
 use crate::editor::{Error, Result, symbols::SymbolSet};
 
 #[derive(Debug, Clone)]
-pub struct MapParts(Vec<MapPart>);
+pub struct MapParts(pub Vec<MapPart>);
 
 impl MapParts {
     /// Merge all map parts into a single part

@@ -1,5 +1,5 @@
 use geo_types::{Coord, LineString};
-use linestring2bezier::BezierSegment;
+use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
 use quick_xml::{
     Reader,
     events::{BytesStart, Event},
@@ -7,7 +7,7 @@ use quick_xml::{
 
 use crate::editor::{Error, Result};
 
-use super::PatternRotation;
+use super::{PARSE_BEZIER_ERROR, PatternRotation};
 
 #[derive(Debug, Clone)]
 pub struct LineObject {
@@ -16,7 +16,7 @@ pub struct LineObject {
 }
 
 impl LineObject {
-    pub(super) fn write<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    pub(super) fn write<W: std::io::Write>(self, _writer: &mut W) -> Result<()> {
         Ok(())
     }
 }
@@ -81,14 +81,14 @@ impl LineObject {
                 Event::Text(bytes_text) => {
                     raw_xml = String::from_utf8(bytes_text.to_vec())?;
 
-                    let mut bezier_state = 0_u8;
-
-                    let mut bezier_buf: [Coord; 4] = Default::default();
-                    let mut bezier_keep_first = true;
+                    let mut handles_written = 0_u8;
+                    let mut bezier_on = false;
+                    let mut bezier_buf = BezierString::empty();
+                    let mut bezier_curve_buf = BezierCurve::zero();
 
                     for vertex in raw_xml.split(';') {
                         let mut parts: (i32, i32, u8) = (0, 0, 0);
-                        let mut split = vertex.split(' ');
+                        let mut split = vertex.split_whitespace();
 
                         if let Some(e) = split.next() {
                             parts.0 = e.parse()?;
@@ -113,53 +113,49 @@ impl LineObject {
                             y: -parts.1 as f64 / 1_000.,
                         };
 
-                        // check flags, we only care about beziers for lines
+                        // check flags, we only care about bezier flags for lines
                         //  1 = Bezier curve start
-                        if (parts.2 & 1) == 1 && bezier_state == 0 {
+                        if (parts.2 & 1) == 1 && !bezier_on {
                             // bezier start
-                            bezier_keep_first = true;
-
-                            bezier_buf[0] = coord;
-                            bezier_state = 1;
-                        } else if (parts.2 & 1) == 1 && bezier_state == 3 {
+                            bezier_curve_buf.start = coord;
+                            bezier_on = true;
+                        } else if (parts.2 & 1) == 1 && bezier_on {
                             // bezier end and next start
-                            bezier_keep_first = false;
-
-                            bezier_buf[3] = coord;
-
-                            // convert the bezier to line string and add to end of line
-                            line.extend(
-                                BezierSegment::from(bezier_buf)
-                                    .to_line_string(density, bezier_keep_first)
-                                    .into_inner(),
-                            );
-
-                            bezier_buf[0] = coord;
-
-                            bezier_state = 1;
-                        } else if bezier_state == 1 {
-                            // first handle
-                            bezier_buf[1] = coord;
-                            bezier_state = 2;
-                        } else if bezier_state == 2 {
-                            // second handle
-                            bezier_buf[2] = coord;
-                            bezier_state = 3;
-                        } else if bezier_state == 3 {
+                            bezier_curve_buf.end = coord;
+                            bezier_buf
+                                .0
+                                .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
+                            bezier_curve_buf.start = coord;
+                        } else if bezier_on && handles_written < 2 {
+                            // first handles
+                            if handles_written == 0 {
+                                bezier_curve_buf.handle1 = coord;
+                            } else if handles_written == 1 {
+                                bezier_curve_buf.handle2 = coord;
+                            }
+                            handles_written += 1;
+                        } else if bezier_on && handles_written == 2 {
                             // end point
-                            bezier_buf[3] = coord;
+                            bezier_curve_buf.end = coord;
+                            bezier_buf
+                                .0
+                                .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
 
                             // convert the bezier to line string and add to end of line
                             line.extend(
-                                BezierSegment::from(bezier_buf)
-                                    .to_line_string(density, bezier_keep_first)
+                                bezier_buf
+                                    .clone()
+                                    .to_line_string(PARSE_BEZIER_ERROR)?
                                     .into_inner(),
                             );
 
-                            bezier_state = 0;
-                        } else {
+                            bezier_on = false;
+                            handles_written = 0;
+                        } else if !bezier_on {
                             // normal coord
                             line.push(coord);
+                        } else {
+                            debug_assert!(false, "This should not be reachable in line parsing")
                         }
                     }
                 }

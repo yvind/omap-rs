@@ -157,7 +157,7 @@ impl GeoRef {
                 self.scale, self.combined_scale_factor, self.auxiliary_scale_factor, self.declination, self.grivation
             )
             .as_bytes()
-        );
+        )?;
         if self.map_ref_point != Coord::zero() {
             writer.write_all(
                 format!(

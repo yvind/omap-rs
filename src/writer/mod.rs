@@ -42,4 +42,7 @@ pub enum Error {
     /// The symbol type and the object type do not match
     #[error("Wrong Symbol type for object")]
     MismatchingSymbolAndObject,
+    /// The conversion to or from bezier failed
+    #[error(transparent)]
+    BezierConversionError(#[from] linestring2bezier::Error),
 }

@@ -1,5 +1,5 @@
 use super::{AreaObject, LineObject, MapObjectTrait, PointObject, TagTrait, TextObject};
-use crate::writer::{symbols::Symbol, transform::Transform, BezierError, Error, Result};
+use crate::writer::{BezierError, Error, Result, symbols::Symbol, transform::Transform};
 use std::{fs::File, io::BufWriter};
 
 /// Enum for the different map object types
@@ -71,26 +71,26 @@ impl MapObject {
     /// change the symbol of a map object
     /// returns Err MismatchingSymbolAndObject if the object type and symbol type do not match
     /// nothing happens in that case
-    pub fn change_symbol(&mut self, new_symbol: impl Into<Symbol>) -> Result<()> {
+    pub fn change_symbol(&mut self, new_symbol: impl Into<Symbol>) -> Result<Symbol> {
         let new_symbol = new_symbol.into();
 
-        match (self, new_symbol) {
+        let old_symbol = match (self, new_symbol) {
             (MapObject::LineObject(line_object), Symbol::Line(line_symbol)) => {
-                line_object.change_symbol(line_symbol)
+                line_object.change_symbol(line_symbol).into()
             }
             (MapObject::PointObject(point_object), Symbol::Point(point_symbol)) => {
-                point_object.change_symbol(point_symbol)
+                point_object.change_symbol(point_symbol).into()
             }
             (MapObject::AreaObject(area_object), Symbol::Area(area_symbol)) => {
-                area_object.change_symbol(area_symbol)
+                area_object.change_symbol(area_symbol).into()
             }
             (MapObject::TextObject(text_object), Symbol::Text(text_symbol)) => {
-                text_object.change_symbol(text_symbol)
+                text_object.change_symbol(text_symbol).into()
             }
             _ => return Err(Error::MismatchingSymbolAndObject),
         };
 
-        Ok(())
+        Ok(old_symbol)
     }
 }
 

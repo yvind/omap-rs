@@ -5,18 +5,20 @@ mod text_object;
 
 mod map_object;
 
+use geo_types::Coord;
+use quick_xml::Reader;
 use std::collections::HashMap;
 
-use area_object::AreaObject;
-use geo_types::Coord;
-use line_object::LineObject;
-use point_object::PointObject;
-use quick_xml::Reader;
-use text_object::TextObject;
+pub use area_object::AreaObject;
+pub use line_object::LineObject;
+pub use point_object::PointObject;
+pub use text_object::TextObject;
 
 pub use map_object::MapObject;
 
 use super::{Error, Result};
+
+const PARSE_BEZIER_ERROR: f64 = 0.1;
 
 #[derive(Debug, Clone)]
 pub enum ObjectGeometry {
@@ -24,6 +26,12 @@ pub enum ObjectGeometry {
     Line(LineObject),
     Point(PointObject),
     Text(TextObject),
+}
+
+#[derive(Debug, Clone)]
+pub enum CombinedGeometry {
+    Area(AreaObject),
+    Line(LineObject),
 }
 
 impl ObjectGeometry {

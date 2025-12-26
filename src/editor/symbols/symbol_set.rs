@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use super::{Symbol, SymbolCode, SymbolType};
+use super::{CombinedSymbolType, Symbol, SymbolCode, SymbolType};
 use crate::editor::{
     Error, Result,
     colors::{Color, ColorSet},
@@ -14,6 +14,7 @@ use quick_xml::{
     Reader,
     events::{BytesStart, Event},
 };
+use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct SymbolSet {
@@ -27,7 +28,7 @@ impl<'a> SymbolSet {
         &self.name
     }
 
-    pub fn get_symbol_by_id(&self, id: usize) -> Option<Ref<Symbol>> {
+    pub fn get_symbol_by_id(&self, id: usize) -> Option<Ref<'_, Symbol>> {
         self.symbols
             .iter()
             .filter_map(|s| s.try_borrow().ok())
@@ -38,17 +39,17 @@ impl<'a> SymbolSet {
         self.symbols
             .iter()
             .find(|&s| s.clone().borrow().get_id() == id)
-            .map(|s| Rc::downgrade(s))
+            .map(Rc::downgrade)
     }
 
-    pub fn get_symbol_by_code(&self, code: SymbolCode) -> Option<Ref<Symbol>> {
+    pub fn get_symbol_by_code(&self, code: SymbolCode) -> Option<Ref<'_, Symbol>> {
         self.symbols
             .iter()
             .filter_map(|s| s.try_borrow().ok())
             .find(|s| s.get_code() == code)
     }
 
-    pub fn get_symbol_by_name(&self, name: &str) -> Option<Ref<Symbol>> {
+    pub fn get_symbol_by_name(&self, name: &str) -> Option<Ref<'_, Symbol>> {
         self.symbols
             .iter()
             .filter_map(|s| s.try_borrow().ok())
@@ -254,7 +255,42 @@ impl SymbolSet {
             }
         }
 
-        Ok(SymbolSet { symbols, name: id })
+        let symbol_set = SymbolSet { symbols, name: id };
+
+        let part_symbol_re = Regex::new("<part symbol=\"([0-9]+)\"/>").unwrap();
+        let private_symbol_re =
+            Regex::new("<part private\"true\"><symbol type=\"([0-9])\"").unwrap();
+
+        'symbols: for symbol in symbol_set.symbols.iter() {
+            let mut s = symbol.try_borrow_mut()?;
+            if let SymbolType::Combined(_) = s.symbol_type {
+                // we must check if the symbol contains only line type sub-symbols and should be used with LineObjects
+                // easiest is to check for any area symbols and if so we know it should be used for AreaObjects
+                for (_, [private_type]) in private_symbol_re
+                    .captures_iter(&s.xml_def)
+                    .map(|n| n.extract())
+                {
+                    if private_type == "4" {
+                        s.symbol_type = SymbolType::Combined(CombinedSymbolType::Area);
+                        continue 'symbols;
+                    }
+                }
+                for (_, [shared_symbol]) in part_symbol_re
+                    .captures_iter(&s.xml_def)
+                    .map(|n| n.extract())
+                {
+                    let symbol_id = usize::from_str(shared_symbol).unwrap();
+                    if let Some(symbol) = symbol_set.get_symbol_by_id(symbol_id)
+                        && let SymbolType::Area = symbol.get_type()
+                    {
+                        s.symbol_type = SymbolType::Combined(CombinedSymbolType::Area);
+                        continue 'symbols;
+                    }
+                }
+            }
+        }
+
+        Ok(symbol_set)
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {

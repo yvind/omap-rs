@@ -6,7 +6,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 
 use super::{AreaObject, LineObject, ObjectGeometry, PointObject, TextObject};
 
-use crate::editor::symbols::{Symbol, SymbolType};
+use crate::editor::symbols::{CombinedSymbolType, Symbol, SymbolType};
 use crate::editor::{
     Error, Result,
     objects::text_object::{HorizontalAlign, VerticalAlign},
@@ -15,9 +15,10 @@ use crate::editor::{
 
 #[derive(Debug, Clone)]
 pub struct MapObject {
+    // these two fields should be linked such that the symbol type matches the geometry type
     symbol: Weak<RefCell<Symbol>>,
-    pub tags: HashMap<String, String>,
     geometry: ObjectGeometry,
+    pub tags: HashMap<String, String>,
     // store the initial xml so that the object can be written back unchanged if the coords are untouched
     coords_xml_def: String,
     is_coords_touched: bool,
@@ -138,21 +139,26 @@ impl MapObject {
                     b"coords" => {
                         (geometry, coords_xml_def) = match object_type {
                             SymbolType::Point => {
-                                let (po, xml) = PointObject::parse(reader, rotation)?;
-                                (Some(ObjectGeometry::Point(po)), Some(xml))
+                                let po = PointObject::parse(reader, rotation)?;
+                                (Some(ObjectGeometry::Point(po)), Some(String::new()))
                             }
-                            SymbolType::Line => {
+                            SymbolType::Line | SymbolType::Combined(CombinedSymbolType::Line) => {
                                 let (lo, xml) = LineObject::parse(reader, &bytes_start)?;
                                 (Some(ObjectGeometry::Line(lo)), Some(xml))
                             }
-                            SymbolType::Area | SymbolType::Combined => {
+                            SymbolType::Area | SymbolType::Combined(CombinedSymbolType::Area) => {
                                 let (ao, xml) = AreaObject::parse(reader, &bytes_start)?;
                                 (Some(ObjectGeometry::Area(ao)), Some(xml))
                             }
                             SymbolType::Text => {
-                                let (to, xml) =
-                                    TextObject::parse(reader, h_align, v_align, rotation)?;
-                                (Some(ObjectGeometry::Text(to)), Some(xml))
+                                let to = TextObject::parse(
+                                    reader,
+                                    h_align,
+                                    v_align,
+                                    rotation,
+                                    &bytes_start,
+                                )?;
+                                (Some(ObjectGeometry::Text(to)), Some(String::new()))
                             }
                         };
                         break;

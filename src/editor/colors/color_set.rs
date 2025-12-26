@@ -38,7 +38,7 @@ impl<'a> ColorSet {
         self.0.len()
     }
 
-    pub fn get_color_by_id(&self, id: usize) -> Option<Ref<Color>> {
+    pub fn get_color_by_id(&self, id: usize) -> Option<Ref<'_, Color>> {
         self.0
             .iter()
             .filter_map(|c| c.try_borrow().ok())
@@ -48,12 +48,15 @@ impl<'a> ColorSet {
     pub(crate) fn get_weak_color_by_id(&self, id: usize) -> Option<Weak<RefCell<Color>>> {
         self.0
             .iter()
-            .find(|&c| c.clone().borrow().get_id() == id)
-            .map(|c| Rc::downgrade(c))
+            .find(|&c| match c.try_borrow().ok() {
+                Some(c) => c.get_id() == id,
+                None => false,
+            })
+            .map(Rc::downgrade)
     }
 
     /// Get the first color with an exact name match
-    pub fn get_color_by_name(&self, name: &str) -> Option<Ref<Color>> {
+    pub fn get_color_by_name(&self, name: &str) -> Option<Ref<'_, Color>> {
         self.0
             .iter()
             .filter_map(|c| c.try_borrow().ok())
@@ -94,9 +97,8 @@ impl ColorSet {
     ) -> Result<ColorSet> {
         let mut num_colors = 0;
         for attr in element.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                b"count" => num_colors = usize::from_str(&attr.unescape_value()?)?,
-                _ => (),
+            if attr.key.local_name().as_ref() == b"count" {
+                num_colors = usize::from_str(&attr.unescape_value()?)?
             }
         }
 

@@ -36,7 +36,7 @@ pub struct OmapWriter {
     grivation: f64,
     scale: Scale,
     epsg_crs: Option<u16>,
-    ref_point: Coord,
+    proj_ref_point: Coord,
     geo_ref_point: Option<Coord>,
 
     /// the objects of the map
@@ -44,12 +44,12 @@ pub struct OmapWriter {
 }
 
 impl OmapWriter {
-    /// Create a new map in the given scale centered at the `ref_point` (projected coordinates) with an optional CRS and optional `meters_above_sea_level` in elevation  
+    /// Create a new map in the given scale centered at the `proj_ref_point` (projected coordinates) with an optional CRS and optional `meters_above_sea_level` in elevation  
     ///
-    /// __All coordinates of objects added to the map must be relative the `ref_point`__
-    /// The `ref_point` can be retrieved with [Self::get_ref_point]
+    /// __All coordinates of objects added to the map must be in the same CRS as the map but relative the `proj_ref_point`__
+    /// The `proj_ref_point` can be retrieved with [Self::get_proj_ref_point]
     pub fn new(
-        ref_point: Coord,
+        proj_ref_point: Coord,
         scale: Scale,
         epsg_crs: Option<u16>,
         #[allow(unused_variables)] meters_above_sea_level: Option<f64>,
@@ -57,7 +57,7 @@ impl OmapWriter {
         let (declination, convergence, grid_scale_factor, elevation_scale_factor, geo_ref_point) = {
             #[cfg(feature = "geo_ref")]
             if let Some(epsg) = epsg_crs {
-                Self::get_geo_ref_parameters(epsg, ref_point, meters_above_sea_level)?
+                Self::get_geo_ref_parameters(epsg, proj_ref_point, meters_above_sea_level)?
             } else {
                 (0., 0., 1., 1., None)
             }
@@ -80,7 +80,7 @@ impl OmapWriter {
             grivation,
             scale,
             epsg_crs,
-            ref_point,
+            proj_ref_point,
             geo_ref_point,
             objects: HashMap::new(),
         })
@@ -97,7 +97,7 @@ impl OmapWriter {
     }
 
     /// Insert an object in the objects hashmap  
-    /// __All coordinates of objects added to the map must be relative the map's `ref_point`__
+    /// __All coordinates of objects added to the map must be relative the map's `proj_ref_point`__
     pub fn add_object(&mut self, obj: impl Into<MapObject>) {
         let obj = obj.into();
         let key = obj.symbol();
@@ -118,8 +118,8 @@ impl OmapWriter {
     }
 
     /// Get the projected ref point of the map
-    pub fn get_ref_point(&self) -> Coord {
-        self.ref_point
+    pub fn get_proj_ref_point(&self) -> Coord {
+        self.proj_ref_point
     }
 
     /// Get the geographical ref point of the map
@@ -132,7 +132,7 @@ impl OmapWriter {
         }
     }
 
-    /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature     
+    /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature as it pulls in an additional kd-tree dependency
     /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs, most often meters) apart are merged.  
     /// Elevation tags are respected and only elements with equal Elevation tags can be merged
     #[cfg(feature = "merge_lines")]
@@ -389,8 +389,11 @@ impl OmapWriter {
                     if line_string_signed_area(&o.line) < 0. {
                         let mut neg = basemap.swap_remove(i);
 
-                        // ignore the returned result as this cannot fail, as the only way to add objects is through Omap::add_object
-                        let _ = neg.change_symbol(LineSymbol::NegBasemapContour);
+                        let change_result = neg.change_symbol(LineSymbol::NegBasemapContour);
+                        debug_assert!(matches!(
+                            change_result,
+                            Ok(Symbol::Line(LineSymbol::BasemapContour))
+                        ));
 
                         neg_basemap.push(neg);
                     } else {
@@ -399,6 +402,8 @@ impl OmapWriter {
                 } else {
                     i += 1;
                 }
+            } else {
+                debug_assert!(false, "A non-LineObject object was found in the basemap");
             }
         }
 
@@ -468,7 +473,7 @@ impl OmapWriter {
                 format!(
                     "<georeferencing scale=\"{}\"><projected_crs id=\"Local\">\
                 <ref_point x=\"{}\" y=\"{}\"/></projected_crs></georeferencing>\n",
-                    self.scale, self.ref_point.x, self.ref_point.y
+                    self.scale, self.proj_ref_point.x, self.proj_ref_point.y
                 )
                 .into_bytes()
             }
@@ -485,7 +490,7 @@ impl OmapWriter {
         <spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec>\
         <ref_point_deg lat=\"{}\" lon=\"{}\"/></geographic_crs></georeferencing>\n",
         self.scale, self.combined_scale_factor, self.elevation_scale_factor, self.declination.to_degrees(), self.grivation.to_degrees(),
-        epsg, epsg, self.ref_point.x, self.ref_point.y, geo_ref_point.y.to_degrees(), geo_ref_point.x.to_degrees()).into_bytes()
+        epsg, epsg, self.proj_ref_point.x, self.proj_ref_point.y, geo_ref_point.y.to_degrees(), geo_ref_point.x.to_degrees()).into_bytes()
     }
 
     fn write_colors_symbols(&self, f: &mut BufWriter<File>) -> Result<()> {
