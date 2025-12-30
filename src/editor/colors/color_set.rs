@@ -15,7 +15,7 @@ use crate::editor::{Error, Result};
 #[derive(Debug, Clone)]
 pub struct ColorSet(Vec<Rc<RefCell<Color>>>);
 
-impl<'a> ColorSet {
+impl ColorSet {
     /// Add a simple color to the end of the color list
     pub fn push_color(&mut self, name: String, cmyk: Cmyk, opacity: f64) {
         let [c, m, y, k] = cmyk.as_rounded_fractions(2);
@@ -64,12 +64,7 @@ impl<'a> ColorSet {
     }
 
     /// Access the colors through an iterator
-    pub fn iter(
-        &'a self,
-    ) -> std::iter::Map<
-        std::slice::Iter<'a, Rc<RefCell<Color>>>,
-        impl FnMut(&'a Rc<RefCell<Color>>) -> Result<Ref<'a, Color>>,
-    > {
+    pub fn iter(&self) -> impl Iterator<Item = Result<Ref<'_, Color>>> {
         self.0.iter().map(|s| {
             let s = s.try_borrow()?;
             Ok(s)
@@ -77,12 +72,7 @@ impl<'a> ColorSet {
     }
 
     /// Access the mutable colors through an iterator
-    pub fn iter_mut(
-        &'a mut self,
-    ) -> std::iter::Map<
-        std::slice::Iter<'a, Rc<RefCell<Color>>>,
-        impl FnMut(&'a Rc<RefCell<Color>>) -> Result<RefMut<'a, Color>>,
-    > {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = Result<RefMut<'_, Color>>> {
         self.0.iter().map(|s| {
             let s = s.try_borrow_mut()?;
             Ok(s)
@@ -108,10 +98,7 @@ impl ColorSet {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"color") {
-                        colors.push(Rc::new(RefCell::new(Color::parse_color(
-                            reader,
-                            &bytes_start,
-                        )?)))
+                        colors.push(Rc::new(RefCell::new(Color::parse(reader, &bytes_start)?)))
                     }
                 }
                 Event::End(bytes_end) => {

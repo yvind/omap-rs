@@ -16,11 +16,11 @@ use crate::editor::{
 #[derive(Debug, Clone)]
 pub struct MapObject {
     // these two fields should be linked such that the symbol type matches the geometry type
-    symbol: Weak<RefCell<Symbol>>,
-    geometry: ObjectGeometry,
+    pub symbol: Weak<RefCell<Symbol>>,
+    pub geometry: ObjectGeometry,
     pub tags: HashMap<String, String>,
     // store the initial xml so that the object can be written back unchanged if the coords are untouched
-    coords_xml_def: String,
+    pub coords_xml_def: String,
     is_coords_touched: bool,
 }
 

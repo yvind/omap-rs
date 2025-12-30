@@ -1,3 +1,5 @@
 /target
 /.vscode
 *.omap
+*.xmap
+out.txt

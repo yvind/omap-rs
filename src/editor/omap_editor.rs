@@ -7,8 +7,8 @@ use quick_xml::events::Event;
 use super::colors::ColorSet;
 use super::format_info::{OmapVersion, XmlVersion};
 use super::geo_ref::GeoRef;
-use super::map_parts::MapParts;
 use super::notes;
+use super::parts::MapParts;
 use super::symbols::SymbolSet;
 
 use super::{Error, Result};
@@ -68,6 +68,7 @@ impl OmapEditor {
                     b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
                     b"symbols" => {
                         if let Some(colors) = &colors {
+                            println!("{:#?}", colors);
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
                         } else {
                             return Err(Error::ParseOmapFileError(
@@ -77,6 +78,7 @@ impl OmapEditor {
                     }
                     b"parts" => {
                         if let Some(symbols) = &symbols {
+                            println!("{:#?}", symbols);
                             parts = Some(MapParts::parse(&mut reader, symbols)?);
                         } else {
                             return Err(Error::ParseOmapFileError(

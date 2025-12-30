@@ -1,5 +1,8 @@
-use quick_xml::{Reader, events::BytesStart};
-use std::{io::BufRead, str::FromStr};
+use quick_xml::{
+    Reader,
+    events::{BytesStart, Event},
+};
+use std::str::FromStr;
 
 use super::Cmyk;
 use crate::editor::{Error, Result};
@@ -45,7 +48,7 @@ impl Color {
 }
 
 impl Color {
-    pub(super) fn parse_color<R: std::io::BufRead>(
+    pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart,
     ) -> Result<Color> {
@@ -67,7 +70,44 @@ impl Color {
                 _ => (),
             }
         }
-        let _ = reader.stream().read_line(&mut xml_def);
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(bytes_start) => {
+                    xml_def.push_str(
+                        format!(
+                            "<{}{}>",
+                            std::str::from_utf8(bytes_start.local_name().as_ref())?,
+                            std::str::from_utf8(bytes_start.attributes_raw())?
+                        )
+                        .as_str(),
+                    );
+                }
+                Event::End(bytes_end) => match bytes_end.local_name().as_ref() {
+                    b"color" => {
+                        xml_def.push_str("</color>");
+                        break;
+                    }
+                    name => xml_def.push_str(format!("</{}>", std::str::from_utf8(name)?).as_str()),
+                },
+                Event::Empty(bytes_start) => {
+                    xml_def.push_str(
+                        format!(
+                            "<{}{}/>",
+                            std::str::from_utf8(bytes_start.local_name().as_ref())?,
+                            std::str::from_utf8(bytes_start.attributes_raw())?
+                        )
+                        .as_str(),
+                    );
+                }
+                Event::Text(bytes_text) => {
+                    xml_def.push_str(&bytes_text.xml_content()?);
+                }
+                Event::Eof => return Err(Error::ParseOmapFileError("Early EOF".to_string())),
+                _ => (),
+            }
+        }
 
         if id == usize::MAX {
             return Err(Error::ParseOmapFileError(

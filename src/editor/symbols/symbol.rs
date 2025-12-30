@@ -1,6 +1,5 @@
 use std::{
     cell::{Ref, RefCell},
-    io::BufRead,
     rc::Weak,
     str::FromStr,
 };
@@ -129,6 +128,9 @@ impl Symbol {
                 b"id" => {
                     id = usize::from_str(std::str::from_utf8(&attr.value)?)?;
                 }
+                b"is_helper_symbol" => {
+                    println!("helper");
+                }
                 _ => {}
             }
         }
@@ -142,11 +144,13 @@ impl Symbol {
         let code = code.unwrap();
 
         let mut buf = Vec::new();
+        let mut depth = 0;
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
                     b"description" => description = notes::parse(reader)?,
                     name => {
+                        depth += 1;
                         xml_def.push_str(
                             format!(
                                 "<{}{}>",
@@ -155,14 +159,33 @@ impl Symbol {
                             )
                             .as_str(),
                         );
-                        let _ = reader.stream().read_line(&mut xml_def);
-                        break;
                     }
                 },
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"symbol") {
+                    if matches!(bytes_end.local_name().as_ref(), b"symbol") && depth == 0 {
                         break;
                     }
+                    xml_def.push_str(
+                        format!(
+                            "</{}>",
+                            std::str::from_utf8(bytes_end.local_name().as_ref())?
+                        )
+                        .as_str(),
+                    );
+                    depth -= 1;
+                }
+                Event::Text(bytes_text) => {
+                    xml_def.push_str(std::str::from_utf8(bytes_text.as_ref())?);
+                }
+                Event::Empty(bytes_start) => {
+                    xml_def.push_str(
+                        format!(
+                            "<{}{}/>",
+                            std::str::from_utf8(bytes_start.local_name().as_ref())?,
+                            std::str::from_utf8(bytes_start.attributes_raw())?
+                        )
+                        .as_str(),
+                    );
                 }
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
@@ -174,13 +197,18 @@ impl Symbol {
         }
 
         let mut colors = Vec::new();
+        let mut color_indices = Vec::new();
 
-        let re = Regex::new("color=\"([-?][0-9+])\"").unwrap();
+        // does not match *color="-1"
+        let re = Regex::new("color=\"([0-9]+)\"").unwrap();
         for (_, [color_index]) in re.captures_iter(&xml_def).map(|n| n.extract()) {
             let index = i16::from_str(color_index)?;
-            if index >= 0 {
+            if !color_indices.contains(&index) {
+                color_indices.push(index);
                 colors.push(color_set.get_weak_color_by_id(index as usize).ok_or(
-                    Error::ParseOmapFileError("Bad color in symbol parsing".to_string()),
+                    Error::ParseOmapFileError(format!(
+                        "Bad color in symbol parsing. Found color index {index}, but color set has only {} colors", color_set.num_colors()
+                    )),
                 )?);
             }
         }

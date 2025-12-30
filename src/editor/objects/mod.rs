@@ -28,12 +28,6 @@ pub enum ObjectGeometry {
     Text(TextObject),
 }
 
-#[derive(Debug, Clone)]
-pub enum CombinedGeometry {
-    Area(AreaObject),
-    Line(LineObject),
-}
-
 impl ObjectGeometry {
     fn type_value(&self) -> u8 {
         match self {
@@ -91,10 +85,10 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
             quick_xml::events::Event::End(bytes_end) => match bytes_end.local_name().as_ref() {
                 b"tags" => break,
                 b"t" => {
-                    if let Some(k) = key {
-                        if let Some(v) = value {
-                            let _ = tags.insert(k, v);
-                        }
+                    if let Some(k) = key
+                        && let Some(v) = value
+                    {
+                        let _ = tags.insert(k, v);
                     }
                     key = None;
                     value = None;

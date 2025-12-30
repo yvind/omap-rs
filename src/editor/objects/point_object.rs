@@ -46,6 +46,9 @@ impl PointObject {
                     let raw_xml = String::from_utf8(bytes_text.to_vec())?;
 
                     for vertex in raw_xml.split(';') {
+                        if vertex.is_empty() {
+                            continue;
+                        }
                         let mut parts: (i32, i32) = (0, 0);
                         let mut split = vertex.split_whitespace();
 

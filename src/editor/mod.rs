@@ -1,10 +1,10 @@
 mod colors;
 mod format_info;
 mod geo_ref;
-mod map_parts;
 mod notes;
 mod objects;
 mod omap_editor;
+mod parts;
 mod symbols;
 
 pub use omap_editor::OmapEditor;

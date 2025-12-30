@@ -22,7 +22,7 @@ pub struct SymbolSet {
     name: String,
 }
 
-impl<'a> SymbolSet {
+impl SymbolSet {
     /// Get the symbol set name
     pub fn get_symbol_set_name(&self) -> &str {
         &self.name
@@ -57,12 +57,7 @@ impl<'a> SymbolSet {
     }
 
     /// Access the symbols through an iterator
-    pub fn iter(
-        &'a self,
-    ) -> std::iter::Map<
-        std::slice::Iter<'a, Rc<RefCell<Symbol>>>,
-        impl FnMut(&'a Rc<RefCell<Symbol>>) -> Result<Ref<'a, Symbol>>,
-    > {
+    pub fn iter(&self) -> impl Iterator<Item = Result<Ref<'_, Symbol>>> {
         self.symbols.iter().map(|s| {
             let s = s.try_borrow()?;
             Ok(s)
@@ -70,12 +65,7 @@ impl<'a> SymbolSet {
     }
 
     /// Access the mutable symbols through an iterator
-    pub fn iter_mut(
-        &'a mut self,
-    ) -> std::iter::Map<
-        std::slice::Iter<'a, Rc<RefCell<Symbol>>>,
-        impl FnMut(&'a Rc<RefCell<Symbol>>) -> Result<RefMut<'a, Symbol>>,
-    > {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = Result<RefMut<'_, Symbol>>> {
         self.symbols.iter().map(|s| {
             let s = s.try_borrow_mut()?;
             Ok(s)
