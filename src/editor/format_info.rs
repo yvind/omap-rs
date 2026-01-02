@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-use quick_xml::events::BytesStart;
+use quick_xml::events::{BytesDecl, BytesStart};
 
 use crate::editor::{Error, Result};
 
@@ -11,7 +11,7 @@ pub struct OmapVersion {
 }
 
 impl OmapVersion {
-    pub(crate) fn parse(element: &BytesStart) -> Result<Self> {
+    pub(crate) fn parse(element: &BytesStart<'_>) -> Result<Self> {
         let mut xmlns = None;
         let mut version = None;
 
@@ -97,7 +97,7 @@ impl FromStr for Encoding {
 }
 
 impl XmlVersion {
-    pub(crate) fn parse(decl: quick_xml::events::BytesDecl) -> Result<Self> {
+    pub(crate) fn parse(decl: BytesDecl<'_>) -> Result<Self> {
         let version = String::from_utf8(decl.version()?.into_owned())?;
         let encoding = std::str::from_utf8(&decl.encoding().ok_or(
             Error::UnsupportedEncoding("No Encoding tag found".to_owned()),

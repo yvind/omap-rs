@@ -24,7 +24,7 @@ impl LineObject {
 impl LineObject {
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
     ) -> Result<(Self, String)> {
         let mut raw_xml = String::new();
         let mut pr = PatternRotation::default();

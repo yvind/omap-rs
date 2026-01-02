@@ -83,7 +83,7 @@ impl ColorSet {
 impl ColorSet {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
     ) -> Result<ColorSet> {
         let mut num_colors = 0;
         for attr in element.attributes().filter_map(std::result::Result::ok) {

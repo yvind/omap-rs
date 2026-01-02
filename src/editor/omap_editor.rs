@@ -6,7 +6,7 @@ use quick_xml::events::Event;
 
 use super::colors::ColorSet;
 use super::format_info::{OmapVersion, XmlVersion};
-use super::geo_ref::GeoRef;
+use super::geo_referencing::GeoRef;
 use super::notes;
 use super::parts::MapParts;
 use super::symbols::SymbolSet;
@@ -68,7 +68,6 @@ impl OmapEditor {
                     b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
                     b"symbols" => {
                         if let Some(colors) = &colors {
-                            println!("{:#?}", colors);
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
                         } else {
                             return Err(Error::ParseOmapFileError(
@@ -78,11 +77,10 @@ impl OmapEditor {
                     }
                     b"parts" => {
                         if let Some(symbols) = &symbols {
-                            println!("{:#?}", symbols);
                             parts = Some(MapParts::parse(&mut reader, symbols)?);
                         } else {
                             return Err(Error::ParseOmapFileError(
-                                "Encountered Map parts before symbols".to_string(),
+                                "Encountered Map parts before Symbols".to_string(),
                             ));
                         }
                     }
@@ -91,8 +89,10 @@ impl OmapEditor {
                             "<templates{}>",
                             std::str::from_utf8(bytes_start.attributes_raw())?
                         );
-                        reader.stream().read_to_string(&mut tav)?;
+                        // read the rest of the file
+                        let _ = reader.stream().read_to_string(&mut tav)?;
 
+                        // ignore everything after view end-tag
                         if let Some(index) = tav.find("</view>") {
                             let _ = tav.split_off(index + 7);
                             templates_and_view = tav;

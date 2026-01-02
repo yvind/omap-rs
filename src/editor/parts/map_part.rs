@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Weak;
 
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
@@ -11,19 +12,23 @@ use crate::editor::{Error, Result};
 #[derive(Debug, Clone)]
 pub struct MapPart {
     pub name: String,
-    pub objects: HashMap<*const RefCell<Symbol>, Vec<MapObject>>,
+    objects: HashMap<*const RefCell<Symbol>, Vec<MapObject>>,
 }
 
 impl MapPart {
     pub(super) fn merge(&mut self, other: Self) {
         self.objects.extend(other.objects);
     }
+
+    pub fn get(&self, key: &Weak<RefCell<Symbol>>) -> Option<&Vec<MapObject>> {
+        self.objects.get(&key.as_ptr())
+    }
 }
 
 impl MapPart {
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
         symbols: &SymbolSet,
     ) -> Result<MapPart> {
         let mut name = String::new();

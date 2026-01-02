@@ -29,11 +29,11 @@ pub enum Error {
     #[error(transparent)]
     IO(#[from] std::io::Error),
     /// Projection error
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     #[error(transparent)]
     Proj(#[from] proj4rs::errors::Error),
     /// World magnetic model declination error
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     #[error(transparent)]
     GeoMagnetic(#[from] world_magnetic_model::Error),
     /// The geo-referencing feature is de-activated, but an EPSG code was passed to new

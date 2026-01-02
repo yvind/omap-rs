@@ -72,6 +72,10 @@ impl SymbolSet {
         })
     }
 
+    pub fn iter_rc(&self) -> impl Iterator<Item = &Rc<RefCell<Symbol>>> {
+        self.symbols.iter()
+    }
+
     /// Get the number of symbol in the symbol set
     pub fn num_symbols(&self) -> usize {
         self.symbols.len()
@@ -105,6 +109,7 @@ impl SymbolSet {
             name,
             vec![color],
             self.num_symbols(),
+            false,
         ))));
         Ok(())
     }
@@ -133,6 +138,7 @@ impl SymbolSet {
             name,
             vec![color],
             self.num_symbols(),
+            false,
         ))));
 
         Ok(())
@@ -163,6 +169,7 @@ impl SymbolSet {
             name,
             vec![color],
             self.num_symbols(),
+            false,
         ))));
         Ok(())
     }
@@ -195,6 +202,7 @@ impl SymbolSet {
             name,
             vec![color],
             self.num_symbols(),
+            false,
         ))));
         Ok(())
     }
@@ -203,7 +211,7 @@ impl SymbolSet {
 impl SymbolSet {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
         colors: &ColorSet,
     ) -> Result<SymbolSet> {
         let mut id = String::new();

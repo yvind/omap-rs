@@ -70,12 +70,10 @@ impl MapObject {
     pub fn get_symbol(&self) -> Weak<RefCell<Symbol>> {
         self.symbol.clone()
     }
-}
 
-impl MapObject {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        bytes_start: &BytesStart,
+        bytes_start: &BytesStart<'_>,
         symbols: &SymbolSet,
     ) -> Result<MapObject> {
         let mut object_type = None;

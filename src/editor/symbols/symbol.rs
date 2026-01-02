@@ -1,6 +1,6 @@
 use std::{
     cell::{Ref, RefCell},
-    rc::Weak,
+    rc::{Rc, Weak},
     str::FromStr,
 };
 
@@ -26,6 +26,7 @@ pub struct Symbol {
     pub description: String,
     name: String,
     colors: Vec<Weak<RefCell<Color>>>,
+    pub helper_symbol: bool,
 }
 
 impl PartialEq for Symbol {
@@ -37,6 +38,7 @@ impl PartialEq for Symbol {
 impl Eq for Symbol {}
 
 impl Symbol {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         symbol_type: SymbolType,
         xml_def: String,
@@ -45,6 +47,7 @@ impl Symbol {
         name: String,
         colors: Vec<Weak<RefCell<Color>>>,
         id: usize,
+        helper_symbol: bool,
     ) -> Symbol {
         Symbol {
             symbol_type,
@@ -54,6 +57,7 @@ impl Symbol {
             name,
             colors,
             id,
+            helper_symbol,
         }
     }
 
@@ -81,17 +85,21 @@ impl Symbol {
         self.symbol_type
     }
 
-    pub fn contains_color(&self, color: Ref<'_, Color>) -> bool {
+    pub fn contains_color(&self, color: &Ref<'_, Color>) -> bool {
         self.colors
             .iter()
             .any(|c| c.upgrade().unwrap().borrow().get_id() == color.get_id())
+    }
+
+    pub fn colors_iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<Color>>>> {
+        self.colors.iter().map(|wc| wc.upgrade())
     }
 }
 
 impl Symbol {
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
         color_set: &ColorSet,
     ) -> Result<Symbol> {
         let mut id = usize::MAX;
@@ -100,6 +108,7 @@ impl Symbol {
         let mut name = String::new();
         let mut code = None;
         let mut xml_def = String::new();
+        let mut helper_symbol = false;
 
         // Parse attributes
         for attr in element.attributes().filter_map(std::result::Result::ok) {
@@ -129,7 +138,7 @@ impl Symbol {
                     id = usize::from_str(std::str::from_utf8(&attr.value)?)?;
                 }
                 b"is_helper_symbol" => {
-                    println!("helper");
+                    helper_symbol = true;
                 }
                 _ => {}
             }
@@ -221,6 +230,7 @@ impl Symbol {
             xml_def,
             colors,
             id,
+            helper_symbol,
         })
     }
 

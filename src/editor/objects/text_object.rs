@@ -111,7 +111,7 @@ impl TextObject {
         h_align: Option<HorizontalAlign>,
         v_align: Option<VerticalAlign>,
         rotation: f64,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
     ) -> Result<Self> {
         let mut num_coords = 0;
         for attr in element.attributes().filter_map(std::result::Result::ok) {

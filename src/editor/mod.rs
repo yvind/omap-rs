@@ -1,11 +1,11 @@
-mod colors;
-mod format_info;
-mod geo_ref;
-mod notes;
-mod objects;
-mod omap_editor;
-mod parts;
-mod symbols;
+pub mod colors;
+pub mod format_info;
+pub mod geo_referencing;
+pub mod notes;
+pub mod objects;
+pub mod omap_editor;
+pub mod parts;
+pub mod symbols;
 
 pub use omap_editor::OmapEditor;
 

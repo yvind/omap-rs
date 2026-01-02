@@ -84,7 +84,6 @@
 //!
 //! ```
 
-/*
 #![deny(
     elided_lifetimes_in_paths,
     explicit_outlives_requirements,
@@ -93,7 +92,7 @@
     meta_variable_misuse,
     missing_abi,
     missing_debug_implementations,
-    missing_docs,
+    //missing_docs,
     non_ascii_idents,
     noop_method_call,
     rust_2021_incompatible_closure_captures,
@@ -114,9 +113,10 @@
     unused_results,
     warnings
 )]
-    */
 
-/// module for interacting with omap files
-pub mod editor;
 /// module for writing new omap files
 pub mod writer;
+
+#[cfg(feature = "editor")]
+/// module for interacting with omap files
+pub mod editor;

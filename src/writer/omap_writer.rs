@@ -11,11 +11,11 @@ use std::{
 };
 use std::{ffi::OsStr, fs::File, path::PathBuf};
 
-#[cfg(feature = "geo_ref")]
+#[cfg(feature = "geo_ref_writer")]
 use chrono::Datelike;
-#[cfg(feature = "geo_ref")]
+#[cfg(feature = "geo_ref_writer")]
 use proj4rs::{Proj, transform::transform};
-#[cfg(feature = "geo_ref")]
+#[cfg(feature = "geo_ref_writer")]
 use world_magnetic_model::{
     GeomagneticField,
     time::Date,
@@ -55,13 +55,13 @@ impl OmapWriter {
         #[allow(unused_variables)] meters_above_sea_level: Option<f64>,
     ) -> Result<Self> {
         let (declination, convergence, grid_scale_factor, elevation_scale_factor, geo_ref_point) = {
-            #[cfg(feature = "geo_ref")]
+            #[cfg(feature = "geo_ref_writer")]
             if let Some(epsg) = epsg_crs {
                 Self::get_geo_ref_parameters(epsg, proj_ref_point, meters_above_sea_level)?
             } else {
                 (0., 0., 1., 1., None)
             }
-            #[cfg(not(feature = "geo_ref"))]
+            #[cfg(not(feature = "geo_ref_writer"))]
             {
                 if epsg_crs.is_some() {
                     return Err(crate::OmapError::DisabledGeoReferencingFeature);
@@ -110,7 +110,7 @@ impl OmapWriter {
 
     /// Get the CRS of the map represented by an EPSG code
     pub fn get_crs(&self) -> Option<u16> {
-        if cfg!(feature = "geo_ref") {
+        if cfg!(feature = "geo_ref_writer") {
             self.epsg_crs
         } else {
             None
@@ -123,9 +123,9 @@ impl OmapWriter {
     }
 
     /// Get the geographical ref point of the map
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     pub fn get_geo_ref_point(&self) -> Option<Coord> {
-        if cfg!(feature = "geo_ref") {
+        if cfg!(feature = "geo_ref_writer") {
             self.geo_ref_point
         } else {
             None
@@ -135,7 +135,7 @@ impl OmapWriter {
     /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature as it pulls in an additional kd-tree dependency
     /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs, most often meters) apart are merged.  
     /// Elevation tags are respected and only elements with equal Elevation tags can be merged
-    #[cfg(feature = "merge_lines")]
+    #[cfg(feature = "merge_lines_writer")]
     pub fn merge_lines(&mut self, delta: f64) {
         for (key, map_objects) in self.objects.iter_mut() {
             if !key.is_line_symbol() {
@@ -540,7 +540,7 @@ impl OmapWriter {
         Ok(())
     }
 
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     fn get_geo_ref_parameters(
         epsg: u16,
         ref_point: Coord,
@@ -569,7 +569,7 @@ impl OmapWriter {
         ))
     }
 
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     fn get_convergence_and_grid_scale_factor(
         epsg: u16,
         geo_ref_point: Coord,
@@ -612,7 +612,7 @@ impl OmapWriter {
         Ok((convergence, grid_scale_factor))
     }
 
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     fn get_elevation_scale_factor(
         geo_ref_point: Coord,
         meters_above_sea_level: Option<f64>,
@@ -634,7 +634,7 @@ impl OmapWriter {
         }
     }
 
-    #[cfg(feature = "geo_ref")]
+    #[cfg(feature = "geo_ref_writer")]
     fn get_declination(geo_ref_point: Coord, meters_above_sea_level: Option<f64>) -> Result<f64> {
         let date = chrono::Local::now();
         let year = date.year();

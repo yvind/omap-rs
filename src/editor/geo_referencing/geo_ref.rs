@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::str::FromStr;
 
 use geo_types::Coord;
@@ -29,30 +30,22 @@ pub struct GeoRef {
 #[derive(Debug, Clone)]
 pub enum CrsType {
     Local,
-    EPSG(u16),
-    PROJ4(String),
+    Epsg(u16),
+    Proj4(String),
     GaussKrueger(u8),
-    UTM(i8),
+    Utm(i8),
 }
 
 impl CrsType {
     fn get_epsg_code(&self) -> Option<u16> {
         match self {
-            CrsType::EPSG(c) => Some(*c),
-            CrsType::PROJ4(string) => {
-                if let Some(index) = string.find("+init=epsg:") {
-                    let mut code = 0;
-
-                    let mut chars = string.chars().skip(index + 11);
-                    while let Some(c) = chars.next() {
-                        if c.is_ascii_digit() {
-                            code = code * 10 + (c as u16 - 48);
-                        } else {
-                            break;
-                        }
-                    }
-
-                    if code >= 1024 && code <= 32767 {
+            CrsType::Epsg(c) => Some(*c),
+            CrsType::Proj4(string) => {
+                let re = Regex::new(r"\+init=epsg:([0-9]{4,5})").unwrap();
+                if let Some(found) = re.find(string) {
+                    if let Ok(code) = found.as_str().parse()
+                        && (1024..=32767).contains(&code)
+                    {
                         Some(code)
                     } else {
                         None
@@ -68,8 +61,8 @@ impl CrsType {
     fn get_proj_string(&self) -> Option<String> {
         match self {
             CrsType::Local => None,
-            CrsType::EPSG(code) => Some(format!("+init=epsg:{}", code)),
-            CrsType::PROJ4(proj_string) => Some(proj_string.clone()),
+            CrsType::Epsg(code) => Some(format!("+init=epsg:{}", code)),
+            CrsType::Proj4(proj_string) => Some(proj_string.clone()),
             CrsType::GaussKrueger(code) => {
                 let lon = 3 * (*code as u16);
                 let x = 500_000 + (*code as u32 * 1_000_000);
@@ -79,7 +72,7 @@ impl CrsType {
                     lon, x
                 ))
             }
-            CrsType::UTM(code) => {
+            CrsType::Utm(code) => {
                 if *code < 0 {
                     Some(format!(
                         "+proj=utm +datum=WGS84 +zone={} +south",
@@ -94,14 +87,14 @@ impl CrsType {
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut W) -> Result<()> {
         let string = match self {
-            CrsType::Local => format!("<projected_crs id=\"Local\">"),
-            CrsType::EPSG(code) => {
+            CrsType::Local => "<projected_crs id=\"Local\">".to_string(),
+            CrsType::Epsg(code) => {
                 format!(
                     "<projected_crs id=\"EPSG\"><spec language=\"PROJ.4\">+init=epsg:{}</spec><parameter>{}</parameter>",
                     code, code
                 )
             }
-            CrsType::PROJ4(proj_string) => {
+            CrsType::Proj4(proj_string) => {
                 format!(
                     "<projected_crs id=\"PROJ.4\"><spec language=\"PROJ.4\">{}</spec><parameter>{}</parameter>",
                     proj_string, proj_string
@@ -116,7 +109,7 @@ impl CrsType {
                     lon, x, code
                 )
             }
-            CrsType::UTM(code) => {
+            CrsType::Utm(code) => {
                 if code < 0 {
                     // south
                     format!(
@@ -197,7 +190,7 @@ impl GeoRef {
 
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        event: &BytesStart,
+        event: &BytesStart<'_>,
     ) -> Result<Self> {
         let mut scale = None;
         let mut combined_scale_factor = 1.;
@@ -293,7 +286,7 @@ impl GeoRef {
 
 fn parse_projected_crs<R: std::io::BufRead>(
     reader: &mut Reader<R>,
-    bytes_start: &BytesStart,
+    bytes_start: &BytesStart<'_>,
 ) -> Result<(CrsType, Coord)> {
     let mut buf = Vec::new();
 
@@ -306,7 +299,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
                     crs_type = CrsType::GaussKrueger(u8::from_str(string.as_str())?);
                 }
                 b"EPSG" => {
-                    crs_type = CrsType::EPSG(u16::from_str(string.as_str())?);
+                    crs_type = CrsType::Epsg(u16::from_str(string.as_str())?);
                 }
                 b"UTM" => {
                     let sign = match string.pop() {
@@ -319,9 +312,9 @@ fn parse_projected_crs<R: std::io::BufRead>(
                         }
                     };
 
-                    crs_type = CrsType::UTM(sign * i8::from_str(string.trim())?);
+                    crs_type = CrsType::Utm(sign * i8::from_str(string.trim())?);
                 }
-                b"PROJ.4" => crs_type = CrsType::PROJ4(string),
+                b"PROJ.4" => crs_type = CrsType::Proj4(string),
                 _ => (),
             }
         }

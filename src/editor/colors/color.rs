@@ -50,7 +50,7 @@ impl Color {
 impl Color {
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        element: &BytesStart,
+        element: &BytesStart<'_>,
     ) -> Result<Color> {
         let mut xml_def = format!("<color{}>", std::str::from_utf8(element.attributes_raw())?);
         let mut name = String::new();
