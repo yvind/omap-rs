@@ -1,6 +1,8 @@
 mod symbol;
 mod symbol_set;
 
+use std::fmt::Display;
+
 pub use symbol::Symbol;
 pub use symbol_set::SymbolSet;
 
@@ -48,5 +50,11 @@ where
             minor: value.next().unwrap_or(0),
             patch: value.next().unwrap_or(0),
         }
+    }
+}
+
+impl Display for SymbolCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
     }
 }

@@ -48,7 +48,7 @@ impl MapPart {
                     if matches!(bytes_start.local_name().as_ref(), b"object") {
                         let object = MapObject::parse(reader, &bytes_start, symbols)?;
 
-                        let symbol = object.get_symbol().as_ptr();
+                        let symbol = object.symbol.as_ptr();
 
                         if let Some(contained) = objects.get_mut(&symbol) {
                             contained.push(object);

@@ -28,10 +28,8 @@ use world_magnetic_model::{
 /// The map will be georeferenced if self.epsg_crs.is_some() or else it is written in Local space
 #[derive(Debug, Clone)]
 pub struct OmapWriter {
-    #[allow(unused)]
     elevation_scale_factor: f64,
     combined_scale_factor: f64,
-    #[allow(unused)]
     declination: f64,
     grivation: f64,
     scale: Scale,
@@ -64,7 +62,7 @@ impl OmapWriter {
             #[cfg(not(feature = "geo_ref_writer"))]
             {
                 if epsg_crs.is_some() {
-                    return Err(crate::OmapError::DisabledGeoReferencingFeature);
+                    return Err(crate::writer::Error::DisabledGeoReferencingFeature);
                 }
                 (0., 0., 1., 1., None)
             }
@@ -132,9 +130,9 @@ impl OmapWriter {
         }
     }
 
-    /// Merge line objects that are tip to tail. This method is gated behind the `merge_lines`-feature as it pulls in an additional kd-tree dependency
+    /// Merge line objects of the same symbol that are tip to tail. This method is gated behind the `merge_lines`-feature as it pulls in an additional dependency
     /// Line ends (directed) of the same symbol that are less than `delta` units (same units as the crs, most often meters) apart are merged.  
-    /// Elevation tags are respected and only elements with equal Elevation tags can be merged
+    /// Elevation tags are respected and only elements with equal Elevation tags can be merged, other tags are not respected and only one set of tags are kept
     #[cfg(feature = "merge_lines_writer")]
     pub fn merge_lines(&mut self, delta: f64) {
         for (key, map_objects) in self.objects.iter_mut() {
@@ -506,7 +504,7 @@ impl OmapWriter {
         Ok(())
     }
 
-    fn write_objects(mut self, f: &mut BufWriter<File>, bezier_error: BezierError) -> Result<()> {
+    fn write_objects(self, f: &mut BufWriter<File>, bezier_error: BezierError) -> Result<()> {
         let num_objects = self.objects.values().fold(0, |acc, v| acc + v.len());
 
         f.write_all(
@@ -517,14 +515,13 @@ impl OmapWriter {
         )?;
 
         let transform = Transform::new(self.scale, self.combined_scale_factor, self.grivation);
-        for (sym, val) in self.objects.drain() {
-            if sym.is_not_bezier_symbol() {
-                for obj in val {
-                    obj.write_to_map(f, Default::default(), &transform)?;
-                }
-            } else {
-                for obj in val {
-                    obj.write_to_map(f, bezier_error, &transform)?;
+        // we do not use the symbols from the hashmap-keys when writing, as those are only for organizing
+        // and can be wrong the symbol in the mapobject is the actual symbol
+        for val in self.objects.into_values() {
+            for obj in val {
+                match obj.symbol().is_not_bezier_symbol() {
+                    true => obj.write_to_map(f, Default::default(), &transform)?,
+                    false => obj.write_to_map(f, bezier_error, &transform)?,
                 }
             }
         }
@@ -534,9 +531,9 @@ impl OmapWriter {
     }
 
     fn write_end_of_file(f: &mut BufWriter<File>) -> Result<()> {
-        f.write_all(b"<templates count=\"0\" first_front_template=\"0\">\n<defaults use_meters_per_pixel=\"true\" meters_per_pixel=\"0\" dpi=\"0\" scale=\"0\"/></templates>\n<view>\n")?;
-        f.write_all(b"<grid color=\"#646464\" display=\"0\" alignment=\"0\" additional_rotation=\"0\" unit=\"1\" h_spacing=\"500\" v_spacing=\"500\" h_offset=\"0\" v_offset=\"0\" snapping_enabled=\"true\"/>\n")?;
-        f.write_all(b"<map_view zoom=\"1\" position_x=\"0\" position_y=\"0\"><map opacity=\"1\" visible=\"true\"/><templates count=\"0\"/></map_view>\n</view>\n</barrier>\n</map>")?;
+        f.write_all(b"<templates count=\"0\" first_front_template=\"0\">\n<defaults use_meters_per_pixel=\"true\" meters_per_pixel=\"0\" dpi=\"0\" scale=\"0\"/>\n</templates>\n<view>\n\
+        <grid color=\"#646464\" display=\"0\" alignment=\"0\" additional_rotation=\"0\" unit=\"1\" h_spacing=\"500\" v_spacing=\"500\" h_offset=\"0\" v_offset=\"0\" snapping_enabled=\"true\"/>\n\
+        <map_view zoom=\"1\" position_x=\"0\" position_y=\"0\"><map opacity=\"1\" visible=\"true\"/><templates count=\"0\"/></map_view>\n</view>\n</barrier>\n</map>")?;
         Ok(())
     }
 

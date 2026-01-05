@@ -85,6 +85,10 @@ impl Symbol {
         self.symbol_type
     }
 
+    pub fn get_xml_definition(&self) -> &str {
+        &self.xml_def
+    }
+
     pub fn contains_color(&self, color: &Ref<'_, Color>) -> bool {
         self.colors
             .iter()
