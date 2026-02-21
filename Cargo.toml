@@ -1,6 +1,6 @@
 [package]
 name = "omap"
-version = "0.5.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Øyvind Hjermstad <@yvind>"]
 description = "Interact with or write new Open Orienteering Mapper omap-files"
@@ -13,9 +13,8 @@ keywords = ["open orienteering mapper", "orienteering", "map", "mapping", "gis"]
 [dependencies]
 geo-types = "0.7.16"
 thiserror = "2.0.17"
+quick-xml = "0.38.0"
 linestring2bezier = { git = "https://github.com/yvind/linestring2bezier" }
-
-kiddo = { version = "5.0.3", optional = true }
 
 proj4rs = { version = "0.1.5", features = [
     "crs-definitions",
@@ -24,13 +23,8 @@ proj4rs = { version = "0.1.5", features = [
 chrono = { version = "0.4.39", optional = true }
 world_magnetic_model = { version = "0.4.0", optional = true }
 
-quick-xml = { version="0.38.0", optional = true}
-regex = {version="1.11.3", optional = true}
-
 [features]
-geo_ref_writer = ["dep:proj4rs", "dep:world_magnetic_model", "dep:chrono"]
-merge_lines_writer = ["dep:kiddo"]
-editor = ["dep:quick-xml", "dep:regex"]
+geo_ref = ["dep:proj4rs", "dep:world_magnetic_model", "dep:chrono"]
 
 [package.metadata.docs.rs]
 all-features = true

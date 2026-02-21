@@ -1,89 +1,3 @@
-//! Interact with Open Orienteering Mapper's .omap files in Rust
-//!
-//! # Example Writing
-//!
-//! ```
-//! use geo_types::{Coord, LineString, Point, Polygon};
-//! use omap::writer::{
-//!     objects::{AreaObject, LineObject, PointObject, TagTrait, TextObject},
-//!     symbols::{AreaSymbol, LineSymbol, PointSymbol, TextSymbol},
-//!     BezierError, OmapWriter, Scale,
-//! };
-//! use std::{path::PathBuf, str::FromStr};
-//!
-//! let map_center = Coord {
-//!     x: 323_877.,
-//!     y: 6_399_005.,
-//! };
-//! let map_center_elevation_meters = 100.;
-//! let crs_epsg_code = 3006;
-//!
-//! let mut omap = OmapWriter::new(
-//!     map_center,
-//!     Scale::S15_000,
-//!     Some(crs_epsg_code),
-//!     Some(map_center_elevation_meters),
-//! )
-//! .expect("Could not make map with the given CRS-code");
-//!
-//! // coordinates of geometry are in the same units as the map_center, but relative the map_center
-//! let polygon = Polygon::new(
-//!     LineString::new(vec![
-//!         Coord { x: -50., y: -50. },
-//!         Coord { x: -50., y: 50. },
-//!         Coord { x: 50., y: 50. },
-//!         Coord { x: 50., y: -50. },
-//!         Coord { x: -50., y: -50. },
-//!     ]),
-//!     vec![],
-//! );
-//!
-//! let mut area_object =
-//!     AreaObject::from_polygon(polygon, AreaSymbol::RoughVineyard, 45.0_f64.to_radians());
-//! area_object.add_tag("tag_key", "tag_value");
-//!
-//! let line_string = LineString::new(vec![
-//!     Coord { x: -60., y: 20. },
-//!     Coord { x: -20., y: 25. },
-//!     Coord { x: 0., y: 27.5 },
-//!     Coord { x: 20., y: 26. },
-//!     Coord { x: 40., y: 22.5 },
-//!     Coord { x: 60., y: 20. },
-//!     Coord { x: 60., y: -20. },
-//!     Coord { x: -60., y: -20. },
-//! ]);
-//!
-//! let mut line_object = LineObject::from_line_string(line_string, LineSymbol::Contour);
-//! line_object.add_elevation_tag(20.);
-//!
-//! let point = Point::new(0.0_f64, 0.0_f64);
-//! let point_object = PointObject::from_point(
-//!     point,
-//!     PointSymbol::ElongatedDotKnoll,
-//!     -45.0_f64.to_radians(),
-//! );
-//!
-//! let text_point = Point::new(0.0_f64, -30.0_f64);
-//! let text = "some text".to_string();
-//! let text_object = TextObject::from_point(text_point, TextSymbol::SpotHeight, text);
-//!
-//! omap.add_object(area_object);
-//! omap.add_object(line_object);
-//! omap.add_object(point_object);
-//! omap.add_object(text_object);
-//!
-//! let max_bezier_deviation_meters = 2.5;
-//! // different approximation errors are used for line objects and area objects
-//! let bez_error = BezierError::new(Some(max_bezier_deviation_meters), None);
-//!
-//! omap.write_to_file(
-//!     PathBuf::from_str("./simple_example.omap").unwrap(),
-//!     bez_error,
-//! )
-//! .expect("Could not write to file");
-//!
-//! ```
-
 #![deny(
     elided_lifetimes_in_paths,
     explicit_outlives_requirements,
@@ -105,7 +19,7 @@
     unreachable_pub,
     unsafe_code,
     unsafe_op_in_unsafe_fn,
-    unused_crate_dependencies,
+    //unused_crate_dependencies,
     unused_extern_crates,
     unused_import_braces,
     unused_lifetimes,
@@ -114,9 +28,116 @@
     warnings
 )]
 
-/// module for writing new omap files
-pub mod writer;
+pub mod colors;
+pub mod format_info;
+pub mod geo_referencing;
+mod notes;
+pub mod objects;
+pub mod omap;
+pub mod parts;
+pub mod symbols;
+pub mod templates;
+pub mod view;
 
-#[cfg(feature = "editor")]
-/// module for interacting with omap files
-pub mod editor;
+use std::{io::BufWriter, str::FromStr};
+
+pub use omap::Omap;
+
+type Result<T> = std::result::Result<T, Error>;
+
+use quick_xml::events::BytesStart;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error(transparent)]
+    XmlError(#[from] quick_xml::Error),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    IntoInnerError(#[from] std::io::IntoInnerError<BufWriter<Vec<u8>>>),
+    #[error("format error")]
+    InvalidFormat(String),
+    #[error("format coord error")]
+    InvalidCoordinate(String),
+    #[error(transparent)]
+    AttrError(#[from] quick_xml::events::attributes::AttrError),
+    #[error(transparent)]
+    StrUtf8Error(#[from] std::str::Utf8Error),
+    #[error(transparent)]
+    StringUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error(transparent)]
+    EncodingError(#[from] quick_xml::encoding::EncodingError),
+    #[error(transparent)]
+    EscapeError(#[from] quick_xml::escape::EscapeError),
+    #[error("Could not merge map parts. Check that the indices are different and in range")]
+    MapPartMergeError,
+    #[error("XML-encoding {0} is not supported")]
+    UnsupportedEncoding(String),
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error(transparent)]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("Part {0} of file could not parsed")]
+    ParseOmapFileError(String),
+    #[error(transparent)]
+    BorrowError(#[from] std::cell::BorrowError),
+    #[error(transparent)]
+    BorrowMutError(#[from] std::cell::BorrowMutError),
+    #[error(transparent)]
+    BezierConversionError(#[from] linestring2bezier::Error),
+    #[error("Color definition error")]
+    ColorError,
+    #[error("Symbol definition error")]
+    SymbolError,
+    #[error("Template error")]
+    TemplateError,
+    #[error("View error")]
+    ViewError,
+    #[error("Object error")]
+    ObjectError,
+    #[error(transparent)]
+    Infallible(#[from] std::convert::Infallible),
+    #[error("A provided map coordinate is outside the range for writing")]
+    TransfromError,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Code {
+    pub major: u16,
+    pub minor: u16,
+    pub patch: u16,
+}
+
+impl FromStr for Code {
+    type Err = Error;
+    fn from_str(value: &str) -> Result<Self> {
+        let mut parts = value.split('.').take(3);
+        Ok(Code {
+            major: parts.next().ok_or(Error::SymbolError)?.parse()?,
+            minor: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
+            patch: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
+        })
+    }
+}
+
+impl std::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+// parse helpers
+pub(crate) fn parse_attr<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Option<T> {
+    std::str::from_utf8(value.as_ref())
+        .ok()
+        .and_then(|s| T::from_str(s).ok())
+}
+
+pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Option<T> {
+    bytes
+        .try_get_attribute(attr)
+        .ok()
+        .flatten()
+        .and_then(|a| parse_attr(a.value))
+}
