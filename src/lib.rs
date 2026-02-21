@@ -19,7 +19,7 @@
     unreachable_pub,
     unsafe_code,
     unsafe_op_in_unsafe_fn,
-    //unused_crate_dependencies,
+    unused_crate_dependencies,
     unused_extern_crates,
     unused_import_braces,
     unused_lifetimes,
@@ -100,6 +100,12 @@ pub enum Error {
     Infallible(#[from] std::convert::Infallible),
     #[error("A provided map coordinate is outside the range for writing")]
     TransfromError,
+    #[cfg(feature = "geo_ref")]
+    #[error(transparent)]
+    WmmError(#[from] world_magnetic_model::Error),
+    #[cfg(feature = "geo_ref")]
+    #[error(transparent)]
+    ProjError(#[from] proj4rs::errors::Error),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

@@ -6,125 +6,8 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
+use super::CrsType;
 use crate::{Error, Result, geo_referencing::Transform, notes, try_get_attr};
-
-#[derive(Debug, Clone, Default)]
-pub enum CrsType {
-    #[default]
-    Local,
-    Epsg(u16),
-    Proj4(String),
-    GaussKrueger(u8),
-    Utm(i8),
-}
-
-impl CrsType {
-    fn get_epsg_code(&self) -> Option<u16> {
-        match self {
-            CrsType::Epsg(c) => Some(*c),
-            CrsType::Proj4(string) => {
-                if let Some(index) = string.find("+init=epsg:") {
-                    let mut code = 0;
-                    for char in string.chars().skip(index + 11) {
-                        if (48..=57_u8).contains(&(char as u8)) {
-                            code = code * 10 + (char as u8 - 48) as u16;
-                        } else {
-                            break;
-                        }
-                    }
-                    if (1024..=32767).contains(&code) {
-                        Some(code)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    fn get_proj_string(&self) -> Option<String> {
-        match self {
-            CrsType::Local => None,
-            CrsType::Epsg(code) => Some(format!("+init=epsg:{}", code)),
-            CrsType::Proj4(proj_string) => Some(proj_string.clone()),
-            CrsType::GaussKrueger(code) => {
-                let lon = 3 * (*code as u16);
-                let x = 500_000 + (*code as u32 * 1_000_000);
-
-                Some(format!(
-                    "+proj=tmerc +lat_0=0 +lon_0={} +k=1.000000 +x_0={} +y_0=0 +ellps=bessel +datum=potsdam +units=m +no_defs",
-                    lon, x
-                ))
-            }
-            CrsType::Utm(code) => {
-                if *code < 0 {
-                    Some(format!(
-                        "+proj=utm +datum=WGS84 +zone={} +south",
-                        code.abs()
-                    ))
-                } else {
-                    Some(format!("+proj=utm +datum=WGS84 +zone={}", code.abs()))
-                }
-            }
-        }
-    }
-
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        let (id, proj_str, parameter) = match self {
-            CrsType::Local => {
-                writer.write_event(Event::Start(
-                    BytesStart::new("projected_crs").with_attributes([("id", "Local")]),
-                ))?;
-                return Ok(());
-            }
-            CrsType::Epsg(code) => ("EPSG", format!("+init=epsg:{code}"), format!("{code}")),
-            CrsType::Proj4(proj_string) => ("PROJ.4", proj_string.clone(), proj_string),
-            CrsType::GaussKrueger(code) => {
-                let lon = 3 * (code as u16);
-                let x = 500_000 + (code as u32 * 1_000_000);
-                (
-                    "Gauss-Krueger, datum: Potsdam",
-                    format!(
-                        "+proj=tmerc +lat_0=0 +lon_0={lon} +k=1.000000 +x_0={x} +y_0=0 +ellps=bessel +datum=potsdam +units=m +no_defs"
-                    ),
-                    format!("{code}"),
-                )
-            }
-            CrsType::Utm(code) => {
-                let (proj_str, param_str) = if code < 0 {
-                    // south
-                    (
-                        format!("+proj=utm +datum=WGS84 +zone={} +south", code.abs()),
-                        format!("{} S", code.abs()),
-                    )
-                } else {
-                    // north
-                    (
-                        format!("+proj=utm +datum=WGS84 +zone={}", code.abs()),
-                        format!("{} N", code.abs()),
-                    )
-                };
-                ("UTM", proj_str, param_str)
-            }
-        };
-        writer.write_event(Event::Start(
-            BytesStart::new("projected_crs").with_attributes([("id", id)]),
-        ))?;
-        writer.write_event(Event::Start(
-            BytesStart::new("spec").with_attributes([("language", "PROJ.4")]),
-        ))?;
-        writer.write_event(Event::Text(BytesText::new(&proj_str)))?;
-        writer.write_event(Event::End(BytesEnd::new("spec")))?;
-        writer.write_event(Event::Start(BytesStart::new("parameter")))?;
-        writer.write_event(Event::Text(BytesText::new(&parameter)))?;
-        writer.write_event(Event::End(BytesEnd::new("parameter")))?;
-
-        Ok(())
-    }
-}
 
 /// The georeferencing of the map
 /// You should probably not change any of these for maps with objects
@@ -429,5 +312,144 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
             }
             _ => (),
         }
+    }
+}
+
+#[cfg(feature = "geo_ref")]
+use proj4rs::{Proj, transform::transform};
+#[cfg(feature = "geo_ref")]
+impl GeoRef {
+    pub fn initialize(
+        projected_ref_point: Coord,
+        crs: CrsType,
+        meters_above_sea: f64,
+        scale: u32,
+    ) -> Result<Self> {
+        let local_proj = match &crs {
+            CrsType::Local => {
+                let mut gr = GeoRef::new(scale);
+                gr.projected_ref_point = projected_ref_point;
+                return Ok(gr);
+            }
+            CrsType::Epsg(e) => Proj::from_epsg_code(*e),
+            c => Proj::from_proj_string(c.get_proj_string().unwrap().as_str()),
+        }?;
+
+        // get geographic ref point
+        let mut geo_ref_point = projected_ref_point;
+        let geo_proj = Proj::from_epsg_code(4326)?;
+        transform(&local_proj, &geo_proj, &mut geo_ref_point)?;
+
+        // get magnetic declination
+        let declination = Self::get_declination(geo_ref_point, meters_above_sea)?;
+        let auxiliary_scale_factor =
+            Self::get_elevation_scale_factor(geo_ref_point, meters_above_sea);
+
+        let (convergence, grid_scale_factor) =
+            Self::get_convergence_and_grid_scale_factor(&local_proj, geo_ref_point)?;
+
+        let grivation = declination - convergence;
+        let combined_scale_factor = grid_scale_factor * auxiliary_scale_factor;
+        let geographic_ref_point_deg = Coord {
+            x: geo_ref_point.x.to_degrees(),
+            y: geo_ref_point.y.to_degrees(),
+        };
+
+        Ok(GeoRef {
+            scale_denominator: scale,
+            combined_scale_factor,
+            auxiliary_scale_factor,
+            declination_deg: declination.to_degrees(),
+            grivation_deg: grivation.to_degrees(),
+            crs_type: crs,
+            map_ref_point: Coord::zero(),
+            projected_ref_point,
+            geographic_ref_point_deg,
+        })
+    }
+
+    #[cfg(feature = "geo_ref")]
+    fn get_convergence_and_grid_scale_factor(
+        local_proj: &Proj,
+        geo_ref_point: Coord,
+    ) -> Result<(f64, f64)> {
+        let baseline_proj = Proj::from_proj_string(
+            format!(
+                "+proj=sterea +lat_0={} +lon_0={} +ellps=WGS84 +units=m",
+                geo_ref_point.y.to_degrees(),
+                geo_ref_point.x.to_degrees()
+            )
+            .as_str(),
+        )?;
+
+        const D: f64 = 1000.0;
+        let mut meridian =
+            geo_types::Line::new(Coord { x: 0., y: -D / 2. }, Coord { x: 0., y: D / 2. });
+        let mut parallel =
+            geo_types::Line::new(Coord { x: -D / 2., y: 0. }, Coord { x: D / 2., y: 0. });
+
+        // Project the stereographic baselines to the local grid
+        transform(&baseline_proj, &local_proj, &mut meridian)?;
+        transform(&baseline_proj, &local_proj, &mut parallel)?;
+
+        // Points on the same meridian
+        let meridian_delta = meridian.delta() / D;
+        let parallel_delta = parallel.delta() / D;
+
+        // Check determinant
+        let determinant = parallel_delta.x * meridian_delta.y - parallel_delta.y * meridian_delta.x;
+        if determinant < 0.00001 {
+            Err(proj4rs::errors::Error::ToleranceConditionError)?;
+        }
+
+        let convergence =
+            (parallel_delta.y - meridian_delta.x).atan2(parallel_delta.x + meridian_delta.y);
+
+        let grid_scale_factor = determinant.sqrt();
+
+        Ok((convergence, grid_scale_factor))
+    }
+
+    #[cfg(feature = "geo_ref")]
+    fn get_elevation_scale_factor(geo_ref_point: Coord, meters_above_sea_level: f64) -> f64 {
+        // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid))
+        //
+        // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
+        // f = 1 / 298.257223563
+        // R_equator = 6378137.0m
+        const F: f64 = 1. / 298.257223563;
+        const R_EQUATOR: f64 = 6378137.;
+
+        let ellipsoid_radius = R_EQUATOR * (1. - F * geo_ref_point.y.sin().powi(2));
+
+        ellipsoid_radius / (ellipsoid_radius + meters_above_sea_level)
+    }
+
+    #[cfg(feature = "geo_ref")]
+    fn get_declination(geo_ref_point: Coord, meters_above_sea_level: f64) -> Result<f64> {
+        use chrono::Datelike;
+        use world_magnetic_model::{
+            GeomagneticField,
+            time::Date,
+            uom::si::{
+                angle::{Angle, radian},
+                length::{Length, meter},
+            },
+        };
+
+        let date = chrono::Local::now();
+        let year = date.year();
+        let day = date.ordinal() as u16;
+
+        let field = GeomagneticField::new(
+            Length::new::<meter>(meters_above_sea_level as f32),
+            Angle::new::<radian>(geo_ref_point.y as f32),
+            Angle::new::<radian>(geo_ref_point.x as f32),
+            Date::from_ordinal_date(year, day)
+                .unwrap_or(Date::from_ordinal_date(2026, 180).unwrap()),
+        )?;
+        let dec = field.declination().get::<radian>();
+
+        Ok(dec as f64)
     }
 }

@@ -1,34 +1,30 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use quick_xml::events::{BytesEnd, Event};
-use quick_xml::{Reader, Writer};
+use geo_types::Coord;
+use quick_xml::{
+    Reader, Writer,
+    events::{BytesEnd, Event},
+};
 
-use crate::format_info::Barrier;
-use crate::parts::MapPart;
-use crate::templates::Templates;
-use crate::view::View;
-
-use super::colors::ColorSet;
-use super::format_info::{OmapVersion, XmlVersion};
-use super::geo_referencing::GeoRef;
-use super::notes;
-use super::parts::MapParts;
-use super::symbols::SymbolSet;
-use super::{Error, Result};
+use crate::{
+    colors::ColorSet,
+    format_info::Barrier,
+    format_info::{OmapVersion, XmlVersion},
+    geo_referencing::{CrsType, GeoRef},
+    notes,
+    parts::MapPart,
+    parts::MapParts,
+    symbols::SymbolSet,
+    templates::Templates,
+    view::View,
+    {Error, Result},
+};
 
 /// All objects are in map coordinates i.e given in mm of paper
 /// relative the ref point with positive y towards the magnetic north
 ///
 /// The Undo history is wiped
-///
-/// To transform the coordinates to projected coordinates get the transform
-/// from GeoRef::get_transform(&self) and pass it to the MapObject::to_proj_object(self, transform: &Transform) -> ProjObject
-///
-/// For converting the other way use the inverse functions:
-/// GeoRef::get_inverse_transform(&self)
-/// ProjObject::to_map_object(self, inv_transform: &Transform) -> MapObject
-///
 #[derive(Debug, Clone)]
 pub struct Omap {
     pub notes: String,
@@ -40,11 +36,67 @@ pub struct Omap {
     pub xml_version: XmlVersion,
     pub templates: Templates,
     pub view: View,
-    // These are kept, but not exposed
     symbol_barrier: Barrier,
 }
 
 impl Omap {
+    /// Create a new georeferenced 1:15_000 map with a complete ISOM symbolset and color order
+    #[cfg(feature = "geo_ref")]
+    pub fn default_15_000(
+        projected_ref_point: Coord,
+        crs: CrsType,
+        meters_above_sea: f64,
+    ) -> Result<Self> {
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 15_00)?;
+        let mut omap = Self::from_path("./default_maps/isom15000.omap")?;
+        omap.geo_info = geo_ref;
+        Ok(omap)
+    }
+
+    /// Create a new georeferenced 1:10_000 map with a complete ISOM symbolset and color order
+    #[cfg(feature = "geo_ref")]
+    pub fn default_10_000(
+        projected_ref_point: Coord,
+        crs: CrsType,
+        meters_above_sea: f64,
+    ) -> Result<Self> {
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 10_000)?;
+        let mut omap = Self::from_path("./default_maps/isom10000.omap")?;
+        omap.geo_info = geo_ref;
+        Ok(omap)
+    }
+
+    /// Create a new georeferenced 1:4_000 map with a complete ISSprOM symbolset and color order
+    #[cfg(feature = "geo_ref")]
+    pub fn default_4_000(
+        projected_ref_point: Coord,
+        crs: CrsType,
+        meters_above_sea: f64,
+    ) -> Result<Self> {
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 4_000)?;
+        let mut omap = Self::from_path("./default_maps/issprom4000.omap")?;
+        omap.geo_info = geo_ref;
+        Ok(omap)
+    }
+
+    /// Create a new 1:15_000 map with a complete ISOM symbolset and color order
+    #[cfg(not(feature = "geo_ref"))]
+    pub fn default_15_000() -> Result<Self> {
+        Self::from_path("./default_maps/isom15000.omap")
+    }
+
+    /// Create a new 1:10_000 map with a complete ISOM symbolset and color order
+    #[cfg(not(feature = "geo_ref"))]
+    pub fn default_10_000() -> Result<Self> {
+        Self::from_path("./default_maps/isom10000.omap")
+    }
+
+    /// Create a new 1:4_000 map with a complete ISSprOM symbolset and color order
+    #[cfg(not(feature = "geo_ref"))]
+    pub fn default_4_000() -> Result<Self> {
+        Self::from_path("./default_maps/issprom4000.omap")
+    }
+
     /// Create a new empty map
     pub fn new(scale_denominator: u32) -> Self {
         Omap {
