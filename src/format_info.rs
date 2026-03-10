@@ -8,6 +8,7 @@ use quick_xml::{
 use crate::utils::{parse_attr, try_get_attr};
 use crate::{Code, Error, Result};
 
+/// The OMAP file format version.
 #[derive(Debug, Clone)]
 pub struct OmapVersion {
     xmlns: String,
@@ -53,6 +54,7 @@ impl Default for OmapVersion {
     }
 }
 
+/// The XML declaration (version and encoding).
 #[derive(Debug, Clone)]
 pub struct XmlVersion {
     version: String,
@@ -89,17 +91,21 @@ impl XmlVersion {
         Ok(())
     }
 
+    /// Get the XML version string (e.g. `"1.0"`).
     pub fn version(&self) -> &str {
         &self.version
     }
 
+    /// Get the encoding used in the XML declaration.
     pub fn encoding(&self) -> Encoding {
         self.encoding
     }
 }
 
+/// Supported XML encodings.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Encoding {
+    /// UTF-8 encoding.
     #[default]
     Utf8,
 }
@@ -130,10 +136,14 @@ impl FromStr for Encoding {
     }
 }
 
+/// A compatibility barrier declaring the minimum reader version.
 #[derive(Debug, Clone)]
 pub struct Barrier {
+    /// The barrier version number.
     pub version: u8,
+    /// The minimum required reader version.
     pub required: Code,
+    /// Whether to skip unknown data beyond the barrier.
     pub skip: bool,
 }
 

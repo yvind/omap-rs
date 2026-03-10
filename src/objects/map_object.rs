@@ -21,11 +21,16 @@ pub(super) enum ObjectType {
     Text,
 }
 
+/// A map object that can be a point, line, area, or text.
 #[derive(Debug, Clone)]
 pub enum MapObject {
+    /// A point object.
     Point(PointObject),
+    /// A line object.
     Line(LineObject),
+    /// An area object.
     Area(AreaObject),
+    /// A text object.
     Text(TextObject),
 }
 
@@ -39,6 +44,7 @@ impl MapObject {
         }
     }
 
+    /// Get a non-owning reference to the symbol associated with this object.
     pub fn get_weak_symbol(&self) -> WeakSymbol {
         match self {
             MapObject::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),

@@ -12,6 +12,7 @@ use super::{
 use crate::utils::parse_attr;
 use crate::{Code, Error, Result, colors::ColorSet};
 
+/// Common properties shared by all symbol types.
 #[derive(Default, Debug, Clone)]
 pub struct SymbolCommon {
     /// The symbol's name
@@ -30,13 +31,20 @@ pub struct SymbolCommon {
     pub custom_icon: Option<String>,
 }
 
+/// A non-owning reference to a symbol of any type.
 #[derive(Debug, Clone)]
 pub enum WeakSymbol {
+    /// A weak reference to a line symbol.
     Line(Weak<RefCell<LineSymbol>>),
+    /// A weak reference to an area symbol.
     Area(Weak<RefCell<AreaSymbol>>),
+    /// A weak reference to a point symbol.
     Point(Weak<RefCell<PointSymbol>>),
+    /// A weak reference to a text symbol.
     Text(Weak<RefCell<TextSymbol>>),
+    /// A weak reference to a combined area symbol.
     CombinedArea(Weak<RefCell<CombinedAreaSymbol>>),
+    /// A weak reference to a combined line symbol.
     CombinedLine(Weak<RefCell<CombinedLineSymbol>>),
 }
 
@@ -53,16 +61,22 @@ impl From<&Symbol> for WeakSymbol {
     }
 }
 
+/// An owning reference to a symbol of any type.
 #[derive(Debug, Clone)]
 pub enum Symbol {
+    /// A line symbol.
     Line(Rc<RefCell<LineSymbol>>),
+    /// An area symbol.
     Area(Rc<RefCell<AreaSymbol>>),
+    /// A point symbol.
     Point(Rc<RefCell<PointSymbol>>),
+    /// A text symbol.
     Text(Rc<RefCell<TextSymbol>>),
     /// Combined symbols can be either CombinedArea or CombinedLine
     /// The difference is what object geometry to relate with the symbol
     /// Mapper does not discern between any line and area objects
     CombinedArea(Rc<RefCell<CombinedAreaSymbol>>),
+    /// A combined line symbol.
     CombinedLine(Rc<RefCell<CombinedLineSymbol>>),
 }
 
@@ -168,6 +182,7 @@ macro_rules! impl_symbol_setter {
 }
 
 impl Symbol {
+    /// Get the symbol type as a numeric value used in the file format.
     pub fn get_type(&self) -> u8 {
         match self {
             Symbol::Point(_) => 1,

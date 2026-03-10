@@ -11,17 +11,24 @@ use quick_xml::{
 
 use crate::Result;
 
+/// The coordinate reference system type.
 #[derive(Debug, Clone, Default)]
 pub enum CrsType {
+    /// Local (non-georeferenced) coordinates.
     #[default]
     Local,
+    /// An EPSG-registered CRS identified by code.
     Epsg(u16),
+    /// A custom CRS given as a PROJ.4 string.
     Proj4(String),
+    /// Gauss-Krüger zone (datum: Potsdam).
     GaussKrueger(u8),
+    /// UTM zone (negative for southern hemisphere).
     Utm(i8),
 }
 
 impl CrsType {
+    /// Get the EPSG code, if this CRS is defined by one (or contains one in a PROJ string).
     pub fn get_epsg_code(&self) -> Option<u16> {
         match self {
             CrsType::Epsg(c) => Some(*c),
@@ -48,6 +55,7 @@ impl CrsType {
         }
     }
 
+    /// Get the PROJ.4 string for this CRS, if available.
     pub fn get_proj_string(&self) -> Option<String> {
         match self {
             CrsType::Local => None,

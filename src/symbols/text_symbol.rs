@@ -11,16 +11,21 @@ use crate::{
     utils::{self, try_get_attr},
 };
 
+/// The framing mode for a text symbol.
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Default)]
 pub enum FramingMode {
+    /// No framing.
     #[default]
     NoFraming,
+    /// An outline framing around each character.
     LineFraming(LineFraming),
+    /// A shadow behind the text.
     ShadowFraming(ShadowFraming),
 }
 
 impl FramingMode {
+    /// Get the numeric identifier for this framing mode.
     pub fn get_id(&self) -> u8 {
         match self {
             FramingMode::NoFraming => 0,
@@ -30,18 +35,21 @@ impl FramingMode {
     }
 }
 
+/// Line-based framing (halo) around text characters.
 #[derive(Debug, Clone)]
 pub struct LineFraming {
     pub color: SymbolColor,
     pub framing_line_half_width: NonNegativeF64,
 }
 
+/// Shadow framing behind text characters.
 #[derive(Debug, Clone)]
 pub struct ShadowFraming {
     pub color: SymbolColor,
     pub shadow_offset: Coord<f64>,
 }
 
+/// A line drawn below the text (underline).
 #[derive(Debug, Clone)]
 pub struct LineBelow {
     pub color: SymbolColor,
@@ -49,6 +57,7 @@ pub struct LineBelow {
     pub distance: NonNegativeF64,
 }
 
+/// A text symbol definition.
 #[derive(Debug, Clone)]
 pub struct TextSymbol {
     /// The common symbol fields
@@ -72,7 +81,9 @@ pub struct TextSymbol {
     pub character_spacing: f64,
     /// this defines the font size in mm. How big the letters really are depends on the design of the font though
     pub font_size: NonNegativeF64,
+    /// Spacing between paragraphs in mm.
     pub paragraph_spacing: f64, // in mm
+    /// The framing mode (outline, shadow, or none).
     pub framing_mode: Option<FramingMode>,
 
     /// is the text allowed to be rotated
@@ -88,6 +99,7 @@ pub struct TextSymbol {
 }
 
 impl TextSymbol {
+    /// Get the display name of this text symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }

@@ -11,18 +11,25 @@ use super::{Cmyk, CmykMode, ColorSet, Rgb, RgbMode};
 use crate::utils::{UnitF64, parse_attr, try_get_attr};
 use crate::{Error, Result};
 
+/// A named spot color with its own CMYK/RGB representation and screen parameters.
 #[derive(Debug, Clone)]
 pub struct SpotColor {
+    /// The display name of this color.
     pub color_name: String,
+    /// Whether this color knocks out colors beneath it.
     pub knockout: bool,
     cmyk_mode: CmykMode, // not allowed to be FromSpotColors and both this and rgb_mode cannot point at eachother
     rgb_mode: RgbMode,   // same as above
+    /// The internal spot-color name used in printing.
     pub spotcolor_name: String,
+    /// Screen ruling frequency (lines per inch).
     pub screen_frequency: f64,
+    /// Screen ruling angle in degrees.
     pub screen_angle_deg: f64,
 }
 
 impl SpotColor {
+    /// Get the effective CMYK value of this spot color.
     pub fn get_cmyk(&self) -> Result<Cmyk> {
         match self.cmyk_mode {
             CmykMode::FromSpotColors => Err(Error::ColorError),
@@ -35,6 +42,7 @@ impl SpotColor {
         }
     }
 
+    /// Get the effective RGB value of this spot color.
     pub fn get_rgb(&self) -> Result<Rgb> {
         match self.rgb_mode {
             RgbMode::FromSpotColors => Err(Error::ColorError),
@@ -47,6 +55,7 @@ impl SpotColor {
         }
     }
 
+    /// Set the CMYK derivation mode. Fails if a circular dependency would be created.
     pub fn set_cmyk_mode(&mut self, new: CmykMode) -> Result<()> {
         if let CmykMode::FromSpotColors = new {
             Err(Error::ColorError)
@@ -60,10 +69,12 @@ impl SpotColor {
         }
     }
 
+    /// Get the current CMYK derivation mode.
     pub fn get_cmyk_mode(&self) -> CmykMode {
         self.cmyk_mode
     }
 
+    /// Set the RGB derivation mode. Fails if a circular dependency would be created.
     pub fn set_rgb_mode(&mut self, new: RgbMode) -> Result<()> {
         if let RgbMode::FromSpotColors = new {
             Err(Error::ColorError)
@@ -77,14 +88,17 @@ impl SpotColor {
         }
     }
 
+    /// Get the current RGB derivation mode.
     pub fn get_rgb_mode(&self) -> RgbMode {
         self.rgb_mode
     }
 
+    /// Get the display name of this spot color.
     pub fn get_name(&self) -> &str {
         &self.color_name
     }
 
+    /// Returns `true` if this color knocks out colors beneath it.
     pub fn is_knockout(&self) -> bool {
         self.knockout
     }
@@ -130,6 +144,7 @@ impl SpotColor {
     }
 }
 
+/// A weighted reference to a spot color, used as a component in [`MixedColor`].
 #[derive(Debug, Clone)]
 pub struct ColorComponent {
     /// in range [0, 1]
@@ -138,16 +153,21 @@ pub struct ColorComponent {
     pub color: Weak<RefCell<SpotColor>>,
 }
 
+/// A color that is a weighted mixture of one or more spot colors.
 #[derive(Debug, Clone)]
 pub struct MixedColor {
+    /// The display name of this mixed color.
     pub color_name: String,
+    /// Whether this color knocks out colors beneath it.
     pub knockout: bool,
     cmyk_mode: CmykMode,
     rgb_mode: RgbMode,
+    /// The spot-color components and their weights.
     pub components: Vec<ColorComponent>,
 }
 
 impl MixedColor {
+    /// Get the effective CMYK value of this mixed color.
     pub fn get_cmyk(&self) -> Result<Cmyk> {
         match self.cmyk_mode {
             CmykMode::FromSpotColors => self.cmyk_from_spotcolors(),
@@ -160,6 +180,7 @@ impl MixedColor {
         }
     }
 
+    /// Get the effective RGB value of this mixed color.
     pub fn get_rgb(&self) -> Result<Rgb> {
         match self.rgb_mode {
             RgbMode::FromSpotColors => self.rgb_from_spotcolors(),
@@ -172,14 +193,17 @@ impl MixedColor {
         }
     }
 
+    /// Get the display name of this mixed color.
     pub fn get_name(&self) -> &str {
         &self.color_name
     }
 
+    /// Returns `true` if this color knocks out colors beneath it.
     pub fn is_knockout(&self) -> bool {
         self.knockout
     }
 
+    /// Set the CMYK derivation mode. Fails if a circular dependency would be created.
     pub fn set_cmyk_mode(&mut self, new: CmykMode) -> Result<()> {
         if let CmykMode::FromRgb = new
             && let RgbMode::FromCmyk = self.rgb_mode
@@ -191,10 +215,12 @@ impl MixedColor {
         }
     }
 
+    /// Get the current CMYK derivation mode.
     pub fn get_cmyk_mode(&self) -> CmykMode {
         self.cmyk_mode
     }
 
+    /// Set the RGB derivation mode. Fails if a circular dependency would be created.
     pub fn set_rgb_mode(&mut self, new: RgbMode) -> Result<()> {
         if let RgbMode::FromCmyk = new
             && let CmykMode::FromRgb = self.cmyk_mode
@@ -206,10 +232,12 @@ impl MixedColor {
         }
     }
 
+    /// Get the current RGB derivation mode.
     pub fn get_rgb_mode(&self) -> RgbMode {
         self.rgb_mode
     }
 
+    /// Compute the CMYK value by blending the component spot colors.
     pub fn cmyk_from_spotcolors(&self) -> Result<Cmyk> {
         let mut cmyk = Cmyk::default();
 
@@ -237,6 +265,7 @@ impl MixedColor {
         Ok(cmyk)
     }
 
+    /// Compute the RGB value by blending the component spot colors.
     pub fn rgb_from_spotcolors(&self) -> Result<Rgb> {
         let mut rgb = Rgb::default();
 
@@ -304,9 +333,12 @@ impl MixedColor {
     }
 }
 
+/// A non-owning reference to either a [`SpotColor`] or [`MixedColor`].
 #[derive(Debug, Clone)]
 pub enum WeakColor {
+    /// A weak reference to a spot color.
     SpotColor(Weak<RefCell<SpotColor>>),
+    /// A weak reference to a mixed color.
     MixedColor(Weak<RefCell<MixedColor>>),
 }
 
@@ -320,6 +352,7 @@ impl From<&Color> for WeakColor {
 }
 
 impl WeakColor {
+    /// Attempt to upgrade the weak reference to a strong [`Color`].
     pub fn upgrade(self) -> Option<Color> {
         match self {
             WeakColor::SpotColor(weak) => weak.upgrade().map(Color::SpotColor),
@@ -328,9 +361,12 @@ impl WeakColor {
     }
 }
 
+/// An owning reference to either a [`SpotColor`] or [`MixedColor`].
 #[derive(Debug, Clone)]
 pub enum Color {
+    /// A reference-counted spot color.
     SpotColor(Rc<RefCell<SpotColor>>),
+    /// A reference-counted mixed color.
     MixedColor(Rc<RefCell<MixedColor>>),
 }
 
@@ -350,6 +386,7 @@ impl TryFrom<&WeakColor> for Color {
 }
 
 impl Color {
+    /// Get the effective CMYK value of this color.
     pub fn get_cmyk(&self) -> Result<Cmyk> {
         let cmyk = match self {
             Color::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_cmyk()),
@@ -358,6 +395,7 @@ impl Color {
         Ok(cmyk)
     }
 
+    /// Get the effective RGB value of this color.
     pub fn get_rgb(&self) -> Result<Rgb> {
         let rgb = match self {
             Color::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_rgb()),
@@ -366,6 +404,7 @@ impl Color {
         Ok(rgb)
     }
 
+    /// Returns `true` if this color knocks out colors beneath it.
     pub fn is_knockout(&self) -> Result<bool> {
         let ko = match self {
             Color::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.is_knockout()),
@@ -374,30 +413,25 @@ impl Color {
         Ok(ko)
     }
 
+    /// Set the CMYK derivation mode for this color.
     pub fn set_cmyk_mode(&mut self, new: CmykMode) -> Result<()> {
-        let _ = match self {
-            Color::SpotColor(ref_cell) => {
-                ref_cell.try_borrow_mut().map(|mut c| c.set_cmyk_mode(new))
-            }
-            Color::MixedColor(ref_cell) => {
-                ref_cell.try_borrow_mut().map(|mut c| c.set_cmyk_mode(new))
-            }
+        match self {
+            Color::SpotColor(ref_cell) => ref_cell.try_borrow_mut()?.set_cmyk_mode(new),
+            Color::MixedColor(ref_cell) => ref_cell.try_borrow_mut()?.set_cmyk_mode(new),
         }?;
         Ok(())
     }
 
+    /// Set the RGB derivation mode for this color.
     pub fn set_rgb_mode(&mut self, new: RgbMode) -> Result<()> {
-        let _ = match self {
-            Color::SpotColor(ref_cell) => {
-                ref_cell.try_borrow_mut().map(|mut c| c.set_rgb_mode(new))
-            }
-            Color::MixedColor(ref_cell) => {
-                ref_cell.try_borrow_mut().map(|mut c| c.set_rgb_mode(new))
-            }
+        match self {
+            Color::SpotColor(ref_cell) => ref_cell.try_borrow_mut()?.set_rgb_mode(new),
+            Color::MixedColor(ref_cell) => ref_cell.try_borrow_mut()?.set_rgb_mode(new),
         }?;
         Ok(())
     }
 
+    /// Get the current CMYK derivation mode.
     pub fn get_cmyk_mode(&self) -> Result<CmykMode> {
         let mode = match self {
             Color::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_cmyk_mode()),
@@ -406,6 +440,7 @@ impl Color {
         Ok(mode)
     }
 
+    /// Get the current RGB derivation mode.
     pub fn get_rgb_mode(&self) -> Result<RgbMode> {
         let mode = match self {
             Color::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_rgb_mode()),
@@ -414,6 +449,7 @@ impl Color {
         Ok(mode)
     }
 
+    /// Create a non-owning [`WeakColor`] from this color.
     pub fn downgrade(&self) -> WeakColor {
         match self {
             Color::SpotColor(ref_cell) => WeakColor::SpotColor(Rc::downgrade(ref_cell)),
@@ -652,10 +688,14 @@ impl Color {
     }
 }
 
+/// A color reference used by symbols: a regular color, registration black, or no color.
 #[derive(Debug, Clone)]
 pub enum SymbolColor {
+    /// A reference to a map color.
     Color(WeakColor),
+    /// Registration black (prints on all separations).
     RegistrationBlack,
+    /// No color (transparent).
     NoColor,
 }
 
@@ -673,6 +713,8 @@ impl SymbolColor {
         }
     }
 
+    /// Get the priority index of this color in the color set.
+    /// Returns -1 for `NoColor`, -900 for `RegistrationBlack`.
     pub fn get_priority(&self, color_set: &ColorSet) -> i32 {
         match self {
             SymbolColor::Color(weak_color) => weak_color

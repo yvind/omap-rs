@@ -16,13 +16,17 @@ use crate::{
     utils::try_get_attr,
 };
 
+/// An ordered collection of symbols.
 #[derive(Debug, Clone)]
 pub struct SymbolSet {
+    /// The symbols in this set.
     pub symbols: Vec<Symbol>,
+    /// The name of the symbol set.
     pub name: String,
 }
 
 impl SymbolSet {
+    /// Get a symbol by its index in the set.
     pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
         if self.num_symbols() >= id {
             None
@@ -35,12 +39,14 @@ impl SymbolSet {
         self.get_symbol_by_id(id).map(|c| c.into())
     }
 
+    /// Find a symbol by its code.
     pub fn get_symbol_by_code(&self, code: Code) -> Option<&Symbol> {
         self.symbols
             .iter()
             .find(|s| s.get_code().map(|c| c == code).unwrap_or(false))
     }
 
+    /// Find a symbol by its display name.
     pub fn get_symbol_by_name(&self, name: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|s| match s {
             Symbol::Line(ref_cell) => ref_cell
@@ -70,6 +76,7 @@ impl SymbolSet {
         })
     }
 
+    /// Iterate over non-owning references to all symbols.
     pub fn iter_weak(&self) -> impl Iterator<Item = WeakSymbol> {
         self.symbols.iter().map(|s| s.into())
     }

@@ -14,18 +14,25 @@ use crate::{
     utils::{from_file_coords, to_file_coords, try_get_attr},
 };
 
+/// A fill pattern rotation and origin used by area objects.
 #[derive(Debug, Clone, Default)]
 pub struct PatternRotation {
+    /// Rotation of the fill pattern in radians.
     pub rotation: f64,
+    /// Origin coordinate for the pattern.
     pub coord: Coord,
 }
 
+/// An area (polygon) object on the map.
 #[derive(Debug, Clone)]
 pub struct AreaObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,
+    /// The fill-pattern rotation and origin.
     pub pattern_rotation: PatternRotation,
+    /// The area or combined-area symbol used to render this object.
     pub symbol: AreaObjectSymbol,
+    /// Whether the coordinates should be written back as bezier curves.
     pub write_as_bezier: bool,
     geometry: Polygon,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
@@ -35,15 +42,18 @@ pub struct AreaObject {
 }
 
 impl AreaObject {
+    /// Get a shared reference to the polygon geometry.
     pub fn get_geometry(&self) -> &Polygon {
         &self.geometry
     }
 
+    /// Get a mutable reference to the polygon geometry (marks coords as touched).
     pub fn get_geometry_mut(&mut self) -> &mut Polygon {
         self.is_coords_touched = true;
         &mut self.geometry
     }
 
+    /// Reverse the winding order of all rings.
     pub fn reverse_polygon(&mut self) {
         self.geometry.exterior_mut(|e| e.0.reverse());
         self.geometry

@@ -11,13 +11,16 @@ use crate::symbols::{
 };
 use crate::{Error, Result};
 
+/// A map part (layer) containing objects grouped by symbol.
 #[derive(Debug, Clone)]
 pub struct MapPart {
+    /// The name of this map part.
     pub name: String,
     objects: HashMap<SymbolPointer, Vec<MapObject>>,
 }
 
 impl MapPart {
+    /// Create a new empty map part with the given name.
     pub fn new(name: impl Into<String>) -> MapPart {
         MapPart {
             name: name.into(),
@@ -54,14 +57,17 @@ impl MapPart {
         self.objects.extend(other.objects);
     }
 
+    /// Get objects associated with a symbol.
     pub fn get(&self, key: &WeakSymbol) -> Option<&Vec<MapObject>> {
         self.objects.get(&key.into())
     }
 
+    /// Get a mutable reference to objects associated with a symbol.
     pub fn get_mut(&mut self, key: &WeakSymbol) -> Option<&mut Vec<MapObject>> {
         self.objects.get_mut(&key.into())
     }
 
+    /// Get the number of distinct symbols with objects in this part.
     pub fn num_objects(&self) -> usize {
         self.objects.len()
     }

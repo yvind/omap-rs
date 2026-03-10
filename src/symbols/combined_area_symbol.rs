@@ -8,25 +8,35 @@ use quick_xml::{
 use super::{AreaSymbol, LineSymbol, PubOrPrivSymbol, Symbol, SymbolCommon, SymbolSet};
 use crate::{Error, Result, colors::ColorSet, utils::try_get_attr};
 
+/// A combined area symbol composed of multiple sub-symbols.
 #[derive(Debug, Clone)]
 pub struct CombinedAreaSymbol {
+    /// Common symbol properties.
     pub common: SymbolCommon,
+    /// The component parts of this combined symbol.
     pub parts: Vec<PubOrPrivSymbol<WeakPathSymbol, PathSymbol>>,
 }
 
+/// An area or line sub-symbol used in a combined symbol (private variant).
 #[derive(Debug, Clone)]
 pub enum PathSymbol {
+    /// An area sub-symbol.
     Area(Box<AreaSymbol>),
+    /// A line sub-symbol.
     Line(Box<LineSymbol>),
 }
 
+/// A non-owning reference to a path sub-symbol.
 #[derive(Debug, Clone)]
 pub enum WeakPathSymbol {
+    /// A weak reference to an area symbol.
     Area(Weak<RefCell<AreaSymbol>>),
+    /// A weak reference to a line symbol.
     Line(Weak<RefCell<LineSymbol>>),
 }
 
 impl WeakPathSymbol {
+    /// Attempt to upgrade the weak reference to a strong [`Symbol`].
     pub fn upgrade(&self) -> Option<Symbol> {
         match self {
             WeakPathSymbol::Area(weak) => weak.upgrade().map(Symbol::Area),
@@ -36,10 +46,12 @@ impl WeakPathSymbol {
 }
 
 impl CombinedAreaSymbol {
+    /// Get the display name of this combined area symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }
 
+    /// Get the minimum area (in mm²) among all area sub-symbols.
     pub fn minimum_area(&self) -> Result<f64> {
         let mut min = f64::MAX;
         for s in self.parts.iter() {

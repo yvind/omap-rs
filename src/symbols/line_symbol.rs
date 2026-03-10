@@ -12,32 +12,51 @@ use crate::{
     utils::try_get_attr,
 };
 
+/// A line symbol definition.
 #[derive(Debug, Clone)]
 pub struct LineSymbol {
+    /// Common symbol properties.
     pub common: SymbolCommon,
 
+    /// Optional border styling.
     pub border: Option<BorderStyle>,
 
+    /// Optional point symbol placed at the start of the line.
     pub start_symbol: Option<PointSymbol>,
+    /// Optional point symbol placed repeatedly along the line.
     pub mid_symbol: Option<MidSymbol>,
+    /// Optional point symbol placed at the end of the line.
     pub end_symbol: Option<PointSymbol>,
+    /// Optional point symbol placed on dashes.
     pub dash_symbol: Option<DashSymbol>,
 
+    /// The line colour.
     pub color: SymbolColor,
+    /// The line width in mm.
     pub line_width: NonNegativeF64,
+    /// Minimum length required for the line to be drawn.
     pub minimum_length: NonNegativeF64,
+    /// Offset applied at the start of the line.
     pub start_offset: NonNegativeF64,
+    /// Offset applied at the end of the line.
     pub end_offset: NonNegativeF64,
 
+    /// The dash style for this line.
     pub dash_style: DashStyle,
+    /// The cap style for line ends.
     pub cap_style: CapStyle,
+    /// The join style at line vertices.
     pub join_style: JoinStyle,
 }
 
+/// A dash symbol placed on dashes of a dashed line.
 #[derive(Debug, Clone)]
 pub struct DashSymbol {
+    /// Whether to suppress the dash symbol at the line ends.
     pub suppress_dash_symbol_at_ends: bool,
+    /// Whether the dash symbol is scaled with the dash length.
     pub scale_dash_symbol: bool,
+    /// The point symbol placed on each dash.
     pub dash_symbol: PointSymbol,
 }
 
@@ -59,11 +78,15 @@ pub struct MidSymbol {
     pub mid_symbol: PointSymbol,
 }
 
+/// Cap style for line endpoints.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum CapStyle {
+    /// Flat cap (no extension beyond endpoint).
     #[default]
     Flat = 0,
+    /// Round cap (semi-circular extension).
     Round = 1,
+    /// Square cap (rectangular extension).
     Square = 2,
     //PointedCap = 3, // deprecated, replace with default
 }
@@ -81,11 +104,15 @@ impl FromStr for CapStyle {
     }
 }
 
+/// Join style at line vertices.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum JoinStyle {
+    /// Bevel join.
     Bevel = 0,
+    /// Miter join.
     #[default]
     Miter = 1,
+    /// Round join.
     Round = 2,
 }
 
@@ -128,22 +155,33 @@ impl FromStr for MidSymbolPlacement {
     }
 }
 
+/// Whether the border is symmetric (same on both sides) or asymmetric.
 #[derive(Debug, Clone)]
 pub enum BorderStyle {
+    /// Both sides share the same border definition.
     SymmetricBorder {
+        /// The shared border.
         both: LineSymbolBorder,
     },
+    /// Left and right borders have different definitions.
     AsymmetricBorder {
+        /// The left border.
         left: LineSymbolBorder,
+        /// The right border.
         right: LineSymbolBorder,
     },
 }
 
+/// A single border line definition alongside the main line.
 #[derive(Debug, Clone)]
 pub struct LineSymbolBorder {
+    /// Border colour.
     pub color: SymbolColor,
+    /// Border width in mm.
     pub width: NonNegativeF64,
+    /// Shift from the main line in mm.
     pub shift: NonNegativeF64,
+    /// Optional dashed pattern for the border.
     pub dashed: Option<BorderDash>,
 }
 
@@ -207,21 +245,32 @@ impl LineSymbolBorder {
     }
 }
 
+/// Dash parameters for a border line.
 #[derive(Debug, Clone)]
 pub struct BorderDash {
+    /// Length of each dash in mm.
     pub dash_length: NonNegativeF64,
+    /// Length of the gap between dashes in mm.
     pub break_length: NonNegativeF64,
 }
 
+/// The dash style of a line symbol.
 #[derive(Debug, Clone)]
 pub enum DashStyle {
+    /// The line is dashed.
     Dashed {
+        /// Length of each dash in mm.
         dash_length: NonNegativeF64,
+        /// Length of the gap between dashes in mm.
         break_length: NonNegativeF64,
+        /// Grouping of dashes.
         dash_group: GroupDashes,
     },
+    /// The line is not dashed.
     NotDashed {
+        /// Segment length in mm.
         segment_length: NonNegativeF64,
+        /// End length in mm.
         end_length: NonNegativeF64,
     },
 }
@@ -235,16 +284,17 @@ impl Default for DashStyle {
     }
 }
 
+/// Grouping of dashes in a dash style.
 #[derive(Debug, Clone)]
 pub enum GroupDashes {
+    /// Dashes are grouped together.
     Grouped {
         /// allowed to be in range 2..=4
         dashes_in_group: u8,
         in_group_break_length: NonNegativeF64,
     },
-    UnGrouped {
-        half_outer_dashes: bool,
-    },
+    /// Dashes are not grouped.
+    UnGrouped { half_outer_dashes: bool },
 }
 
 impl Default for GroupDashes {
@@ -256,6 +306,7 @@ impl Default for GroupDashes {
 }
 
 impl LineSymbol {
+    /// Get the display name of this line symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }

@@ -11,13 +11,17 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
+/// The geometry of a text object, which is either a single anchor or a wrap box.
 #[derive(Debug, Clone)]
 pub enum TextGeometry {
+    /// A single anchor point.
     SingleAnchor(Coord),
+    /// A rectangular bounding box for wrapped text.
     WrapBox(WrapBox),
 }
 
 impl TextGeometry {
+    /// Get a shared reference to the anchor coordinate.
     pub fn get_anchor_coord(&self) -> &Coord {
         match self {
             TextGeometry::SingleAnchor(coord) => coord,
@@ -25,6 +29,7 @@ impl TextGeometry {
         }
     }
 
+    /// Get a mutable reference to the anchor coordinate.
     pub fn get_anchor_coord_mut(&mut self) -> &mut Coord {
         match self {
             TextGeometry::SingleAnchor(coord) => coord,
@@ -33,8 +38,10 @@ impl TextGeometry {
     }
 }
 
+/// A rectangular bounding box for wrapped text.
 #[derive(Debug, Clone, Default)]
 pub struct WrapBox {
+    /// The anchor (origin) coordinate of the box.
     pub anchor: Coord,
     /// Width of the text box in mm
     pub width: f64,
@@ -42,11 +49,15 @@ pub struct WrapBox {
     pub height: f64,
 }
 
+/// Horizontal text alignment.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HorizontalAlign {
+    /// Align to the left.
     Left = 0,
+    /// Centre horizontally.
     #[default]
     HCenter = 1,
+    /// Align to the right.
     Right = 2,
 }
 
@@ -63,12 +74,17 @@ impl FromStr for HorizontalAlign {
     }
 }
 
+/// Vertical text alignment.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerticalAlign {
+    /// Align to the text baseline.
     Baseline = 0,
+    /// Align to the top.
     Top = 1,
+    /// Centre vertically.
     #[default]
     VCenter = 2,
+    /// Align to the bottom.
     Bottom = 3,
 }
 
@@ -86,15 +102,22 @@ impl FromStr for VerticalAlign {
     }
 }
 
+/// A text object placed on the map.
 #[derive(Debug, Clone)]
 pub struct TextObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,
+    /// Weak reference to the text symbol used to render this object.
     pub symbol: Weak<RefCell<TextSymbol>>,
+    /// The text geometry (anchor or wrap box).
     pub geometry: TextGeometry,
+    /// The text content.
     pub text: String,
+    /// Horizontal alignment.
     pub h_align: HorizontalAlign,
+    /// Vertical alignment.
     pub v_align: VerticalAlign,
+    /// Rotation of the text in radians.
     pub rotation: f64,
 }
 

@@ -18,10 +18,12 @@ use crate::{Error, Result};
 pub struct ColorSet(pub Vec<Color>);
 
 impl ColorSet {
+    /// Get the number of colors in the set.
     pub fn num_colors(&self) -> usize {
         self.0.len()
     }
 
+    /// Get a color by its priority index.
     pub fn get_color_by_priority(&self, priority: usize) -> Option<&Color> {
         if self.num_colors() >= priority {
             None
@@ -30,6 +32,7 @@ impl ColorSet {
         }
     }
 
+    /// Get a weak reference to a color by its priority index.
     pub fn get_weak_color_by_priority(&self, priority: usize) -> Option<WeakColor> {
         self.get_color_by_priority(priority).map(|c| c.downgrade())
     }
@@ -48,6 +51,7 @@ impl ColorSet {
         })
     }
 
+    /// Get the priority index of a specific color in the set (by pointer identity).
     pub fn get_id_of_color(&self, color: &Color) -> Option<usize> {
         self.iter()
             .enumerate()
@@ -64,6 +68,7 @@ impl ColorSet {
         self.0.iter()
     }
 
+    /// Iterate over weak references to the colors.
     pub fn iter_weak(&self) -> impl Iterator<Item = WeakColor> {
         self.0.iter().map(|c| c.downgrade())
     }

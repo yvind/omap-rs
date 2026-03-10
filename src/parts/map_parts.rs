@@ -6,6 +6,7 @@ use quick_xml::{
 use super::MapPart;
 use crate::{Error, Result, symbols::SymbolSet};
 
+/// An ordered collection of map parts (layers).
 #[derive(Debug, Clone)]
 pub struct MapParts(pub Vec<MapPart>);
 
@@ -45,6 +46,7 @@ impl MapParts {
         }
     }
 
+    /// Remove and return the map part at the given index, or `None` if out of bounds.
     pub fn remove_map_part_by_index(&mut self, index: usize) -> Option<MapPart> {
         if index < self.num_map_parts() {
             Some(self.0.remove(index))
@@ -63,6 +65,7 @@ impl MapParts {
         self.0.iter_mut().find(|p| p.name.as_str() == name)
     }
 
+    /// Get a map part by its index.
     pub fn get_map_part_by_index(&self, index: usize) -> Option<&MapPart> {
         if index >= self.0.len() {
             None
@@ -71,6 +74,7 @@ impl MapParts {
         }
     }
 
+    /// Get a mutable reference to a map part by its index.
     pub fn get_map_part_by_index_mut(&mut self, index: usize) -> Option<&mut MapPart> {
         if index >= self.0.len() {
             None
@@ -79,14 +83,17 @@ impl MapParts {
         }
     }
 
+    /// Iterate over map parts.
     pub fn iter(&self) -> std::slice::Iter<'_, MapPart> {
         self.0.iter()
     }
 
+    /// Iterate mutably over map parts.
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, MapPart> {
         self.0.iter_mut()
     }
 
+    /// Get the number of map parts.
     pub fn num_map_parts(&self) -> usize {
         self.0.len()
     }

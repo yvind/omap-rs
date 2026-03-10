@@ -12,18 +12,28 @@ use crate::{
     utils::try_get_attr,
 };
 
+/// An element within a point symbol definition.
 #[derive(Debug, Clone)]
 pub enum Element {
+    /// A nested point sub-symbol with its object.
     Point {
+        /// The point sub-symbol.
         symbol: Box<PointSymbol>,
+        /// The object rendered by this element.
         object: Box<PointObject>,
     },
+    /// A line sub-symbol with its object.
     Line {
+        /// The line sub-symbol.
         symbol: Box<LineSymbol>,
+        /// The object rendered by this element.
         object: Box<LineObject>,
     },
+    /// An area sub-symbol with its object.
     Area {
+        /// The area sub-symbol.
         symbol: Box<AreaSymbol>,
+        /// The object rendered by this element.
         object: Box<AreaObject>,
     },
 }
@@ -174,16 +184,24 @@ impl Element {
     }
 }
 
+/// A point symbol definition.
 #[derive(Debug, Clone)]
 pub struct PointSymbol {
+    /// Common symbol properties.
     pub common: SymbolCommon,
 
+    /// Whether the symbol is rotatable.
     pub is_rotatable: bool,
+    /// The graphical elements that make up this symbol.
     pub elements: Vec<Element>,
 
+    /// Inner circle colour.
     pub inner_color: SymbolColor,
+    /// Outer ring colour.
     pub outer_color: SymbolColor,
+    /// Inner circle radius in mm.
     pub inner_radius: NonNegativeF64,
+    /// Outer ring width in mm.
     pub outer_width: NonNegativeF64,
 }
 
@@ -195,6 +213,7 @@ enum ElementSymbolData {
 }
 
 impl PointSymbol {
+    /// Get the display name of this point symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }

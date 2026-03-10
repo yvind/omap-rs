@@ -13,11 +13,16 @@ use quick_xml::{
 use crate::utils::UnitF64;
 use crate::{Error, Result};
 
+/// A CMYK color value with each component in the range `[0, 1]`.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Cmyk {
+    /// Cyan component.
     pub c: UnitF64,
+    /// Magenta component.
     pub m: UnitF64,
+    /// Yellow component.
     pub y: UnitF64,
+    /// Key (black) component.
     pub k: UnitF64,
 }
 
@@ -64,11 +69,15 @@ impl From<Rgb> for Cmyk {
     }
 }
 
+/// How the CMYK values are determined.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum CmykMode {
+    /// Derived from the spot-color composition.
     #[default]
     FromSpotColors,
+    /// Converted from the RGB values.
     FromRgb,
+    /// Explicitly specified CMYK values.
     Cmyk(Cmyk),
 }
 
@@ -86,10 +95,14 @@ impl CmykMode {
     }
 }
 
+/// An RGB color value with each component in the range `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgb {
+    /// Red component.
     pub r: UnitF64,
+    /// Green component.
     pub g: UnitF64,
+    /// Blue component.
     pub b: UnitF64,
 }
 
@@ -102,6 +115,7 @@ impl FromStr for Rgb {
 }
 
 impl Rgb {
+    /// Convert the RGB color to a `#rrggbb` hex string.
     pub fn to_hexstring(self) -> String {
         fn to_hex(value: UnitF64) -> String {
             let value = (value.get() * 255.).round() as u32;
@@ -114,6 +128,7 @@ impl Rgb {
         format!("#{}{}{}", to_hex(self.r), to_hex(self.g), to_hex(self.b))
     }
 
+    /// Parse an RGB color from a `#rrggbb` hex string.
     pub fn from_hexstring(s: &str) -> Result<Self> {
         let (_, s) = s.split_once('#').ok_or(Error::ColorError)?;
         if s.len() < 6 {
@@ -155,11 +170,15 @@ impl Default for Rgb {
     }
 }
 
+/// How the RGB values are determined.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RgbMode {
+    /// Derived from the spot-color composition.
     #[default]
     FromSpotColors,
+    /// Converted from the CMYK values.
     FromCmyk,
+    /// Explicitly specified RGB values.
     Rgb(Rgb),
 }
 

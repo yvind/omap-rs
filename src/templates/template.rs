@@ -122,6 +122,7 @@ impl OgrTemplate {
 }
 
 impl Template {
+    /// Get the common properties shared by all template types.
     pub fn get_common(&self) -> &TemplateCommon {
         match self {
             Template::Image(t) => &t.common,

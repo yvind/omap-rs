@@ -6,10 +6,14 @@ use quick_xml::events::BytesStart;
 use crate::{Error, Result};
 const FILE_COORD_MAX: f64 = ((i32::MAX / 1000) - 1) as f64;
 
+/// A three-part version or symbol code of the form `A.B.C`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Code {
+    /// Major version / code component.
     pub major: u16,
+    /// Minor version / code component.
     pub minor: u16,
+    /// Patch version / code component.
     pub patch: u16,
 }
 
@@ -51,6 +55,7 @@ pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Op
 pub struct UnitF64(f64);
 
 impl UnitF64 {
+    /// Get the inner `f64` value.
     pub fn get(self) -> f64 {
         self.0
     }

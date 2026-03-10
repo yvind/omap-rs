@@ -8,17 +8,22 @@ use quick_xml::{
 use super::{LineSymbol, PubOrPrivSymbol, Symbol, SymbolCommon, SymbolSet};
 use crate::{Error, Result, colors::ColorSet};
 
+/// A combined line symbol composed of multiple sub-symbols.
 #[derive(Debug, Clone)]
 pub struct CombinedLineSymbol {
+    /// Common symbol properties.
     pub common: SymbolCommon,
+    /// The component parts of this combined symbol.
     pub parts: Vec<PubOrPrivSymbol<Weak<RefCell<LineSymbol>>, Box<LineSymbol>>>,
 }
 
 impl CombinedLineSymbol {
+    /// Get the display name of this combined line symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }
 
+    /// Get the minimum length (in mm) among all line sub-symbols.
     pub fn minimum_length(&self) -> Result<f64> {
         let mut min = f64::MAX;
         for s in self.parts.iter() {

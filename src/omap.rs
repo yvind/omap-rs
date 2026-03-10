@@ -31,14 +31,23 @@ use crate::{
 /// The Undo history is wiped
 #[derive(Debug, Clone)]
 pub struct Omap {
+    /// Free-text notes embedded in the file.
     pub notes: String,
+    /// Georeferencing information (scale, CRS, reference points).
     pub geo_info: GeoRef,
+    /// The ordered set of colors used by symbols.
     pub colors: ColorSet,
+    /// The set of map symbols.
     pub symbols: SymbolSet,
+    /// The map parts (layers) containing objects.
     pub parts: MapParts,
+    /// The OMAP file-format version.
     pub omap_version: OmapVersion,
+    /// The XML declaration version and encoding.
     pub xml_version: XmlVersion,
+    /// Background templates attached to the map.
     pub templates: Templates,
+    /// View settings (zoom, grid, visibility).
     pub view: View,
     symbol_barrier: Barrier,
 }
@@ -197,6 +206,7 @@ impl Omap {
         })
     }
 
+    /// Write the map to an `.omap` file at the given path.
     pub fn write_to_file(self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let file = File::create(path)?;
         let mut writer = Writer::new(BufWriter::new(file));

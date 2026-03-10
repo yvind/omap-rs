@@ -47,6 +47,7 @@ impl GeoRef {
         Transform::from_geo_ref(self)
     }
 
+    /// Create a new local georeferencing with the given map scale.
     pub fn new(scale: u32) -> Self {
         GeoRef {
             scale_denominator: scale,
@@ -67,15 +68,18 @@ impl GeoRef {
         self.declination_deg - self.convergence_deg
     }
 
+    /// Get the combined grid and auxiliary scale factor.
     pub fn combined_scale_factor(&self) -> f64 {
         self.auxiliary_scale_factor * self.grid_scale_factor
     }
 
+    /// Get the PROJ.4 projection string for this CRS, if available.
     pub fn get_proj_string(&self) -> Option<String> {
         self.crs_type.get_proj_string()
     }
 
-    // returns Some(epsg_code) if the map is georeferenced using a epsg code or by a proj string containing the code
+    // Returns Some(epsg_code) if the map is georeferenced using a epsg code or by a proj string containing the code
+    /// Get the EPSG code for this CRS, if available.
     pub fn get_epsg_code(&self) -> Option<u16> {
         self.crs_type.get_epsg_code()
     }
@@ -338,6 +342,10 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
 use proj4rs::{Proj, transform::transform};
 #[cfg(feature = "geo_ref")]
 impl GeoRef {
+    /// Initialise full georeferencing from a projected reference point, CRS, elevation and scale.
+    ///
+    /// Computes declination, convergence and scale factors automatically.
+    /// Requires the `geo_ref` feature.
     pub fn initialize(
         projected_ref_point: Coord,
         crs: CrsType,

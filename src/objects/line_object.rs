@@ -14,11 +14,14 @@ use crate::{
     utils::{from_file_coords, to_file_coords, try_get_attr},
 };
 
+/// A line object represented as a polyline on the map.
 #[derive(Debug, Clone)]
 pub struct LineObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,
+    /// The line or combined-line symbol used to render this object.
     pub symbol: LineObjectSymbol,
+    /// Whether the coordinates should be written back as bezier curves.
     pub write_as_bezier: bool,
     geometry: LineString,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
@@ -28,10 +31,12 @@ pub struct LineObject {
 }
 
 impl LineObject {
+    /// Get a shared reference to the line geometry.
     pub fn get_geometry(&self) -> &LineString {
         &self.geometry
     }
 
+    /// Get a mutable reference to the line geometry (marks coords as touched).
     pub fn get_geometry_mut(&mut self) -> &mut LineString {
         self.is_coords_touched = true;
         &mut self.geometry

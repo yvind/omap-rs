@@ -14,11 +14,16 @@ use crate::{
     view::TemplateVisibility,
 };
 
+/// Default display settings for newly added templates.
 #[derive(Debug, Clone)]
 pub struct TemplateDefaults {
+    /// Whether to use metres-per-pixel (instead of DPI).
     pub use_meters_per_pixel: bool,
+    /// Metres per pixel when `use_meters_per_pixel` is true.
     pub meters_per_pixel: NonNegativeF64,
+    /// Dots per inch when `use_meters_per_pixel` is false.
     pub dpi: NonNegativeF64,
+    /// The map scale used for templates.
     pub scale: u32,
 }
 
@@ -77,9 +82,12 @@ impl TemplateDefaults {
     }
 }
 
+/// A template entry pairing a template with its visibility settings.
 #[derive(Debug, Clone)]
 pub struct TemplateEntry {
+    /// The template data.
     pub template: Template,
+    /// The visibility settings for this template.
     pub visibilty: TemplateVisibility,
 }
 

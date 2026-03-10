@@ -12,12 +12,16 @@ use crate::{
     utils::{from_file_coords, to_file_coords},
 };
 
+/// A point object placed at a single location on the map.
 #[derive(Debug, Clone)]
 pub struct PointObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,
+    /// Rotation of the symbol in radians.
     pub rotation: f64,
+    /// Weak reference to the point symbol used to render this object.
     pub symbol: Weak<RefCell<PointSymbol>>,
+    /// The point coordinates in mm on the map.
     pub geometry: Point,
 }
 

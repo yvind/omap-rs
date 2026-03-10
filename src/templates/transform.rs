@@ -6,6 +6,7 @@ use quick_xml::{
 
 use crate::{Error, Result, utils::parse_attr, utils::try_get_attr};
 
+/// A 3×3 matrix stored in row-major order.
 #[derive(Debug, Clone)]
 pub struct Matrix3x3(pub [f64; 9]);
 

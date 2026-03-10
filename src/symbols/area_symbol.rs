@@ -12,8 +12,10 @@ use crate::{
     utils::try_get_attr,
 };
 
+/// A fill pattern applied to an area.
 #[derive(Debug, Clone)]
 pub enum FillPattern {
+    /// A pattern of parallel lines.
     LinePattern {
         angle: f64,
         line_spacing: NonNegativeF64,
@@ -22,6 +24,7 @@ pub enum FillPattern {
         line_width: NonNegativeF64,
         rotatable: bool, // stored as flag 16 with the clip options
     },
+    /// A pattern of regularly spaced points.
     PointPattern {
         clip_options: ClippingOption,
         angle: f64,
@@ -34,12 +37,17 @@ pub enum FillPattern {
     },
 }
 
+/// Clipping option for point patterns at area boundaries.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum ClippingOption {
+    /// Clip elements at the boundary.
     #[default]
     ClipElementsAtBoundary = 0,
+    /// No clipping if the element is completely inside.
     NoClippingIfCompletelyInside = 1,
+    /// No clipping if the element centre is inside.
     NoClippingIfCenterInside = 2,
+    /// No clipping if the element is at least partially inside.
     NoClippingIfPartiallyInside = 3,
 }
 
@@ -249,22 +257,30 @@ impl FillPattern {
     }
 }
 
+/// An area symbol definition.
 #[derive(Debug, Clone)]
 pub struct AreaSymbol {
+    /// Common symbol properties.
     pub common: SymbolCommon,
 
+    /// Whether the fill pattern is rotatable.
     pub is_rotatable: bool,
 
+    /// The area fill colour.
     pub color: SymbolColor,
+    /// Fill patterns applied to the area.
     pub patterns: Vec<FillPattern>,
+    /// Minimum area in mm² for the symbol to be drawn.
     pub minimum_area: NonNegativeF64,
 }
 
 impl AreaSymbol {
+    /// Get the display name of this area symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }
 
+    /// Create a new empty area symbol with the given code and name.
     pub fn new(code: Code, name: String) -> AreaSymbol {
         let common = SymbolCommon {
             code,
