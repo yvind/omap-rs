@@ -7,51 +7,68 @@ use quick_xml::{
 };
 
 use super::CrsType;
-use crate::{Error, Result, geo_referencing::Transform, notes, try_get_attr};
+use crate::{Error, Result, geo_referencing::Transform, notes, utils::try_get_attr};
 
-/// The georeferencing of the map
-/// You should probably not change any of these for maps with objects
+/// The georeferencing information of the map
 #[derive(Debug, Clone)]
 pub struct GeoRef {
     /// Map scale
+    /// Remember to scale all map coordinates after changing this
     pub scale_denominator: u32,
-    /// Grid scale factor times auxiliary_scale_factor
-    pub combined_scale_factor: f64,
+    /// Grid scale factor
+    /// Remember to scale all map coordinates after changing this
+    pub grid_scale_factor: f64,
     /// Scale factor due too elevation
+    /// Remember to scale all map coordinates after changing this
     pub auxiliary_scale_factor: f64,
-    /// Angle between grid north and magnetic north
-    /// When changing this all map objects should be rotated
+    /// Angle between geographic north and magnetic north at the projected reference point
+    /// Remember to rotate all map coordinates around the map center after changing this
     pub declination_deg: f64,
-    /// Angle between geographic north and projected north at the projected reference point
-    pub grivation_deg: f64,
+    /// Angle between projected north and geographic north at the projected reference point
+    /// Remember to rotate all map coordinates around the map center after changing this
+    pub convergence_deg: f64,
     /// The coordinate reference system definition
+    /// Changing this might invalidate the ref points, scale factors and declination/convergence
     pub crs_type: CrsType,
     /// in millimeters on map
+    /// Remember to translate all map coordinates after changing this
     pub map_ref_point: Coord,
-    /// in whatever units the projection is in, but should be meters
+    /// in whatever units the projection is in (should be meters)
+    /// Changing this might invalidate the scale factors, declination/grivation and geographic reference point
     pub projected_ref_point: Coord,
     /// in WGS84 degrees
+    /// Should be the inverse projection of the projected ref point into lat lon (ignored for local crs type)
     pub geographic_ref_point_deg: Coord,
 }
 
 impl GeoRef {
     /// The transform is used to go from map coordinates to projected coordinates or back
     pub fn get_transform(&self) -> Transform {
-        Transform::from_geo_ref(&self)
+        Transform::from_geo_ref(self)
     }
 
     pub fn new(scale: u32) -> Self {
         GeoRef {
             scale_denominator: scale,
-            combined_scale_factor: 1.,
+            grid_scale_factor: 1.,
             auxiliary_scale_factor: 1.,
             declination_deg: 0.,
-            grivation_deg: 0.,
+            convergence_deg: 0.,
             crs_type: CrsType::Local,
             map_ref_point: Coord::zero(),
             projected_ref_point: Coord::zero(),
             geographic_ref_point_deg: Coord::zero(),
         }
+    }
+
+    /// Get the angle between projected north and magnetic north (map north)
+    /// grivation = declination - convergence
+    pub fn grivation_deg(&self) -> f64 {
+        self.declination_deg - self.convergence_deg
+    }
+
+    pub fn combined_scale_factor(&self) -> f64 {
+        self.auxiliary_scale_factor * self.grid_scale_factor
     }
 
     pub fn get_proj_string(&self) -> Option<String> {
@@ -69,7 +86,7 @@ impl GeoRef {
                 ("scale", self.scale_denominator.to_string().as_str()),
                 (
                     "grid_scale_factor",
-                    format!("{:.6}", self.combined_scale_factor).as_str(),
+                    format!("{:.6}", self.combined_scale_factor()).as_str(),
                 ),
                 (
                     "auxiliary_scale_factor",
@@ -79,7 +96,7 @@ impl GeoRef {
                     "declination",
                     format!("{:.3}", self.declination_deg).as_str(),
                 ),
-                ("grivation", format!("{:.3}", self.grivation_deg).as_str()),
+                ("grivation", format!("{:.3}", self.grivation_deg()).as_str()),
             ]),
         ))?;
         if self.map_ref_point != Coord::zero() {
@@ -134,13 +151,13 @@ impl GeoRef {
             "Could not find the map scale".to_string(),
         ))?;
         let auxiliary_scale_factor = try_get_attr(event, "auxiliary_scale_factor").unwrap_or(1.);
-        let combined_scale_factor =
-            try_get_attr(event, "grid_scale_factor").unwrap_or(auxiliary_scale_factor);
-        let declination = try_get_attr(event, "declination").unwrap_or(0.);
-        let grivation = try_get_attr(event, "grivation").unwrap_or(0.);
+        let grid_scale_factor =
+            try_get_attr(event, "grid_scale_factor").unwrap_or(1.) / auxiliary_scale_factor;
+        let declination_deg = try_get_attr(event, "declination").unwrap_or(0.);
+        let convergence_deg = try_get_attr(event, "grivation").unwrap_or(0.) + declination_deg;
 
         let mut crs_type = CrsType::Local;
-        let mut map_ref_point = Coord::<f64>::zero();
+        let mut map_ref_point = Coord::zero();
         let mut projected_ref_point = Coord::zero();
         let mut geographic_ref_point_deg = Coord::zero();
 
@@ -158,7 +175,9 @@ impl GeoRef {
                         // for some reason in mm and not µm, but y is flipped
                         map_ref_point = Coord {
                             x: try_get_attr(&bs, "x").unwrap_or(map_ref_point.x),
-                            y: -try_get_attr(&bs, "y").unwrap_or(-map_ref_point.y),
+                            y: try_get_attr(&bs, "y")
+                                .map(|y: f64| -y)
+                                .unwrap_or(map_ref_point.y),
                         }
                     }
                     _ => (),
@@ -179,10 +198,10 @@ impl GeoRef {
 
         Ok(GeoRef {
             scale_denominator: scale,
-            combined_scale_factor,
+            grid_scale_factor,
             auxiliary_scale_factor,
-            declination_deg: declination,
-            grivation_deg: grivation,
+            declination_deg,
+            convergence_deg,
             crs_type,
             map_ref_point,
             projected_ref_point,
@@ -337,7 +356,7 @@ impl GeoRef {
 
         // get geographic ref point
         let mut geo_ref_point = projected_ref_point;
-        let geo_proj = Proj::from_epsg_code(4326)?;
+        let geo_proj = Proj::from_user_string("WGS84")?;
         transform(&local_proj, &geo_proj, &mut geo_ref_point)?;
 
         // get magnetic declination
@@ -348,8 +367,6 @@ impl GeoRef {
         let (convergence, grid_scale_factor) =
             Self::get_convergence_and_grid_scale_factor(&local_proj, geo_ref_point)?;
 
-        let grivation = declination - convergence;
-        let combined_scale_factor = grid_scale_factor * auxiliary_scale_factor;
         let geographic_ref_point_deg = Coord {
             x: geo_ref_point.x.to_degrees(),
             y: geo_ref_point.y.to_degrees(),
@@ -357,10 +374,10 @@ impl GeoRef {
 
         Ok(GeoRef {
             scale_denominator: scale,
-            combined_scale_factor,
+            grid_scale_factor,
             auxiliary_scale_factor,
             declination_deg: declination.to_degrees(),
-            grivation_deg: grivation.to_degrees(),
+            convergence_deg: convergence.to_degrees(),
             crs_type: crs,
             map_ref_point: Coord::zero(),
             projected_ref_point,
@@ -389,8 +406,8 @@ impl GeoRef {
             geo_types::Line::new(Coord { x: -D / 2., y: 0. }, Coord { x: D / 2., y: 0. });
 
         // Project the stereographic baselines to the local grid
-        transform(&baseline_proj, &local_proj, &mut meridian)?;
-        transform(&baseline_proj, &local_proj, &mut parallel)?;
+        transform(&baseline_proj, local_proj, &mut meridian)?;
+        transform(&baseline_proj, local_proj, &mut parallel)?;
 
         // Points on the same meridian
         let meridian_delta = meridian.delta() / D;

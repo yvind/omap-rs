@@ -1,9 +1,16 @@
 use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 use geo_types::{Coord, Point};
-use quick_xml::{Reader, events::Event};
+use quick_xml::{
+    Reader, Writer,
+    events::{BytesEnd, BytesStart, BytesText, Event},
+};
 
-use crate::{Error, Result, symbols::PointSymbol};
+use crate::{
+    Error, Result,
+    symbols::PointSymbol,
+    utils::{from_file_coords, to_file_coords},
+};
 
 #[derive(Debug, Clone)]
 pub struct PointObject {
@@ -15,32 +22,40 @@ pub struct PointObject {
 }
 
 impl PointObject {
-    pub(super) fn get_special_keys(&self) -> Option<String> {
-        Some(format!("rotation=\"{}\"", self.rotation))
+    /// Write just the inner content (coords) — called from MapObject::write
+    pub(super) fn write_content<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let file_coord = to_file_coords(self.geometry.0)?;
+        let bs = BytesStart::new("coords").with_attributes([("count", "1")]);
+        writer.write_event(Event::Start(bs))?;
+        writer.write_event(Event::Text(BytesText::new(&format!(
+            "{} {};",
+            file_coord.x, file_coord.y
+        ))))?;
+        writer.write_event(Event::End(BytesEnd::new("coords")))?;
+        Ok(())
     }
 
-    pub(super) fn write<W: std::io::Write>(self, _writer: &mut Writer<W>) -> Result<()> {
-        todo!();
-        // let map_coords = transform.to_map_coords(self.point.0);
-        // writer.write_all(
-        //     format!(
-        //         "<coords count=\"1\">{} {};</coords>",
-        //         map_coords.0, map_coords.1
-        //     )
-        //     .as_bytes(),
-        // )?;
-        // Ok(())
+    /// Write a full `<object>...</object>` element — used for point symbol elements
+    pub fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let mut bs = BytesStart::new("object").with_attributes([("type", "0")]);
+        if self.rotation.abs() > f64::EPSILON {
+            bs.push_attribute(("rotation", self.rotation.to_string().as_str()));
+        }
+        writer.write_event(Event::Start(bs))?;
+        self.write_content(writer)?;
+        writer.write_event(Event::End(BytesEnd::new("object")))?;
+        Ok(())
     }
-}
 
-impl PointObject {
-    pub(super) fn parse<R: std::io::BufRead>(
+    /// Parse a point object. The reader should be positioned right after
+    /// the `<coords>` start event. Reads through `</object>`.
+    pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
+        _coords_element: &BytesStart<'_>,
         rotation: f64,
-    ) -> Result<(Self, String)> {
+    ) -> Result<PointObject> {
         let mut point = None;
         let mut buf = Vec::new();
-        let mut raw_xml = String::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::End(bytes_end) => {
@@ -49,50 +64,39 @@ impl PointObject {
                     }
                 }
                 Event::Text(bytes_text) => {
-                    raw_xml = String::from_utf8(bytes_text.to_vec())?;
+                    let raw_xml = String::from_utf8(bytes_text.to_vec())?;
 
                     for vertex in raw_xml.split_terminator(';') {
-                        let mut parts: (i32, i32) = (0, 0);
                         let mut split = vertex.split_whitespace();
 
-                        if let Some(e) = split.next() {
-                            parts.0 = e.parse()?;
-                        } else {
-                            return Err(Error::InvalidCoordinate(
-                                "No x value in split".to_string(),
-                            ));
-                        }
-                        if let Some(e) = split.next() {
-                            parts.1 = e.parse()?;
-                        } else {
-                            return Err(Error::InvalidCoordinate(
-                                "No y value in split".to_string(),
-                            ));
-                        }
+                        let x: i32 = split
+                            .next()
+                            .ok_or(Error::InvalidCoordinate("No x value".to_string()))?
+                            .parse()?;
+                        let y: i32 = split
+                            .next()
+                            .ok_or(Error::InvalidCoordinate("No y value".to_string()))?
+                            .parse()?;
 
-                        let coord = Coord {
-                            x: parts.0 as f64 / 1_000.,
-                            y: -parts.1 as f64 / 1_000.,
-                        };
+                        let coord = from_file_coords(Coord { x, y });
                         point = Some(Point::from(coord));
                     }
                 }
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in LineObject parsing".to_string(),
+                        "Unexpected EOF in PointObject parsing".to_string(),
                     ));
                 }
                 _ => (),
             }
         }
-        Ok((
-            PointObject {
-                point: point.ok_or(Error::ParseOmapFileError(
-                    "Could not parse point object".to_string(),
-                ))?,
-                rotation,
-            },
-            raw_xml,
-        ))
+        Ok(PointObject {
+            tags: HashMap::new(),
+            rotation,
+            symbol: Weak::new(),
+            geometry: point.ok_or(Error::ParseOmapFileError(
+                "Could not parse point object".to_string(),
+            ))?,
+        })
     }
 }

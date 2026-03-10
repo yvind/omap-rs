@@ -8,7 +8,8 @@ use std::{
 };
 
 use super::{Cmyk, CmykMode, ColorSet, Rgb, RgbMode};
-use crate::{Error, Result, parse_attr, try_get_attr};
+use crate::utils::{UnitF64, parse_attr, try_get_attr};
+use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct SpotColor {
@@ -97,10 +98,10 @@ impl SpotColor {
         writer.write_event(Event::Start(BytesStart::new("color").with_attributes([
             ("priority", priority.to_string().as_str()),
             ("name", &quick_xml::escape::escape(self.get_name())),
-            ("c", format!("{:.3}", cmyk.c).as_str()),
-            ("m", format!("{:.3}", cmyk.m).as_str()),
-            ("y", format!("{:.3}", cmyk.y).as_str()),
-            ("k", format!("{:.3}", cmyk.k).as_str()),
+            ("c", format!("{:.3}", cmyk.c.get()).as_str()),
+            ("m", format!("{:.3}", cmyk.m.get()).as_str()),
+            ("y", format!("{:.3}", cmyk.y.get()).as_str()),
+            ("k", format!("{:.3}", cmyk.k.get()).as_str()),
             ("opacity", "1"),
         ])))?;
         writer.write_event(Event::Start(
@@ -132,7 +133,7 @@ impl SpotColor {
 #[derive(Debug, Clone)]
 pub struct ColorComponent {
     /// in range [0, 1]
-    pub factor: f64,
+    pub factor: UnitF64,
     /// weak reference to a spotcolor
     pub color: Weak<RefCell<SpotColor>>,
 }
@@ -220,10 +221,18 @@ impl MixedColor {
                 .borrow()
                 .get_cmyk()?;
 
-            cmyk.c += component.factor * other.c * (1.0 - cmyk.c);
-            cmyk.m += component.factor * other.m * (1.0 - cmyk.m);
-            cmyk.y += component.factor * other.y * (1.0 - cmyk.y);
-            cmyk.k += component.factor * other.k * (1.0 - cmyk.k);
+            cmyk.c = UnitF64::clamped_from(
+                cmyk.c.get() + component.factor.get() * other.c.get() * (1.0 - cmyk.c.get()),
+            );
+            cmyk.m = UnitF64::clamped_from(
+                cmyk.m.get() + component.factor.get() * other.m.get() * (1.0 - cmyk.m.get()),
+            );
+            cmyk.y = UnitF64::clamped_from(
+                cmyk.y.get() + component.factor.get() * other.y.get() * (1.0 - cmyk.y.get()),
+            );
+            cmyk.k = UnitF64::clamped_from(
+                cmyk.k.get() + component.factor.get() * other.k.get() * (1.0 - cmyk.k.get()),
+            );
         }
         Ok(cmyk)
     }
@@ -239,9 +248,15 @@ impl MixedColor {
                 .borrow()
                 .get_rgb()?;
 
-            rgb.r -= component.factor * (1.0 - other.r) * rgb.r;
-            rgb.g -= component.factor * (1.0 - other.g) * rgb.g;
-            rgb.b -= component.factor * (1.0 - other.b) * rgb.b;
+            rgb.r = UnitF64::clamped_from(
+                rgb.r.get() * (1.0 - component.factor.get() * (1.0 - other.r.get())),
+            );
+            rgb.g = UnitF64::clamped_from(
+                rgb.g.get() * (1.0 - component.factor.get() * (1.0 - other.g.get())),
+            );
+            rgb.b = UnitF64::clamped_from(
+                rgb.b.get() * (1.0 - component.factor.get() * (1.0 - other.b.get())),
+            );
         }
         Ok(rgb)
     }
@@ -257,10 +272,10 @@ impl MixedColor {
         writer.write_event(Event::Start(BytesStart::new("color").with_attributes([
             ("priority", priority.to_string().as_str()),
             ("name", &quick_xml::escape::escape(self.get_name())),
-            ("c", format!("{:.3}", cmyk.c).as_str()),
-            ("m", format!("{:.3}", cmyk.m).as_str()),
-            ("y", format!("{:.3}", cmyk.y).as_str()),
-            ("k", format!("{:.3}", cmyk.k).as_str()),
+            ("c", format!("{:.3}", cmyk.c.get()).as_str()),
+            ("m", format!("{:.3}", cmyk.m.get()).as_str()),
+            ("y", format!("{:.3}", cmyk.y.get()).as_str()),
+            ("k", format!("{:.3}", cmyk.k.get()).as_str()),
             ("opacity", "1"),
         ])))?;
         writer.write_event(Event::Start(
@@ -277,7 +292,7 @@ impl MixedColor {
             {
                 writer.write_event(Event::Empty(BytesStart::new("component").with_attributes(
                     [
-                        ("factor", format!("{:.3}", component.factor).as_str()),
+                        ("factor", format!("{:.3}", component.factor.get()).as_str()),
                         ("spotcolor", id.to_string().as_str()),
                     ],
                 )))?;
@@ -307,8 +322,8 @@ impl From<&Color> for WeakColor {
 impl WeakColor {
     pub fn upgrade(self) -> Option<Color> {
         match self {
-            WeakColor::SpotColor(weak) => weak.upgrade().map(|s| Color::SpotColor(s)),
-            WeakColor::MixedColor(weak) => weak.upgrade().map(|m| Color::MixedColor(m)),
+            WeakColor::SpotColor(weak) => weak.upgrade().map(Color::SpotColor),
+            WeakColor::MixedColor(weak) => weak.upgrade().map(Color::MixedColor),
         }
     }
 }
@@ -438,10 +453,18 @@ impl Color {
                         name.push_str(&n);
                     }
                 }
-                b"c" => cmyk.c = parse_attr(attr.value).unwrap_or(cmyk.c),
-                b"m" => cmyk.m = parse_attr(attr.value).unwrap_or(cmyk.m),
-                b"y" => cmyk.y = parse_attr(attr.value).unwrap_or(cmyk.y),
-                b"k" => cmyk.k = parse_attr(attr.value).unwrap_or(cmyk.k),
+                b"c" => {
+                    cmyk.c = UnitF64::clamped_from(parse_attr(attr.value).unwrap_or(cmyk.c.get()))
+                }
+                b"m" => {
+                    cmyk.m = UnitF64::clamped_from(parse_attr(attr.value).unwrap_or(cmyk.m.get()))
+                }
+                b"y" => {
+                    cmyk.y = UnitF64::clamped_from(parse_attr(attr.value).unwrap_or(cmyk.y.get()))
+                }
+                b"k" => {
+                    cmyk.k = UnitF64::clamped_from(parse_attr(attr.value).unwrap_or(cmyk.k.get()))
+                }
                 b"priority" => id = parse_attr(attr.value).unwrap_or(id),
                 _ => (),
             }
@@ -483,9 +506,15 @@ impl Color {
                             .flatten()
                             .and_then(|s| match s.value.as_ref() {
                                 b"custom" => {
-                                    let r = try_get_attr(&bytes_start, "r").unwrap_or(0.);
-                                    let g = try_get_attr(&bytes_start, "g").unwrap_or(0.);
-                                    let b = try_get_attr(&bytes_start, "b").unwrap_or(0.);
+                                    let r = UnitF64::clamped_from(
+                                        try_get_attr(&bytes_start, "r").unwrap_or(0.),
+                                    );
+                                    let g = UnitF64::clamped_from(
+                                        try_get_attr(&bytes_start, "g").unwrap_or(0.),
+                                    );
+                                    let b = UnitF64::clamped_from(
+                                        try_get_attr(&bytes_start, "b").unwrap_or(0.),
+                                    );
                                     Some(RgbMode::Rgb(Rgb { r, g, b }))
                                 }
                                 b"spotcolor" => Some(RgbMode::FromSpotColors),
@@ -527,10 +556,11 @@ impl Color {
                                         _ => (),
                                     }
                                 }
-                                Event::End(bytes_end) => match bytes_end.local_name().as_ref() {
-                                    b"spotcolors" => break,
-                                    _ => (),
-                                },
+                                Event::End(bytes_end) => {
+                                    if bytes_end.local_name().as_ref() == b"spotcolors" {
+                                        break;
+                                    }
+                                }
                                 Event::Text(bytes_text) => {
                                     spotcolor_name.push_str(str::from_utf8(&bytes_text).unwrap())
                                 }
@@ -548,12 +578,11 @@ impl Color {
                     }
                     _ => (),
                 },
-                Event::End(bytes_end) => match bytes_end.local_name().as_ref() {
-                    b"color" => {
+                Event::End(bytes_end) => {
+                    if bytes_end.local_name().as_ref() == b"color" {
                         break;
                     }
-                    _ => (),
-                },
+                }
                 Event::Eof => return Err(Error::ParseOmapFileError("Early EOF".to_string())),
                 _ => (),
             }
@@ -631,6 +660,19 @@ pub enum SymbolColor {
 }
 
 impl SymbolColor {
+    /// Create a SymbolColor from a file color index.
+    /// -1 or missing => NoColor, -900 => RegistrationBlack, >= 0 => Color lookup.
+    pub fn from_index(index: i32, color_set: &ColorSet) -> Self {
+        match index {
+            -900 => SymbolColor::RegistrationBlack,
+            i if i >= 0 => match color_set.get_weak_color_by_priority(i as usize) {
+                Some(weak) => SymbolColor::Color(weak),
+                None => SymbolColor::NoColor,
+            },
+            _ => SymbolColor::NoColor,
+        }
+    }
+
     pub fn get_priority(&self, color_set: &ColorSet) -> i32 {
         match self {
             SymbolColor::Color(weak_color) => weak_color

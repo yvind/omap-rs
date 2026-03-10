@@ -6,7 +6,10 @@ mod text_object;
 mod map_object;
 
 use geo_types::Coord;
-use quick_xml::{Reader, events::Event};
+use quick_xml::{
+    Reader, Writer,
+    events::{BytesEnd, BytesStart, BytesText, Event},
+};
 use std::collections::HashMap;
 
 pub use area_object::AreaObject;
@@ -67,4 +70,41 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
         }
     }
     Ok(tags)
+}
+
+fn write_tags<W: std::io::Write>(
+    writer: &mut Writer<W>,
+    tags: &HashMap<String, String>,
+) -> Result<()> {
+    writer.write_event(Event::Start(BytesStart::new("tags")))?;
+    for (key, value) in tags {
+        writer.write_event(Event::Start(
+            BytesStart::new("t").with_attributes([("key", key.as_str())]),
+        ))?;
+        writer.write_event(Event::Text(BytesText::new(value)))?;
+        writer.write_event(Event::End(BytesEnd::new("t")))?;
+    }
+    writer.write_event(Event::End(BytesEnd::new("tags")))?;
+    Ok(())
+}
+
+/// Write raw map coords as the content of a `<coords>` element
+fn write_raw_coords<W: std::io::Write>(writer: &mut Writer<W>, coords: &[MapCoord]) -> Result<()> {
+    let bs =
+        BytesStart::new("coords").with_attributes([("count", coords.len().to_string().as_str())]);
+    writer.write_event(Event::Start(bs))?;
+    let mut content = String::new();
+    for (coord, flag) in coords {
+        content.push_str(&coord.x.to_string());
+        content.push(' ');
+        content.push_str(&coord.y.to_string());
+        if *flag != 0 {
+            content.push(' ');
+            content.push_str(&flag.to_string());
+        }
+        content.push(';');
+    }
+    writer.write_event(Event::Text(BytesText::new(&content)))?;
+    writer.write_event(Event::End(BytesEnd::new("coords")))?;
+    Ok(())
 }

@@ -13,7 +13,7 @@ use crate::{
         CombinedLineSymbol, PubOrPrivSymbol,
         combined_area_symbol::{PathSymbol, WeakPathSymbol},
     },
-    try_get_attr,
+    utils::try_get_attr,
 };
 
 #[derive(Debug, Clone)]
@@ -87,6 +87,19 @@ impl SymbolSet {
     /// Get the number of symbol in the symbol set
     pub fn num_symbols(&self) -> usize {
         self.symbols.len()
+    }
+
+    /// Find the index of a symbol given a WeakSymbol reference
+    pub(crate) fn get_index_of_weak_symbol(&self, weak: &WeakSymbol) -> Option<usize> {
+        self.symbols.iter().position(|s| match (s, weak) {
+            (Symbol::Point(rc), WeakSymbol::Point(w)) => Rc::as_ptr(rc) == w.as_ptr(),
+            (Symbol::Line(rc), WeakSymbol::Line(w)) => Rc::as_ptr(rc) == w.as_ptr(),
+            (Symbol::Area(rc), WeakSymbol::Area(w)) => Rc::as_ptr(rc) == w.as_ptr(),
+            (Symbol::Text(rc), WeakSymbol::Text(w)) => Rc::as_ptr(rc) == w.as_ptr(),
+            (Symbol::CombinedArea(rc), WeakSymbol::CombinedArea(w)) => Rc::as_ptr(rc) == w.as_ptr(),
+            (Symbol::CombinedLine(rc), WeakSymbol::CombinedLine(w)) => Rc::as_ptr(rc) == w.as_ptr(),
+            _ => false,
+        })
     }
 }
 

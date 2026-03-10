@@ -9,15 +9,22 @@ use super::{
     AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolSet,
     TextSymbol,
 };
-use crate::{Code, Error, Result, colors::ColorSet, parse_attr};
+use crate::utils::parse_attr;
+use crate::{Code, Error, Result, colors::ColorSet};
 
 #[derive(Default, Debug, Clone)]
 pub struct SymbolCommon {
+    /// The symbol's name
     pub name: String,
+    /// The symbol's code, of the form A.B.C
     pub code: Code,
+    /// A description of the symbol
     pub description: String,
+    /// Do not show the symbol on the printed map
     pub is_helper_symbol: bool,
+    /// Hide the symbol in oomapper
     pub is_hidden: bool,
+    /// Protect the symbol in oomapper
     pub is_protected: bool,
     /// base64 encoded symbol icon
     pub custom_icon: Option<String>,
@@ -52,6 +59,9 @@ pub enum Symbol {
     Area(Rc<RefCell<AreaSymbol>>),
     Point(Rc<RefCell<PointSymbol>>),
     Text(Rc<RefCell<TextSymbol>>),
+    /// Combined symbols can be either CombinedArea or CombinedLine
+    /// The difference is what object geometry to relate with the symbol
+    /// Mapper does not discern between any line and area objects
     CombinedArea(Rc<RefCell<CombinedAreaSymbol>>),
     CombinedLine(Rc<RefCell<CombinedLineSymbol>>),
 }
@@ -233,6 +243,8 @@ impl Symbol {
                 reader, color_set, attributes,
             )?))),
             16 => {
+                // Assume the combined symbol is area for now
+                // Will be checked and corrected after all symbols have been parsed
                 let (symbol, component_ids) =
                     CombinedAreaSymbol::parse(reader, color_set, attributes)?;
                 public_component_ids.extend(component_ids);
@@ -257,9 +269,10 @@ impl Symbol {
         index: usize,
     ) -> Result<()> {
         let _ = match self {
-            Symbol::Line(rc) => rc.try_borrow()?.write(writer, color_set, index),
-            Symbol::Area(rc) => rc.try_borrow()?.write(writer, color_set, index),
-            Symbol::Point(rc) => rc.try_borrow()?.write(writer, color_set, index),
+            // Line, area and point can be sub-symbols which do not have an index
+            Symbol::Line(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
+            Symbol::Area(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
+            Symbol::Point(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
             Symbol::Text(rc) => rc.try_borrow()?.write(writer, color_set, index),
             Symbol::CombinedArea(rc) => {
                 rc.try_borrow()?.write(writer, symbol_set, color_set, index)

@@ -27,6 +27,6 @@ pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Strin
 }
 
 pub(super) fn write<W: std::io::Write>(notes: &str, writer: &mut Writer<W>) -> Result<()> {
-    writer.write_event(Event::Text(BytesText::new(notes.as_ref())))?;
+    writer.write_event(Event::Text(BytesText::new(notes)))?;
     Ok(())
 }

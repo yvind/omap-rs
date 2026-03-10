@@ -93,14 +93,18 @@ impl MapParts {
 }
 
 impl MapParts {
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(
+        self,
+        writer: &mut Writer<W>,
+        symbols: &SymbolSet,
+    ) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("parts").with_attributes([
             ("count", self.0.len().to_string().as_str()),
             ("current", "0"),
         ])))?;
 
         for part in self.0 {
-            part.write(writer)?;
+            part.write(writer, symbols)?;
         }
 
         writer.write_event(Event::End(BytesEnd::new("parts")))?;

@@ -4,7 +4,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use crate::{Error, Result, parse_attr, try_get_attr};
+use crate::{Error, Result, utils::parse_attr, utils::try_get_attr};
 
 #[derive(Debug, Clone)]
 pub struct Matrix3x3(pub [f64; 9]);
@@ -105,7 +105,7 @@ impl Transformations {
 
         let mut active_transform = TemplateTransform::default();
         let mut other_transform = TemplateTransform::default();
-        let mut passpoints: Vec<PassPoint> = Vec::new();
+        let mut passpoints = Vec::new();
         let mut map_to_template = None;
         let mut template_to_map = None;
         let mut template_to_map_other = None;

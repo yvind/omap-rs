@@ -2,18 +2,22 @@ use std::collections::HashMap;
 
 use geo_types::{Coord, LineString, Polygon};
 use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
-use quick_xml::Writer;
-use quick_xml::events::BytesStart;
-use quick_xml::{Reader, events::Event};
+use quick_xml::{
+    Reader, Writer,
+    events::{BytesEnd, BytesStart, BytesText, Event},
+};
 
-use crate::objects::{MapCoord, PARSE_BEZIER_ERROR};
+use crate::objects::{MapCoord, PARSE_BEZIER_ERROR, write_raw_coords};
 use crate::symbols::AreaObjectSymbol;
-use crate::{Error, Result, parse_attr, try_get_attr};
+use crate::{
+    Error, Result,
+    utils::{from_file_coords, to_file_coords, try_get_attr},
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct PatternRotation {
-    rotation: f64,
-    coord: Coord,
+    pub rotation: f64,
+    pub coord: Coord,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +35,15 @@ pub struct AreaObject {
 }
 
 impl AreaObject {
+    pub fn get_geometry(&self) -> &Polygon {
+        &self.geometry
+    }
+
+    pub fn get_geometry_mut(&mut self) -> &mut Polygon {
+        self.is_coords_touched = true;
+        &mut self.geometry
+    }
+
     pub fn reverse_polygon(&mut self) {
         self.geometry.exterior_mut(|e| e.0.reverse());
         self.geometry
@@ -39,27 +52,123 @@ impl AreaObject {
         self.raw_map_coords = reverse_raw_polygon_coords(&self.raw_map_coords);
     }
 
-    pub(super) fn write<W: std::io::Write>(&self, _writer: &mut Writer<W>) -> Result<()> {
+    /// Create an AreaObject for use as a PointSymbol element (no map symbol needed)
+    pub fn new_element(geometry: Polygon) -> Self {
+        AreaObject {
+            tags: HashMap::new(),
+            pattern_rotation: PatternRotation::default(),
+            symbol: AreaObjectSymbol::Area(std::rc::Weak::new()),
+            write_as_bezier: false,
+            geometry,
+            raw_map_coords: Vec::new(),
+            is_coords_touched: false,
+        }
+    }
+
+    /// Get coords for element writing (exterior ring coords)
+    pub fn get_element_coords(&self) -> impl Iterator<Item = &Coord<f64>> {
+        self.geometry.exterior().coords()
+    }
+
+    /// Write just the inner content (coords + pattern) — called from MapObject::write.
+    /// Uses raw coords if untouched, otherwise converts geometry to file coords.
+    pub(super) fn write_content<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        if !self.is_coords_touched && !self.raw_map_coords.is_empty() {
+            write_raw_coords(writer, &self.raw_map_coords)?;
+        } else {
+            self.write_geometry_coords(writer)?;
+        }
+        self.write_pattern(writer)?;
         Ok(())
     }
 
-    pub(super) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        element: &BytesStart<'_>,
-    ) -> Result<(Self, String)> {
-        let mut raw_xml = String::new();
-        let mut pr = PatternRotation::default();
+    /// Write a full `<object>...</object>` element — used for point symbol elements
+    pub fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let bs = BytesStart::new("object").with_attributes([("type", "1")]);
+        writer.write_event(Event::Start(bs))?;
+        self.write_element_coords(writer)?;
+        writer.write_event(Event::End(BytesEnd::new("object")))?;
+        Ok(())
+    }
 
-        let mut num_coords = 0;
+    /// Write coords from the geometry (for map objects, with all rings and proper flags)
+    fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let mut all_coords: Vec<MapCoord> = Vec::new();
 
-        for attr in element.attributes().filter_map(std::result::Result::ok) {
-            if matches!(attr.key.local_name().as_ref(), b"count") {
-                num_coords = parse_attr(attr.value).unwrap_or(num_coords);
+        // exterior ring
+        let ext = self.geometry.exterior();
+        for (i, coord) in ext.coords().enumerate() {
+            let fc = to_file_coords(*coord)?;
+            let flag = if i == ext.0.len() - 1 { 18_u8 } else { 0_u8 };
+            all_coords.push((fc, flag));
+        }
+        // interior rings
+        for interior in self.geometry.interiors() {
+            for (i, coord) in interior.coords().enumerate() {
+                let fc = to_file_coords(*coord)?;
+                let flag = if i == interior.0.len() - 1 {
+                    18_u8
+                } else {
+                    0_u8
+                };
+                all_coords.push((fc, flag));
             }
         }
 
+        write_raw_coords(writer, &all_coords)?;
+        Ok(())
+    }
+
+    /// Write coords from geometry for element objects (just exterior, with close flag)
+    fn write_element_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let ext = self.geometry.exterior();
+        let coords: Vec<_> = ext.coords().collect();
+        let bs = BytesStart::new("coords")
+            .with_attributes([("count", coords.len().to_string().as_str())]);
+        writer.write_event(Event::Start(bs))?;
+        let mut content = String::new();
+        for (i, coord) in coords.iter().enumerate() {
+            let fc = to_file_coords(**coord)?;
+            content.push_str(&fc.x.to_string());
+            content.push(' ');
+            content.push_str(&fc.y.to_string());
+            if i == coords.len() - 1 {
+                content.push_str(" 18");
+            }
+            content.push(';');
+        }
+        writer.write_event(Event::Text(BytesText::new(&content)))?;
+        writer.write_event(Event::End(BytesEnd::new("coords")))?;
+        Ok(())
+    }
+
+    /// Write the `<pattern>` element with the pattern rotation and origin coord
+    fn write_pattern<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let pr = &self.pattern_rotation;
+        let mut bs = BytesStart::new("pattern");
+        bs.push_attribute(("rotation", pr.rotation.to_string().as_str()));
+        writer.write_event(Event::Start(bs))?;
+        let fc = to_file_coords(pr.coord)?;
+        writer.write_event(Event::Empty(BytesStart::new("coord").with_attributes([
+            ("x", fc.x.to_string().as_str()),
+            ("y", fc.y.to_string().as_str()),
+        ])))?;
+        writer.write_event(Event::End(BytesEnd::new("pattern")))?;
+        Ok(())
+    }
+
+    /// Parse an area object. The reader should be positioned right after
+    /// the `<coords>` start event. Reads through `</object>`.
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        coords_element: &BytesStart<'_>,
+    ) -> Result<AreaObject> {
+        let mut pr = PatternRotation::default();
+        let num_coords: usize = try_get_attr(coords_element, "count").unwrap_or(0);
+
         let mut linestrings = Vec::new();
         let mut line = Vec::with_capacity(num_coords);
+        let mut raw_map_coords = Vec::with_capacity(num_coords);
 
         let mut buf = Vec::new();
         loop {
@@ -75,10 +184,7 @@ impl AreaObject {
                         if let Some(x) = x
                             && let Some(y) = y
                         {
-                            pr.coord = Coord {
-                                x: x as f64 / 1_000.,
-                                y: -y as f64 / 1_000.,
-                            }
+                            pr.coord = from_file_coords(Coord { x, y });
                         }
                     }
                     _ => (),
@@ -89,7 +195,7 @@ impl AreaObject {
                     }
                 }
                 Event::Text(bytes_text) => {
-                    raw_xml = String::from_utf8(bytes_text.to_vec())?;
+                    let raw_xml = String::from_utf8(bytes_text.to_vec())?;
 
                     let mut handles_written = 0_u8;
                     let mut bezier_on = false;
@@ -118,10 +224,18 @@ impl AreaObject {
                             parts.2 = e.parse()?;
                         }
 
-                        let coord = Coord {
-                            x: parts.0 as f64 / 1_000.,
-                            y: -parts.1 as f64 / 1_000.,
-                        };
+                        raw_map_coords.push((
+                            Coord {
+                                x: parts.0,
+                                y: parts.1,
+                            },
+                            parts.2,
+                        ));
+
+                        let coord = from_file_coords(Coord {
+                            x: parts.0,
+                            y: parts.1,
+                        });
 
                         // check flags, we only care about the bezier flag '1' and the end flag '18'
                         //  1 = Bezier curve start
@@ -176,7 +290,7 @@ impl AreaObject {
                 }
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in LineObject parsing".to_string(),
+                        "Unexpected EOF in AreaObject parsing".to_string(),
                     ));
                 }
                 _ => (),
@@ -185,18 +299,24 @@ impl AreaObject {
         if !line.is_empty() {
             linestrings.push(LineString::new(line));
         }
-        let exterior = linestrings.remove(0);
-        Ok((
-            AreaObject {
-                polygon: Polygon::new(exterior, linestrings),
-                pattern_rotation: pr,
-            },
-            raw_xml,
-        ))
+        let exterior = if linestrings.is_empty() {
+            LineString::new(vec![])
+        } else {
+            linestrings.remove(0)
+        };
+        Ok(AreaObject {
+            tags: HashMap::new(),
+            pattern_rotation: pr,
+            symbol: AreaObjectSymbol::Area(std::rc::Weak::new()),
+            write_as_bezier: false,
+            geometry: Polygon::new(exterior, linestrings),
+            raw_map_coords,
+            is_coords_touched: false,
+        })
     }
 }
 
-fn reverse_raw_polygon_coords(coords: &[MapCoord]) -> Vec<MapCoord> {
+pub(crate) fn reverse_raw_polygon_coords(coords: &[MapCoord]) -> Vec<MapCoord> {
     // get each of the substrings for each loop and flip them
     // a substring ends with a 2 flag (often 18 or 50)
     let mut s = Vec::with_capacity(coords.len());

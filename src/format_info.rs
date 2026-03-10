@@ -5,7 +5,8 @@ use quick_xml::{
     events::{BytesDecl, BytesStart, Event},
 };
 
-use crate::{Code, Error, Result, parse_attr, try_get_attr};
+use crate::utils::{parse_attr, try_get_attr};
+use crate::{Code, Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct OmapVersion {

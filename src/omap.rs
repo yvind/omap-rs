@@ -1,7 +1,11 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
+#[cfg(feature = "geo_ref")]
+use crate::geo_referencing::CrsType;
+#[cfg(feature = "geo_ref")]
 use geo_types::Coord;
+
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, Event},
@@ -11,7 +15,7 @@ use crate::{
     colors::ColorSet,
     format_info::Barrier,
     format_info::{OmapVersion, XmlVersion},
-    geo_referencing::{CrsType, GeoRef},
+    geo_referencing::GeoRef,
     notes,
     parts::MapPart,
     parts::MapParts,
@@ -205,7 +209,7 @@ impl Omap {
         self.geo_info.write(&mut writer)?;
         // write objects to a buffer
         let mut object_writer = Writer::new(Vec::new());
-        self.parts.write(&mut object_writer)?;
+        self.parts.write(&mut object_writer, &self.symbols)?;
         let written_objects = object_writer.into_inner();
 
         // write symbolset to a buffer
@@ -217,9 +221,9 @@ impl Omap {
         self.colors.write(&mut writer)?;
         self.symbol_barrier.write(&mut writer)?;
         writer.get_mut().flush()?;
-        writer.get_mut().write_all(&written_symbols);
+        writer.get_mut().write_all(&written_symbols)?;
         writer.get_mut().flush()?;
-        writer.get_mut().write_all(&written_objects);
+        writer.get_mut().write_all(&written_objects)?;
 
         let vis = self.templates.write(&mut writer)?;
         self.view.write(&mut writer, vis)?;

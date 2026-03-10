@@ -1,19 +1,20 @@
-use geo_types::Coord;
+use std::collections::HashMap;
+
 use quick_xml::{
     Reader, Writer,
-    events::{BytesStart, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{AreaObject, LineObject, PointObject, TextObject};
+use super::{AreaObject, LineObject, PointObject, TextObject, write_tags};
 use crate::{
     Error, Result,
     objects::{HorizontalAlign, VerticalAlign},
-    parse_attr,
     symbols::{AreaObjectSymbol, LineObjectSymbol, SymbolSet, WeakSymbol},
+    utils::parse_attr,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ObjectType {
+pub(super) enum ObjectType {
     Point,
     Line,
     Area,
@@ -53,13 +54,63 @@ impl MapObject {
         }
     }
 
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
+    fn tags(&self) -> &HashMap<String, String> {
         match self {
-            MapObject::Area(area_object) => area_object.write(writer),
-            MapObject::Line(line_object) => line_object.write(writer),
-            MapObject::Point(point_object) => point_object.write(writer),
-            MapObject::Text(text_object) => text_object.write(writer),
+            MapObject::Point(o) => &o.tags,
+            MapObject::Line(o) => &o.tags,
+            MapObject::Area(o) => &o.tags,
+            MapObject::Text(o) => &o.tags,
         }
+    }
+
+    pub(crate) fn write<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        symbols: &SymbolSet,
+    ) -> Result<()> {
+        let mut bs = BytesStart::new("object");
+        bs.push_attribute(("type", self.type_value().to_string().as_str()));
+
+        // Write symbol index
+        if let Some(idx) = symbols.get_index_of_weak_symbol(&self.get_weak_symbol()) {
+            bs.push_attribute(("symbol", idx.to_string().as_str()));
+        }
+
+        // Write rotation and text-specific attributes
+        match self {
+            MapObject::Point(p) => {
+                if p.rotation.abs() > f64::EPSILON {
+                    bs.push_attribute(("rotation", p.rotation.to_string().as_str()));
+                }
+            }
+            MapObject::Text(t) => {
+                if t.rotation.abs() > f64::EPSILON {
+                    bs.push_attribute(("rotation", t.rotation.to_string().as_str()));
+                }
+                bs.push_attribute(("h_align", (t.h_align as u8).to_string().as_str()));
+                bs.push_attribute(("v_align", (t.v_align as u8).to_string().as_str()));
+            }
+            _ => {}
+        }
+
+        writer.write_event(Event::Start(bs))?;
+
+        // Write tags if present
+        let tags = self.tags();
+        if !tags.is_empty() {
+            write_tags(writer, tags)?;
+        }
+
+        // Write type-specific content (coords + extras)
+        match self {
+            MapObject::Point(p) => p.write_content(writer)?,
+            MapObject::Line(l) => l.write_content(writer)?,
+            MapObject::Area(a) => a.write_content(writer)?,
+            MapObject::Text(t) => t.write_content(writer)?,
+        }
+
+        writer.write_event(Event::End(BytesEnd::new("object")))?;
+        Ok(())
     }
 }
 
@@ -115,51 +166,74 @@ impl MapObject {
             }
         }
 
-        let mut geometry = None;
-        let mut coords_xml_string = String::new();
         let mut tags = None;
 
+        // Read child elements until we find <coords>, then delegate
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
+                Event::Start(ref inner) => match inner.local_name().as_ref() {
                     b"tags" => tags = Some(super::parse_tags(reader)?),
                     b"coords" => {
-                        geometry = match object_type {
-                            SymbolType::Point => {
-                                let (po, xml) = PointObject::parse(reader, rotation)?;
-                                coords_xml_string.push_str(&xml);
-                                Some(ObjectGeometry::Point(po))
+                        // Delegate to the appropriate object parser.
+                        // Each parser reads from inside <coords> through </object>.
+                        let mut map_object = match object_type {
+                            ObjectType::Point => {
+                                MapObject::Point(PointObject::parse(reader, inner, rotation)?)
                             }
-                            SymbolType::Line | SymbolType::Combined(CombinedSymbolType::Line) => {
-                                let (lo, xml) = LineObject::parse(reader, &bytes_start)?;
-                                coords_xml_string.push_str(&xml);
-                                Some(ObjectGeometry::Line(lo))
-                            }
-                            SymbolType::Area | SymbolType::Combined(CombinedSymbolType::Area) => {
-                                let (ao, xml) = AreaObject::parse(reader, &bytes_start)?;
-                                coords_xml_string.push_str(&xml);
-                                Some(ObjectGeometry::Area(ao))
-                            }
-                            SymbolType::Text => {
-                                let (to, xml) = TextObject::parse(
-                                    reader,
-                                    h_align,
-                                    v_align,
-                                    rotation,
-                                    &bytes_start,
-                                )?;
-                                coords_xml_string.push_str(&xml);
-                                Some(ObjectGeometry::Text(to))
-                            }
+                            ObjectType::Line => MapObject::Line(LineObject::parse(reader, inner)?),
+                            ObjectType::Area => MapObject::Area(AreaObject::parse(reader, inner)?),
+                            ObjectType::Text => MapObject::Text(TextObject::parse(
+                                reader, inner, h_align, v_align, rotation,
+                            )?),
                         };
-                        break;
+
+                        // Set tags if we parsed any
+                        if let Some(t) = tags {
+                            match &mut map_object {
+                                MapObject::Point(o) => o.tags = t,
+                                MapObject::Line(o) => o.tags = t,
+                                MapObject::Area(o) => o.tags = t,
+                                MapObject::Text(o) => o.tags = t,
+                            }
+                        }
+
+                        // Set the symbol
+                        match (&mut map_object, &weak_symbol) {
+                            (MapObject::Point(o), WeakSymbol::Point(w)) => {
+                                o.symbol = w.clone();
+                            }
+                            (MapObject::Line(o), WeakSymbol::Line(w)) => {
+                                o.symbol = LineObjectSymbol::Line(w.clone());
+                            }
+                            (MapObject::Line(o), WeakSymbol::CombinedLine(w)) => {
+                                o.symbol = LineObjectSymbol::CombinedLine(w.clone());
+                            }
+                            (MapObject::Area(o), WeakSymbol::Area(w)) => {
+                                o.symbol = AreaObjectSymbol::Area(w.clone());
+                            }
+                            (MapObject::Area(o), WeakSymbol::CombinedArea(w)) => {
+                                o.symbol = AreaObjectSymbol::CombinedArea(w.clone());
+                            }
+                            (MapObject::Text(o), WeakSymbol::Text(w)) => {
+                                o.symbol = w.clone();
+                            }
+                            _ => {
+                                return Err(Error::ParseOmapFileError(
+                                    "Symbol type mismatch for object".to_string(),
+                                ));
+                            }
+                        }
+
+                        return Ok(map_object);
                     }
                     _ => (),
                 },
                 Event::End(bytes_end) => {
                     if matches!(bytes_end.local_name().as_ref(), b"object") {
-                        break;
+                        return Err(Error::ParseOmapFileError(
+                            "Object ended without coords".to_string(),
+                        ));
                     }
                 }
                 Event::Eof => {
@@ -170,66 +244,6 @@ impl MapObject {
                 _ => (),
             }
         }
-
-        let geometry = match geometry {
-            Some(g) => g,
-            None => {
-                return Err(Error::ParseOmapFileError(
-                    "Invalid object geometry".to_string(),
-                ));
-            }
-        };
-
-        let coords = coords_xml_string
-            .split_terminator(';')
-            .map(|s| -> Option<MapCoord> {
-                let parts = s.split_whitespace().collect::<Vec<_>>();
-                match parts.len() {
-                    2 => {
-                        let x = parts[0].parse();
-                        let y = parts[1].parse();
-                        if let Ok(x) = x
-                            && let Ok(y) = y
-                        {
-                            Some((Coord { x, y }, 0_u8))
-                        } else {
-                            None
-                        }
-                    }
-                    3 => {
-                        let x = parts[0].parse();
-                        let y = parts[1].parse();
-                        let f = parts[2].parse();
-
-                        if let Ok(x) = x
-                            && let Ok(y) = y
-                            && let Ok(f) = f
-                        {
-                            Some((Coord { x, y }, f))
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        if coords.iter().any(|option| option.is_none()) {
-            return Err(Error::ParseOmapFileError(
-                "Could not parse coords and flags from xml string".to_string(),
-            ));
-        }
-
-        let raw_geometry = coords.into_iter().flatten().collect::<Vec<_>>();
-
-        Ok(MapObject {
-            symbol: weak_symbol,
-            tags: tags.unwrap_or_default(),
-            geometry,
-            is_coords_touched: false,
-            raw_map_coords: raw_geometry,
-        })
     }
 }
 
@@ -239,7 +253,7 @@ mod tests {
 
     #[test]
     fn reverse_line_string_xml() {
-        let mut in_xml = [
+        let in_xml = [
             (coord! {x: -11535, y: -1901}, 1),
             (coord! {x:-12228, y: -1077}, 0),
             (coord! {x:-12122,y: 154}, 0),
@@ -272,8 +286,8 @@ mod tests {
         ]
         .to_vec();
 
-        in_xml = super::reverse_raw_line_coords(&in_xml);
-        assert_eq!(in_xml, true_out);
+        let result = super::super::line_object::reverse_raw_line_coords(&in_xml);
+        assert_eq!(result, true_out);
     }
 
     #[test]
@@ -288,8 +302,8 @@ mod tests {
         .to_vec();
         let mut flip_xml = in_xml.clone();
 
-        flip_xml = super::reverse_raw_line_coords(&flip_xml);
-        flip_xml = super::reverse_raw_line_coords(&flip_xml);
+        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
+        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
         assert_eq!(in_xml, flip_xml);
     }
 
@@ -313,8 +327,8 @@ mod tests {
         .to_vec();
         let mut flip_xml = in_xml.clone();
 
-        flip_xml = super::reverse_raw_line_coords(&flip_xml);
-        flip_xml = super::reverse_raw_line_coords(&flip_xml);
+        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
+        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
         assert_eq!(in_xml, flip_xml);
     }
 
@@ -337,8 +351,8 @@ mod tests {
         .to_vec();
         let mut flip_xml = in_xml.clone();
 
-        flip_xml = super::reverse_raw_polygon_coords(&flip_xml);
-        flip_xml = super::reverse_raw_polygon_coords(&flip_xml);
+        flip_xml = super::super::area_object::reverse_raw_polygon_coords(&flip_xml);
+        flip_xml = super::super::area_object::reverse_raw_polygon_coords(&flip_xml);
         assert_eq!(in_xml, flip_xml);
     }
 }

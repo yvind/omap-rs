@@ -4,11 +4,15 @@ use geo_types::{Coord, LineString};
 use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
 use quick_xml::{
     Reader, Writer,
-    events::{BytesStart, Event},
+    events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
-use super::{MapCoord, PARSE_BEZIER_ERROR};
-use crate::{Error, Result, symbols::LineObjectSymbol, try_get_attr};
+use super::{MapCoord, PARSE_BEZIER_ERROR, write_raw_coords};
+use crate::{
+    Error, Result,
+    symbols::LineObjectSymbol,
+    utils::{from_file_coords, to_file_coords, try_get_attr},
+};
 
 #[derive(Debug, Clone)]
 pub struct LineObject {
@@ -33,25 +37,78 @@ impl LineObject {
         &mut self.geometry
     }
 
+    /// Create a LineObject for use as a PointSymbol element (no map symbol needed)
+    pub fn new_element(geometry: LineString) -> Self {
+        LineObject {
+            tags: HashMap::new(),
+            symbol: LineObjectSymbol::Line(std::rc::Weak::new()),
+            write_as_bezier: false,
+            geometry,
+            raw_map_coords: Vec::new(),
+            is_coords_touched: false,
+        }
+    }
+
+    /// Get coords for element writing
+    pub fn get_element_coords(&self) -> impl Iterator<Item = &Coord<f64>> {
+        self.geometry.coords()
+    }
+
     /// Reverses a geometry and the input xml without marking it as touched
     pub fn reverse_linestring(&mut self) {
         self.geometry.0.reverse();
-        reverse_raw_line_coords(&mut self.raw_map_coords);
+        self.raw_map_coords = reverse_raw_line_coords(&self.raw_map_coords);
     }
 
-    pub(super) fn write<W: std::io::Write>(self, _writer: &mut Writer<W>) -> Result<()> {
+    /// Write just the inner content (coords) — called from MapObject::write.
+    /// Uses raw coords if untouched, otherwise converts geometry to file coords.
+    pub(super) fn write_content<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        if !self.is_coords_touched && !self.raw_map_coords.is_empty() {
+            write_raw_coords(writer, &self.raw_map_coords)?;
+        } else {
+            self.write_geometry_coords(writer)?;
+        }
         Ok(())
     }
 
-    pub(super) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        element: &BytesStart<'_>,
-    ) -> Result<(Self, String)> {
-        let mut raw_xml = String::new();
+    /// Write a full `<object>...</object>` element — used for point symbol elements
+    pub fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let bs = BytesStart::new("object").with_attributes([("type", "1")]);
+        writer.write_event(Event::Start(bs))?;
+        self.write_geometry_coords(writer)?;
+        writer.write_event(Event::End(BytesEnd::new("object")))?;
+        Ok(())
+    }
 
-        let mut num_coords = try_get_attr(&element, "count").unwrap_or(0);
+    /// Write coords from the geometry (not raw)
+    fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let coords: Vec<_> = self.geometry.coords().collect();
+        let bs = BytesStart::new("coords")
+            .with_attributes([("count", coords.len().to_string().as_str())]);
+        writer.write_event(Event::Start(bs))?;
+        let mut content = String::new();
+        for coord in coords {
+            let fc = to_file_coords(*coord)?;
+            content.push_str(&fc.x.to_string());
+            content.push(' ');
+            content.push_str(&fc.y.to_string());
+            content.push(';');
+        }
+        writer.write_event(Event::Text(BytesText::new(&content)))?;
+        writer.write_event(Event::End(BytesEnd::new("coords")))?;
+        Ok(())
+    }
+
+    /// Parse a line object. The reader should be positioned right after
+    /// the `<coords>` start event. Reads through `</object>`.
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        coords_element: &BytesStart<'_>,
+    ) -> Result<LineObject> {
+        let num_coords: usize = try_get_attr(coords_element, "count").unwrap_or(0);
 
         let mut line = Vec::with_capacity(num_coords);
+        let mut raw_map_coords = Vec::with_capacity(num_coords);
 
         let mut buf = Vec::new();
         loop {
@@ -62,7 +119,7 @@ impl LineObject {
                     }
                 }
                 Event::Text(bytes_text) => {
-                    raw_xml = String::from_utf8(bytes_text.to_vec())?;
+                    let raw_xml = String::from_utf8(bytes_text.to_vec())?;
 
                     let mut handles_written = 0_u8;
                     let mut bezier_on = false;
@@ -91,10 +148,18 @@ impl LineObject {
                             parts.2 = e.parse()?;
                         }
 
-                        let coord = Coord {
-                            x: parts.0 as f64 / 1_000.,
-                            y: -parts.1 as f64 / 1_000.,
-                        };
+                        raw_map_coords.push((
+                            Coord {
+                                x: parts.0,
+                                y: parts.1,
+                            },
+                            parts.2,
+                        ));
+
+                        let coord = from_file_coords(Coord {
+                            x: parts.0,
+                            y: parts.1,
+                        });
 
                         // check flags, we only care about bezier flags for lines
                         //  1 = Bezier curve start
@@ -150,12 +215,14 @@ impl LineObject {
                 _ => (),
             }
         }
-        Ok((
-            LineObject {
-                line: LineString::new(line),
-            },
-            raw_xml,
-        ))
+        Ok(LineObject {
+            tags: HashMap::new(),
+            symbol: LineObjectSymbol::Line(std::rc::Weak::new()),
+            write_as_bezier: false,
+            geometry: LineString::new(line),
+            raw_map_coords,
+            is_coords_touched: false,
+        })
     }
 }
 

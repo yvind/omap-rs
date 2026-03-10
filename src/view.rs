@@ -6,7 +6,8 @@ use quick_xml::{Reader, Writer};
 
 use crate::colors::Rgb;
 use crate::templates::Templates;
-use crate::{Error, Result, parse_attr, try_get_attr};
+use crate::utils::{UnitF64, parse_attr, try_get_attr};
+use crate::{Error, Result};
 
 /// Visibility settings for a template or the map layer.
 #[derive(Debug, Clone, Copy)]
@@ -209,9 +210,9 @@ impl Default for Grid {
     fn default() -> Self {
         Self {
             color: Rgb {
-                r: 100. / 255.,
-                g: 100. / 255.,
-                b: 100. / 255.,
+                r: UnitF64::clamped_from(100. / 255.),
+                g: UnitF64::clamped_from(100. / 255.),
+                b: UnitF64::clamped_from(100. / 255.),
             },
             display: Default::default(),
             alignment: Default::default(),
@@ -283,7 +284,7 @@ pub struct View {
     pub zoom: f64,
     /// View rotation in radians (counter-clockwise).
     pub rotation: f64,
-    /// Horizontal position of the view centre (in 1/1000 mm map coordinates).
+    /// Horizontal position of the view centre (in µm map coordinates).
     pub view_centre: Coord<i32>,
     /// Visibility of the map drawing itself.
     pub map_visibility: TemplateVisibility,
@@ -357,7 +358,7 @@ impl View {
                         self.map_visibility = TemplateVisibility::parse_map_attrs(&bs);
                     }
                     b"templates" => {
-                        if templates.len() > 0 {
+                        if !templates.is_empty() {
                             self.parse_template_visibilities(reader, templates)?;
                         }
                     }

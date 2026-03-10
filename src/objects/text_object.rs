@@ -1,10 +1,14 @@
 use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 
-use crate::{Error, Result, symbols::TextSymbol};
+use crate::{
+    Error, Result,
+    symbols::TextSymbol,
+    utils::{from_file_coords, from_file_value, to_file_coords, to_file_value, try_get_attr},
+};
 use geo_types::Coord;
 use quick_xml::{
     Reader, Writer,
-    events::{BytesStart, Event},
+    events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
 #[derive(Debug, Clone)]
@@ -32,7 +36,9 @@ impl TextGeometry {
 #[derive(Debug, Clone, Default)]
 pub struct WrapBox {
     pub anchor: Coord,
+    /// Width of the text box in mm
     pub width: f64,
+    /// Height of the text box in mm
     pub height: f64,
 }
 
@@ -93,62 +99,58 @@ pub struct TextObject {
 }
 
 impl TextObject {
-    pub(crate) fn get_special_keys(&self) -> Option<String> {
-        // also check if the symbol allows rotation
-        if self.rotation.is_normal() && self.rotation.abs() > 0.01 {
-            Some(format!(
-                "rotation=\"{:.3}\" h_align=\"{}\" v_align=\"{}\"",
-                self.rotation, self.h_align as u8, self.v_align as u8
-            ))
-        } else {
-            Some(format!(
-                "h_align=\"{}\" v_align=\"{}\"",
-                self.h_align as u8, self.v_align as u8
-            ))
-        }
-    }
+    /// Write just the inner content (coords + size + text) — called from MapObject::write
+    pub(super) fn write_content<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        match &self.geometry {
+            TextGeometry::SingleAnchor(coord) => {
+                let fc = to_file_coords(*coord)?;
+                let bs = BytesStart::new("coords").with_attributes([("count", "1")]);
+                writer.write_event(Event::Start(bs))?;
+                writer.write_event(Event::Text(BytesText::new(&format!("{} {};", fc.x, fc.y))))?;
+                writer.write_event(Event::End(BytesEnd::new("coords")))?;
+            }
+            TextGeometry::WrapBox(wb) => {
+                let fc = to_file_coords(wb.anchor)?;
+                let width = to_file_value(wb.width)?;
+                let height = to_file_value(wb.height)?;
+                let bs = BytesStart::new("coords").with_attributes([("count", "2")]);
+                writer.write_event(Event::Start(bs))?;
+                writer.write_event(Event::Text(BytesText::new(&format!(
+                    "{} {};{} {};",
+                    fc.x, fc.y, width, height
+                ))))?;
+                writer.write_event(Event::End(BytesEnd::new("coords")))?;
 
-    pub(crate) fn write<W: std::io::Write>(self, _writer: &mut Writer<W>) -> Result<()> {
-        todo!();
-        //let coords_tag = match self.geometry {
-        //    TextGeometry::SingleAnchor(p) => {
-        //        let map_coords = transform.to_map_coords(p.0);
-        //        format!(
-        //            "<coords count=\"1\">{} {};</coords>",
-        //            map_coords.0, map_coords.1
-        //        )
-        //    }
-        //    TextGeometry::WrapBox(wp) => {
-        //        let map_coords = transform.to_map_coords(wp.anchor.0);
-        //        let width = transform.to_map_dist(wp.width);
-        //        let height = transform.to_map_dist(wp.height);
-        //
-        //        format!(
-        //            "<coords count=\"2\">{} {};{} {};</coords><size width=\"{}\" height=\"{}\"/>",
-        //            map_coords.0, map_coords.1, width, height, width, height
-        //        )
-        //    }
-        //};
-        //
-        //writer.write_all(format!("{}<text>{}</text>", coords_tag, self.text).as_bytes())?;
-        //Ok(())
-    }
-
-    pub(super) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        h_align: Option<HorizontalAlign>,
-        v_align: Option<VerticalAlign>,
-        rotation: f64,
-        element: &BytesStart<'_>,
-    ) -> Result<(Self, String)> {
-        let mut num_coords = 0;
-        for attr in element.attributes().filter_map(std::result::Result::ok) {
-            if matches!(attr.key.local_name().as_ref(), b"count") {
-                num_coords = std::str::from_utf8(&attr.value)?.parse()?;
+                // Write <size> element for the wrap box
+                writer.write_event(Event::Empty(BytesStart::new("size").with_attributes([
+                    ("width", width.to_string().as_str()),
+                    ("height", height.to_string().as_str()),
+                ])))?;
             }
         }
+
+        // Write text content
+        writer.write_event(Event::Start(BytesStart::new("text")))?;
+        writer.write_event(Event::Text(BytesText::new(&self.text)))?;
+        writer.write_event(Event::End(BytesEnd::new("text")))?;
+
+        Ok(())
+    }
+
+    /// Parse a text object. The reader should be positioned right after
+    /// the `<coords>` start event. Reads through `</object>`.
+    pub(crate) fn parse<R: std::io::BufRead>(
+        reader: &mut Reader<R>,
+        coords_element: &BytesStart<'_>,
+        h_align: HorizontalAlign,
+        v_align: VerticalAlign,
+        rotation: f64,
+    ) -> Result<TextObject> {
+        let num_coords: usize = try_get_attr(coords_element, "count").unwrap_or(0);
         if num_coords == 0 {
-            return Err(Error::ParseOmapFileError("".to_string()));
+            return Err(Error::ParseOmapFileError(
+                "Text object has 0 coords".to_string(),
+            ));
         }
 
         let mut text_geo = if num_coords == 1 {
@@ -157,11 +159,31 @@ impl TextObject {
             TextGeometry::WrapBox(WrapBox::default())
         };
         let mut is_coords_read = false;
-        let mut raw_xml = String::new();
         let mut text = String::new();
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
+                Event::Start(bytes_start) => {
+                    if bytes_start.local_name().as_ref() == b"size" {
+                        // Override box size from <size> element (takes precedence)
+                        let w: i32 = try_get_attr(&bytes_start, "width").unwrap_or(0);
+                        let h: i32 = try_get_attr(&bytes_start, "height").unwrap_or(0);
+                        if let TextGeometry::WrapBox(ref mut wb) = text_geo {
+                            wb.width = from_file_value(w);
+                            wb.height = from_file_value(h);
+                        }
+                    }
+                }
+                Event::Empty(bytes_start) => {
+                    if bytes_start.local_name().as_ref() == b"size" {
+                        let w: i32 = try_get_attr(&bytes_start, "width").unwrap_or(0);
+                        let h: i32 = try_get_attr(&bytes_start, "height").unwrap_or(0);
+                        if let TextGeometry::WrapBox(ref mut wb) = text_geo {
+                            wb.width = from_file_value(w);
+                            wb.height = from_file_value(h);
+                        }
+                    }
+                }
                 Event::End(bytes_end) => {
                     if matches!(bytes_end.local_name().as_ref(), b"object") {
                         break;
@@ -173,71 +195,57 @@ impl TextObject {
                             // parse the text location
                             is_coords_read = true;
 
-                            raw_xml = String::from_utf8(bytes_text.to_vec())?;
+                            let raw_xml = String::from_utf8(bytes_text.to_vec())?;
 
-                            if let Some((coords, opt_wh)) = raw_xml.split_once(';') {
-                                let mut parts: (i32, i32) = (0, 0);
-                                let mut split = coords.split_whitespace();
+                            if let Some((coords_str, opt_wh)) = raw_xml.split_once(';') {
+                                let mut split = coords_str.split_whitespace();
 
-                                if let Some(e) = split.next() {
-                                    parts.0 = e.parse()?;
-                                } else {
-                                    return Err(Error::InvalidCoordinate(
-                                        "No x value in split".to_string(),
-                                    ));
-                                }
-                                if let Some(e) = split.next() {
-                                    parts.1 = e.parse()?;
-                                } else {
-                                    return Err(Error::InvalidCoordinate(
-                                        "No y value in split".to_string(),
-                                    ));
-                                }
+                                let x: i32 = split
+                                    .next()
+                                    .ok_or(Error::InvalidCoordinate("No x value".to_string()))?
+                                    .parse()?;
+                                let y: i32 = split
+                                    .next()
+                                    .ok_or(Error::InvalidCoordinate("No y value".to_string()))?
+                                    .parse()?;
 
-                                let coord = Coord {
-                                    x: parts.0 as f64 / 1_000.,
-                                    y: -parts.1 as f64 / 1_000.,
-                                };
+                                let coord = from_file_coords(Coord { x, y });
 
-                                let (width, height) = if !opt_wh.is_empty() {
-                                    let mut split = coords.split_whitespace();
-
-                                    let width = if let Some(e) = split.next() {
-                                        e.parse()?
+                                // Parse second coord (box size) if present
+                                let box_size = if !opt_wh.is_empty() {
+                                    // opt_wh might be "w h;" or "w h;rest..."
+                                    let wh_str = opt_wh.split(';').next().unwrap_or("");
+                                    if !wh_str.is_empty() {
+                                        let mut wh_split = wh_str.split_whitespace();
+                                        let w: i32 = wh_split
+                                            .next()
+                                            .and_then(|s| s.parse().ok())
+                                            .unwrap_or(0);
+                                        let h: i32 = wh_split
+                                            .next()
+                                            .and_then(|s| s.parse().ok())
+                                            .unwrap_or(0);
+                                        Some((from_file_value(w), from_file_value(h)))
                                     } else {
-                                        return Err(Error::InvalidCoordinate(
-                                            "No x value in split".to_string(),
-                                        ));
-                                    };
-                                    let height = if let Some(e) = split.next() {
-                                        e.parse()?
-                                    } else {
-                                        return Err(Error::InvalidCoordinate(
-                                            "No y value in split".to_string(),
-                                        ));
-                                    };
-                                    (Some(width), Some(height))
+                                        None
+                                    }
                                 } else {
-                                    (None, None)
+                                    None
                                 };
 
                                 match &mut text_geo {
                                     TextGeometry::SingleAnchor(point) => *point = coord,
                                     TextGeometry::WrapBox(wrap_box) => {
                                         wrap_box.anchor = coord;
-                                        wrap_box.width = width.ok_or(Error::ParseOmapFileError(
-                                            "Could not parse text symbol in wrap box".to_string(),
-                                        ))?;
-                                        wrap_box.height =
-                                            height.ok_or(Error::ParseOmapFileError(
-                                                "Could not parse text symbol in wrap box"
-                                                    .to_string(),
-                                            ))?;
+                                        if let Some((w, h)) = box_size {
+                                            wrap_box.width = w;
+                                            wrap_box.height = h;
+                                        }
                                     }
                                 };
                             } else {
                                 return Err(Error::ParseOmapFileError(
-                                    "Could not parse text symbol".to_string(),
+                                    "Could not parse text object coords".to_string(),
                                 ));
                             }
                         }
@@ -255,21 +263,20 @@ impl TextObject {
                 }
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in LineObject parsing".to_string(),
+                        "Unexpected EOF in TextObject parsing".to_string(),
                     ));
                 }
                 _ => (),
             }
         }
-        Ok((
-            TextObject {
-                geometry: text_geo,
-                text,
-                h_align: h_align.unwrap_or(HorizontalAlign::HCenter),
-                v_align: v_align.unwrap_or(VerticalAlign::VCenter),
-                rotation,
-            },
-            raw_xml,
-        ))
+        Ok(TextObject {
+            tags: HashMap::new(),
+            symbol: Weak::new(),
+            geometry: text_geo,
+            text,
+            h_align,
+            v_align,
+            rotation,
+        })
     }
 }

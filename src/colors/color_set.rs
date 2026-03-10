@@ -6,7 +6,8 @@ use quick_xml::{
 };
 
 use super::{Color, ColorComponent, WeakColor, color::ColorParseReturn};
-use crate::{Error, Result, try_get_attr};
+use crate::utils::{UnitF64, try_get_attr};
+use crate::{Error, Result};
 
 /// The order of the [Color]s in the [Vec] is the order of priority
 /// Move the colors around to change priority, f.ex. using `color_set.0.swap(2, 5)`
@@ -130,7 +131,7 @@ impl ColorSet {
 
                 if let Some((c, _)) = spot_colors.iter().find(|(_, prio)| *prio == id) {
                     color.components.push(ColorComponent {
-                        factor,
+                        factor: UnitF64::clamped_from(factor),
                         color: Rc::downgrade(c),
                     });
                 }
@@ -156,7 +157,7 @@ impl ColorSet {
         ))?;
 
         for (priority, color) in self.0.iter().enumerate() {
-            let _ = match color {
+            match color {
                 Color::SpotColor(ref_cell) => ref_cell.try_borrow()?.write(writer, priority)?,
                 Color::MixedColor(ref_cell) => {
                     ref_cell.try_borrow()?.write(writer, priority, &self)?

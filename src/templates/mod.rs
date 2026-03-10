@@ -8,13 +8,17 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use crate::{Error, Result, parse_attr, try_get_attr, view::TemplateVisibility};
+use crate::{
+    Error, NonNegativeF64, Result,
+    utils::{parse_attr, try_get_attr},
+    view::TemplateVisibility,
+};
 
 #[derive(Debug, Clone)]
 pub struct TemplateDefaults {
     pub use_meters_per_pixel: bool,
-    pub meters_per_pixel: f64,
-    pub dpi: f64,
+    pub meters_per_pixel: NonNegativeF64,
+    pub dpi: NonNegativeF64,
     pub scale: u32,
 }
 
@@ -22,8 +26,8 @@ impl Default for TemplateDefaults {
     fn default() -> Self {
         Self {
             use_meters_per_pixel: true,
-            meters_per_pixel: 0.0,
-            dpi: 0.0,
+            meters_per_pixel: NonNegativeF64::default(),
+            dpi: NonNegativeF64::default(),
             scale: 0,
         }
     }
@@ -38,9 +42,17 @@ impl TemplateDefaults {
                     d.use_meters_per_pixel = attr.as_bool().unwrap_or(d.use_meters_per_pixel)
                 }
                 b"meters_per_pixel" => {
-                    d.meters_per_pixel = parse_attr(attr.value).unwrap_or(d.meters_per_pixel)
+                    d.meters_per_pixel = parse_attr(attr.value)
+                        .unwrap_or(d.meters_per_pixel.get())
+                        .try_into()
+                        .unwrap_or_default()
                 }
-                b"dpi" => d.dpi = parse_attr(attr.value).unwrap_or(d.dpi),
+                b"dpi" => {
+                    d.dpi = parse_attr(attr.value)
+                        .unwrap_or(d.dpi.get())
+                        .try_into()
+                        .unwrap_or_default()
+                }
                 b"scale" => d.scale = parse_attr(attr.value).unwrap_or(d.scale),
                 _ => {}
             }
@@ -56,9 +68,9 @@ impl TemplateDefaults {
             ),
             (
                 "meters_per_pixel",
-                format!("{:.2}", self.meters_per_pixel).as_str(),
+                format!("{:.2}", self.meters_per_pixel.get()).as_str(),
             ),
-            ("dpi", format!("{:.2}", self.dpi).as_str()),
+            ("dpi", format!("{:.2}", self.dpi.get()).as_str()),
             ("scale", self.scale.to_string().as_str()),
         ])))?;
         Ok(())

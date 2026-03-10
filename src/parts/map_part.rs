@@ -113,7 +113,11 @@ impl MapPart {
         Ok(MapPart { name, objects })
     }
 
-    pub(super) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
+    pub(super) fn write<W: std::io::Write>(
+        self,
+        writer: &mut Writer<W>,
+        symbols: &SymbolSet,
+    ) -> Result<()> {
         writer.write_event(Event::Start(
             BytesStart::new("part")
                 .with_attributes([("name", quick_xml::escape::escape(self.name.as_str()))]),
@@ -125,7 +129,7 @@ impl MapPart {
 
         for (_, objects) in self.objects {
             for object in objects {
-                object.write(writer)?;
+                object.write(writer, symbols)?;
             }
         }
 

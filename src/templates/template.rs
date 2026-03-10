@@ -7,8 +7,9 @@ use quick_xml::{
 
 use super::transform::{AdjustmentState, Transformations};
 use crate::{
-    Error, Result, parse_attr,
+    Error, Result,
     templates::transform::{PassPoint, TemplateTransform},
+    utils::parse_attr,
 };
 
 /// A template attached to the map. Each variant carries type-specific data.
@@ -167,7 +168,7 @@ impl Template {
             }
         }
 
-        let mut transformations: Option<Transformations> = None;
+        let mut transformations = None;
         let mut crs_spec = String::new();
         let mut track_crs_spec = String::new();
         let mut projected_crs_spec = String::new();
