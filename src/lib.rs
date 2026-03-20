@@ -1,73 +1,7 @@
-//! Write Open Orienteering Mapper's .omap files in Rust
+//! A Rust library for reading and writing OpenOrienteering Mapper (`.omap`) files.
 //!
-//! # Example
-//!
-//! ```
-//! use omap::{
-//!     objects::{AreaObject, LineObject, PointObject, TextObject, TagTrait},
-//!     symbols::{AreaSymbol, LineSymbol, PointSymbol, TextSymbol},
-//!     Omap, Scale, BezierError,
-//!     };
-//! use geo_types::{Coord, LineString, Polygon, Point};
-//! use std::{path::PathBuf, str::FromStr};
-//!
-//! let map_center = Coord {x: 463_575.5, y: 6_833_849.6};
-//! let map_center_elevation_meters = 2_469.;
-//! let crs_epsg_code = 25832;
-//!
-//! let mut omap = Omap::new(
-//!     map_center,
-//!     Scale::S15_000,
-//!     Some(crs_epsg_code),
-//!     Some(map_center_elevation_meters)
-//! ).expect("Could not make map with the given CRS-code");
-//!
-//! // coordinates of geometry are in the same units as the map_center, but relative the map_center
-//! let polygon = Polygon::new(
-//!     LineString::new(vec![
-//!         Coord {x: -50., y: -50.},
-//!         Coord {x: -50., y: 50.},
-//!         Coord {x: 50., y: 50.},
-//!         Coord {x: 50., y: -50.},
-//!         Coord {x: -50., y: -50.},
-//!     ]), vec![]);
-//! let mut area_object = AreaObject::from_polygon(polygon, AreaSymbol::RoughVineyard, 45.0_f64.to_radians());
-//! area_object.add_tag("tag_key", "tag_value");
-//!
-//! let line_string = LineString::new(
-//!         vec![
-//!             Coord {x: -60., y: 20.},
-//!             Coord {x: -20., y: 25.},
-//!             Coord {x: 0., y: 27.5},
-//!             Coord {x: 20., y: 26.},
-//!             Coord {x: 40., y: 22.5},
-//!             Coord {x: 60., y: 20.},
-//!             Coord {x: 60., y: -20.},
-//!             Coord {x: -60., y: -20.},
-//!         ]
-//!     );
-//! let mut line_object = LineObject::from_line_string(line_string, LineSymbol::Contour);
-//! line_object.add_elevation_tag(20.);
-//!
-//! let point = Point::new(0.0_f64, 0.0_f64);
-//! let point_object = PointObject::from_point(point, PointSymbol::ElongatedDotKnoll, -45.0_f64.to_radians());
-//!
-//! let text_point = Point::new(0.0_f64, -30.0_f64);
-//! let text = "some text".to_string();
-//! let text_object = TextObject::from_point(text_point, TextSymbol::SpotHeight, text);
-//!
-//! omap.add_object(area_object);
-//! omap.add_object(line_object);
-//! omap.add_object(point_object);
-//! omap.add_object(text_object);
-//!
-//! let bez_error = BezierError::new(Some(2.5), None);
-//!
-//! omap.write_to_file(
-//!     PathBuf::from_str("./my_map.omap").unwrap(),
-//!     bez_error
-//! ).expect("Could not write to file");
-//! ```
+//! All map coordinates are given in millimetres on paper, relative to the
+//! reference point, with the positive y-axis pointing towards magnetic north.
 
 #![deny(
     elided_lifetimes_in_paths,
@@ -83,7 +17,7 @@
     rust_2021_incompatible_closure_captures,
     rust_2021_incompatible_or_patterns,
     rust_2021_prefixes_incompatible_syntax,
-    rust_2021_prelude_collisions,
+    rust_2024_prelude_collisions,
     single_use_lifetimes,
     trivial_casts,
     trivial_numeric_casts,
@@ -99,48 +33,129 @@
     warnings
 )]
 
-mod bezier_error;
-/// Objects module
+/// Color definitions: spot colors, mixed colors, CMYK, RGB.
+pub mod colors;
+/// File-format version information (XML and OMAP versions).
+pub mod format_info;
+/// Coordinate-reference-system and projection helpers.
+pub mod geo_referencing;
+mod notes;
+/// Map objects: points, lines, areas, and text.
 pub mod objects;
-mod omap;
-mod scale;
-mod serialize;
-/// Symbols module
+/// The top-level OMAP document type.
+pub mod omap;
+/// Map parts (layers) and their contained objects.
+pub mod parts;
+/// Symbol definitions: point, line, area, text, and combined symbols.
 pub mod symbols;
-mod transform;
+/// Background-template support (images, tracks, GDAL/OGR layers).
+pub mod templates;
+mod utils;
+/// View settings: zoom, grid, template visibility.
+pub mod view;
 
-pub use crate::bezier_error::BezierError;
-pub use crate::omap::Omap;
-pub use crate::scale::Scale;
+use std::io::BufWriter;
 
-/// crate result
-pub type OmapResult<T> = Result<T, OmapError>;
+pub use omap::Omap;
+pub use utils::{Code, NonNegativeF64, UnitF64};
+
+type Result<T> = std::result::Result<T, Error>;
 
 use thiserror::Error;
-/// crate error
-#[derive(Error, Debug)]
-pub enum OmapError {
-    /// Map coordinate overflow
-    #[error("Map coordinate overflow")]
-    MapCoordinateOverflow,
-    /// Wrong geo_types geometry for a symbol
+
+/// Errors that can occur when reading, writing, or manipulating OMAP data.
+#[derive(Debug, Error)]
+pub enum Error {
+    /// An error from the XML parser.
     #[error(transparent)]
-    MismatchedGeometry(#[from] geo_types::Error),
-    /// IO error
+    XmlError(#[from] quick_xml::Error),
+    /// An I/O error.
     #[error(transparent)]
-    IO(#[from] std::io::Error),
-    /// Projection error
+    IoError(#[from] std::io::Error),
+    /// An error flushing an internal `BufWriter`.
+    #[error(transparent)]
+    IntoInnerError(#[from] std::io::IntoInnerError<BufWriter<Vec<u8>>>),
+    /// A generic file-format error.
+    #[error("format error")]
+    InvalidFormat(String),
+    /// A coordinate could not be parsed.
+    #[error("format coord error")]
+    InvalidCoordinate(String),
+    /// An XML attribute error.
+    #[error(transparent)]
+    AttrError(#[from] quick_xml::events::attributes::AttrError),
+    /// A `&str` UTF-8 conversion error.
+    #[error(transparent)]
+    StrUtf8Error(#[from] std::str::Utf8Error),
+    /// A `String` UTF-8 conversion error.
+    #[error(transparent)]
+    StringUtf8Error(#[from] std::string::FromUtf8Error),
+    /// An XML encoding error.
+    #[error(transparent)]
+    EncodingError(#[from] quick_xml::encoding::EncodingError),
+    /// An XML escape-sequence error.
+    #[error(transparent)]
+    EscapeError(#[from] quick_xml::escape::EscapeError),
+    /// Map parts could not be merged (indices out of range or identical).
+    #[error("Could not merge map parts. Check that the indices are different and in range")]
+    MapPartMergeError,
+    /// The XML encoding is not supported.
+    #[error("XML-encoding {0} is not supported")]
+    UnsupportedEncoding(String),
+    /// Failed to parse an integer.
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
+    /// Failed to parse a float.
+    #[error(transparent)]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+    /// A section of the `.omap` file could not be parsed.
+    #[error("Part {0} of file could not parsed")]
+    ParseOmapFileError(String),
+    /// A `RefCell` borrow failed.
+    #[error(transparent)]
+    BorrowError(#[from] std::cell::BorrowError),
+    /// A `RefCell` mutable borrow failed.
+    #[error(transparent)]
+    BorrowMutError(#[from] std::cell::BorrowMutError),
+    /// A Bézier-curve conversion error.
+    #[error(transparent)]
+    BezierConversionError(#[from] linestring2bezier::Error),
+    /// An invalid color definition.
+    #[error("Color definition error")]
+    ColorError,
+    /// An invalid symbol definition.
+    #[error("Symbol definition error")]
+    SymbolError(String),
+    /// A template-related error.
+    #[error("Template error")]
+    TemplateError,
+    /// A view-related error.
+    #[error("View error")]
+    ViewError,
+    /// An object-related error.
+    #[error("Object error")]
+    ObjectError,
+    /// The value is not in the unit interval `[0, 1]`.
+    #[error("The value is not in the unit interval and cannot be converted to a UnitF64")]
+    NotInUnitInterval,
+    /// The value is negative.
+    #[error("The value is not non-negative and cannot be converted to a NonNegativeF64")]
+    NotNonNegativeF64,
+    /// Infallible conversion (required by `From` blanket impl).
+    #[error(transparent)]
+    Infallible(#[from] std::convert::Infallible),
+    /// A map coordinate exceeds the file-format range.
+    #[error("A provided map coordinate is outside the range for writing")]
+    MapCoordOutOfBounds,
+    /// An error from the World Magnetic Model.
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
-    Proj(#[from] proj4rs::errors::Error),
-    /// World magnetic model declination error
+    WmmError(#[from] world_magnetic_model::Error),
+    /// A proj4 projection error.
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
-    GeoMagnetic(#[from] world_magnetic_model::Error),
-    /// The geo-referencing feature is de-activated, but an EPSG code was passed to new
-    #[error("The geo-referencing feature is de-activated (activated by default)")]
-    DisabledGeoReferencingFeature,
-    /// The symbol type and the object type do not match
-    #[error("Wrong Symbol type for object")]
-    MismatchingSymbolAndObject,
+    ProjError(#[from] proj4rs::errors::Error),
+    /// An Error when parsing a `Code` from an empty string
+    #[error("Tried to parse a Code from an empty string")]
+    EmptyCode,
 }

@@ -1,3 +1,5 @@
 /target
 /.vscode
+*.xmap
 *.omap
+!/src/default_maps/*.omap
