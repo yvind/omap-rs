@@ -237,7 +237,8 @@ impl Grid {
                 b"alignment" => g.alignment = parse_attr_raw(attr.value).unwrap_or(g.alignment),
                 b"unit" => g.unit = parse_attr_raw(attr.value).unwrap_or(g.unit),
                 b"additional_rotation" => {
-                    g.additional_rotation = parse_attr_raw(attr.value).unwrap_or(g.additional_rotation)
+                    g.additional_rotation =
+                        parse_attr_raw(attr.value).unwrap_or(g.additional_rotation)
                 }
                 b"h_spacing" => g.h_spacing = parse_attr_raw(attr.value).unwrap_or(g.h_spacing),
                 b"v_spacing" => g.v_spacing = parse_attr_raw(attr.value).unwrap_or(g.v_spacing),
@@ -382,7 +383,7 @@ impl View {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bs) if bs.local_name().as_ref() == b"ref" => {
-                    if let Some(index) = try_get_attr_raw::<usize>(&bs, "index")
+                    if let Some(index) = try_get_attr_raw::<usize>(&bs, "template")
                         && index < templates.len()
                     {
                         templates.template_entries[index].visibilty =
