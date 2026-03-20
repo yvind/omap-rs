@@ -1,7 +1,10 @@
 use std::str::FromStr;
 
 use geo_types::Coord;
-use quick_xml::events::BytesStart;
+use quick_xml::{
+    Decoder,
+    events::{BytesStart, attributes::Attribute},
+};
 
 use crate::{Error, Result};
 const FILE_COORD_MAX: f64 = ((i32::MAX / 1000) - 1) as f64;
@@ -17,12 +20,23 @@ pub struct Code {
     pub patch: u16,
 }
 
+impl Code {
+    /// Construct a new Code
+    pub fn new(major: u16, minor: u16, patch: u16) -> Code {
+        Code {
+            major,
+            minor,
+            patch,
+        }
+    }
+}
+
 impl FromStr for Code {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self> {
         let mut parts = value.split('.').take(3);
         Ok(Code {
-            major: parts.next().ok_or(Error::SymbolError)?.parse()?,
+            major: parts.next().ok_or(Error::EmptyCode)?.parse()?,
             minor: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
             patch: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
         })
@@ -31,23 +45,49 @@ impl FromStr for Code {
 
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+        if self.patch > 0 {
+            write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+        } else if self.minor > 0 {
+            write!(f, "{}.{}", self.major, self.minor)
+        } else if self.major > 0 {
+            write!(f, "{}", self.major)
+        } else {
+            write!(f, "")
+        }
     }
 }
 
 // parse helpers
-pub(crate) fn parse_attr<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Option<T> {
+/// Do not use this for fields with user text as it will not unescape xml-codes
+pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Option<T> {
     std::str::from_utf8(value.as_ref())
         .ok()
         .and_then(|s| T::from_str(s).ok())
 }
 
+/// Do not use this for fields with user text as it will not unescape xml-codes
+pub(crate) fn try_get_attr_raw<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Option<T> {
+    bytes
+        .try_get_attribute(attr)
+        .ok()
+        .flatten()
+        .and_then(|a| parse_attr_raw(a.value))
+}
+
+/// This escapes any xml-codes, use for user-strings
+pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>, decoder: Decoder) -> Option<T> {
+    attr.decode_and_unescape_value(decoder)
+        .ok()
+        .and_then(|s| T::from_str(&s).ok())
+}
+
+/// This escapes any xml-codes, use for user-strings
 pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Option<T> {
     bytes
         .try_get_attribute(attr)
         .ok()
         .flatten()
-        .and_then(|a| parse_attr(a.value))
+        .and_then(|a| parse_attr(a, bytes.decoder()))
 }
 
 /// A f64, but only allowed to be in the unit interval 0.0..=1.0

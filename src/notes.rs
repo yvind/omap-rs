@@ -1,6 +1,6 @@
 use quick_xml::{
     Reader, Writer,
-    events::{BytesText, Event},
+    events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
 use crate::Result;
@@ -27,6 +27,8 @@ pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Strin
 }
 
 pub(super) fn write<W: std::io::Write>(notes: &str, writer: &mut Writer<W>) -> Result<()> {
+    writer.write_event(Event::Start(BytesStart::new("notes")))?;
     writer.write_event(Event::Text(BytesText::new(notes)))?;
+    writer.write_event(Event::End(BytesEnd::new("notes")))?;
     Ok(())
 }

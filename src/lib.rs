@@ -125,7 +125,7 @@ pub enum Error {
     ColorError,
     /// An invalid symbol definition.
     #[error("Symbol definition error")]
-    SymbolError,
+    SymbolError(String),
     /// A template-related error.
     #[error("Template error")]
     TemplateError,
@@ -155,4 +155,7 @@ pub enum Error {
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
     ProjError(#[from] proj4rs::errors::Error),
+    /// An Error when parsing a `Code` from an empty string
+    #[error("Tried to parse a Code from an empty string")]
+    EmptyCode,
 }

@@ -6,9 +6,9 @@ use quick_xml::{
 
 use super::SymbolCommon;
 use crate::{
-    Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, Result,
     colors::{ColorSet, SymbolColor},
-    utils::{self, try_get_attr},
+    utils::{self, try_get_attr_raw},
 };
 
 /// The framing mode for a text symbol.
@@ -99,6 +99,33 @@ pub struct TextSymbol {
 }
 
 impl TextSymbol {
+    /// Create a new text symbol with the given code, name, and font family.
+    pub fn new(code: Code, name: String) -> TextSymbol {
+        let common = SymbolCommon {
+            code,
+            name,
+            ..Default::default()
+        };
+        TextSymbol {
+            common,
+            font_family: String::from("Arial"),
+            icon_text: String::new(),
+            color: SymbolColor::NoColor,
+            custom_tabs: Vec::new(),
+            line_below: None,
+            line_spacing: NonNegativeF64::clamped_from(1.0),
+            character_spacing: 0.0,
+            font_size: NonNegativeF64::clamped_from(4.0),
+            paragraph_spacing: 0.0,
+            framing_mode: None,
+            is_rotatable: false,
+            bold: false,
+            italic: false,
+            underline: false,
+            kerning: true,
+        }
+    }
+
     /// Get the display name of this text symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
@@ -136,38 +163,39 @@ impl TextSymbol {
                         }
                     }
                     b"text_symbol" => {
-                        icon_text = try_get_attr(&e, "icon_text").unwrap_or_default();
-                        is_rotatable = try_get_attr(&e, "rotatable").unwrap_or(false);
+                        icon_text = try_get_attr_raw(&e, "icon_text").unwrap_or_default();
+                        is_rotatable = try_get_attr_raw(&e, "rotatable").unwrap_or(false);
                     }
                     b"font" => {
                         font_family =
-                            try_get_attr(&e, "family").unwrap_or_else(|| String::from("Arial"));
-                        let fs = try_get_attr(&e, "size").unwrap_or(4000);
+                            try_get_attr_raw(&e, "family").unwrap_or_else(|| String::from("Arial"));
+                        let fs = try_get_attr_raw(&e, "size").unwrap_or(4000);
                         font_size = NonNegativeF64::from_file_value(fs);
-                        bold = try_get_attr(&e, "bold").unwrap_or(false);
-                        italic = try_get_attr(&e, "italic").unwrap_or(false);
-                        underline = try_get_attr(&e, "underline").unwrap_or(false);
+                        bold = try_get_attr_raw(&e, "bold").unwrap_or(false);
+                        italic = try_get_attr_raw(&e, "italic").unwrap_or(false);
+                        underline = try_get_attr_raw(&e, "underline").unwrap_or(false);
                     }
                     b"text" => {
-                        let ci = try_get_attr(&e, "color").unwrap_or(-1);
+                        let ci = try_get_attr_raw(&e, "color").unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
-                        let ls = try_get_attr(&e, "line_spacing").unwrap_or(1.0);
+                        let ls = try_get_attr_raw(&e, "line_spacing").unwrap_or(1.0);
                         line_spacing = NonNegativeF64::clamped_from(ls);
                         paragraph_spacing = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "paragraph_spacing").unwrap_or(0),
+                            try_get_attr_raw(&e, "paragraph_spacing").unwrap_or(0),
                         )
                         .get();
-                        character_spacing = try_get_attr(&e, "character_spacing").unwrap_or(0.0);
-                        kerning = try_get_attr(&e, "kerning").unwrap_or(false);
+                        character_spacing =
+                            try_get_attr_raw(&e, "character_spacing").unwrap_or(0.0);
+                        kerning = try_get_attr_raw(&e, "kerning").unwrap_or(false);
                     }
                     b"framing" => {
-                        let fc = try_get_attr(&e, "color").unwrap_or(-1);
+                        let fc = try_get_attr_raw(&e, "color").unwrap_or(-1);
                         let framing_color = SymbolColor::from_index(fc, color_set);
-                        let mode = try_get_attr(&e, "mode").unwrap_or(0);
+                        let mode = try_get_attr_raw(&e, "mode").unwrap_or(0);
                         framing_mode = Some(match mode {
                             1 => {
                                 let half_width = NonNegativeF64::from_file_value(
-                                    try_get_attr(&e, "line_half_width").unwrap_or(0),
+                                    try_get_attr_raw(&e, "line_half_width").unwrap_or(0),
                                 );
                                 FramingMode::LineFraming(LineFraming {
                                     color: framing_color,
@@ -175,8 +203,8 @@ impl TextSymbol {
                                 })
                             }
                             2 => {
-                                let sx = try_get_attr(&e, "shadow_x_offset").unwrap_or(0);
-                                let sy = try_get_attr(&e, "shadow_y_offset").unwrap_or(0);
+                                let sx = try_get_attr_raw(&e, "shadow_x_offset").unwrap_or(0);
+                                let sy = try_get_attr_raw(&e, "shadow_y_offset").unwrap_or(0);
                                 FramingMode::ShadowFraming(ShadowFraming {
                                     color: framing_color,
                                     shadow_offset: Coord {
@@ -189,10 +217,10 @@ impl TextSymbol {
                         });
                     }
                     b"line_below" => {
-                        let lc = try_get_attr(&e, "color").unwrap_or(-1);
+                        let lc = try_get_attr_raw(&e, "color").unwrap_or(-1);
                         let lb_color = SymbolColor::from_index(lc, color_set);
-                        let w = try_get_attr(&e, "width").unwrap_or(0);
-                        let d = try_get_attr(&e, "distance").unwrap_or(0);
+                        let w = try_get_attr_raw(&e, "width").unwrap_or(0);
+                        let d = try_get_attr_raw(&e, "distance").unwrap_or(0);
                         line_below = Some(LineBelow {
                             color: lb_color,
                             width: NonNegativeF64::from_file_value(w),
@@ -207,16 +235,15 @@ impl TextSymbol {
                     }
                     _ => {}
                 },
-                Event::Text(ref text) => {
+                Event::Text(text) => {
                     // Could be tab content
-                    let val = String::from_utf8(text.to_vec())?;
-                    if let Ok(v) = val.parse() {
+                    if let Ok(v) = str::from_utf8(text.as_ref())?.parse() {
                         custom_tabs.push(NonNegativeF64::from_file_value(v));
                     }
                 }
                 Event::Empty(e) => {
                     if e.local_name().as_ref() == b"icon"
-                        && let Some(src) = try_get_attr(&e, "src")
+                        && let Some(src) = try_get_attr_raw(&e, "src")
                     {
                         common.custom_icon = Some(src);
                     }
@@ -266,7 +293,7 @@ impl TextSymbol {
             ("code", self.common.code.to_string().as_str()),
             (
                 "name",
-                quick_xml::escape::unescape(self.common.name.as_str())?.as_ref(),
+                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
             ),
             ("id", index.to_string().as_str()),
         ]);
@@ -330,7 +357,7 @@ impl TextSymbol {
         writer.write_event(Event::Empty(text))?;
 
         // framing
-        if let Some(ref fm) = self.framing_mode {
+        if let Some(fm) = &self.framing_mode {
             match fm {
                 FramingMode::NoFraming => {}
                 FramingMode::LineFraming(lf) => {
@@ -365,7 +392,7 @@ impl TextSymbol {
         }
 
         // line_below
-        if let Some(ref lb) = self.line_below {
+        if let Some(lb) = &self.line_below {
             let mut lbe = BytesStart::new("line_below");
             lbe.push_attribute((
                 "color",

@@ -7,9 +7,9 @@ use quick_xml::{
 
 use super::{PointSymbol, SymbolCommon};
 use crate::{
-    Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, Result,
     colors::{ColorSet, SymbolColor},
-    utils::try_get_attr,
+    utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
 
 /// A line symbol definition.
@@ -47,6 +47,38 @@ pub struct LineSymbol {
     pub cap_style: CapStyle,
     /// The join style at line vertices.
     pub join_style: JoinStyle,
+}
+
+impl LineSymbol {
+    /// Create a new empty line symbol with the given code and name.
+    pub fn new(code: Code, name: String) -> LineSymbol {
+        let common = SymbolCommon {
+            code,
+            name,
+            ..Default::default()
+        };
+        LineSymbol {
+            common,
+            border: None,
+            start_symbol: None,
+            mid_symbol: None,
+            end_symbol: None,
+            dash_symbol: None,
+            color: SymbolColor::NoColor,
+            line_width: NonNegativeF64::default(),
+            minimum_length: NonNegativeF64::default(),
+            start_offset: NonNegativeF64::default(),
+            end_offset: NonNegativeF64::default(),
+            dash_style: DashStyle::default(),
+            cap_style: CapStyle::default(),
+            join_style: JoinStyle::default(),
+        }
+    }
+
+    /// Get the display name of this line symbol.
+    pub fn get_name(&self) -> &str {
+        &self.common.name
+    }
 }
 
 /// A dash symbol placed on dashes of a dashed line.
@@ -88,7 +120,8 @@ pub enum CapStyle {
     Round = 1,
     /// Square cap (rectangular extension).
     Square = 2,
-    //PointedCap = 3, // deprecated, replace with default
+    /// Pointed cap (tapered extension).
+    Pointed = 3,
 }
 
 impl FromStr for CapStyle {
@@ -99,7 +132,8 @@ impl FromStr for CapStyle {
             "0" => Ok(CapStyle::Flat),
             "1" => Ok(CapStyle::Round),
             "2" => Ok(CapStyle::Square),
-            _ => Err(Error::SymbolError),
+            "3" => Ok(CapStyle::Pointed),
+            _ => Err(Error::SymbolError(format!("Unknown CapStyle {s}"))),
         }
     }
 }
@@ -124,7 +158,7 @@ impl FromStr for JoinStyle {
             "0" => Ok(JoinStyle::Bevel),
             "1" => Ok(JoinStyle::Miter),
             "2" => Ok(JoinStyle::Round),
-            _ => Err(Error::SymbolError),
+            _ => Err(Error::SymbolError(format!("Unknown JoinStyle {s}"))),
         }
     }
 }
@@ -150,7 +184,9 @@ impl FromStr for MidSymbolPlacement {
             "0" => Ok(MidSymbolPlacement::CenterOfDash),
             "1" => Ok(MidSymbolPlacement::CenterOfDashGroup),
             "2" => Ok(MidSymbolPlacement::CenterOfGap),
-            _ => Err(Error::SymbolError),
+            _ => Err(Error::SymbolError(format!(
+                "Unknown MidSymbolPlacement {s}"
+            ))),
         }
     }
 }
@@ -187,18 +223,20 @@ pub struct LineSymbolBorder {
 
 impl LineSymbolBorder {
     fn parse(element: &BytesStart<'_>, color_set: &ColorSet) -> Result<Self> {
-        let color_index = try_get_attr(element, "color").unwrap_or(-1);
+        let color_index = try_get_attr_raw(element, "color").unwrap_or(-1);
         let color = SymbolColor::from_index(color_index, color_set);
-        let width = NonNegativeF64::from_file_value(try_get_attr(element, "width").unwrap_or(0));
-        let shift = NonNegativeF64::from_file_value(try_get_attr(element, "shift").unwrap_or(0));
-        let is_dashed = try_get_attr(element, "dashed").unwrap_or(false);
+        let width =
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "width").unwrap_or(0));
+        let shift =
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "shift").unwrap_or(0));
+        let is_dashed = try_get_attr_raw(element, "dashed").unwrap_or(false);
         let dashed = if is_dashed {
             Some(BorderDash {
                 dash_length: NonNegativeF64::from_file_value(
-                    try_get_attr(element, "dash_length").unwrap_or(0),
+                    try_get_attr_raw(element, "dash_length").unwrap_or(0),
                 ),
                 break_length: NonNegativeF64::from_file_value(
-                    try_get_attr(element, "break_length").unwrap_or(0),
+                    try_get_attr_raw(element, "break_length").unwrap_or(0),
                 ),
             })
         } else {
@@ -306,10 +344,6 @@ impl Default for GroupDashes {
 }
 
 impl LineSymbol {
-    /// Get the display name of this line symbol.
-    pub fn get_name(&self) -> &str {
-        &self.common.name
-    }
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
@@ -356,45 +390,49 @@ impl LineSymbol {
                         }
                     }
                     b"line_symbol" => {
-                        let color_index = try_get_attr(&e, "color").unwrap_or(-1);
+                        let color_index = try_get_attr_raw(&e, "color").unwrap_or(-1);
                         color = SymbolColor::from_index(color_index, color_set);
                         line_width = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "line_width").unwrap_or(0),
+                            try_get_attr_raw(&e, "line_width").unwrap_or(0),
                         );
                         minimum_length = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "minimum_length").unwrap_or(0),
+                            try_get_attr_raw(&e, "minimum_length").unwrap_or(0),
                         );
-                        join_style = try_get_attr(&e, "join_style").unwrap_or_default();
-                        cap_style = try_get_attr(&e, "cap_style").unwrap_or_default();
+                        join_style = try_get_attr_raw(&e, "join_style").unwrap_or_default();
+                        cap_style = try_get_attr_raw(&e, "cap_style").unwrap_or_default();
                         start_offset = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "start_offset").unwrap_or(0),
+                            try_get_attr_raw(&e, "start_offset").unwrap_or(0),
                         );
                         end_offset = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "end_offset").unwrap_or(0),
+                            try_get_attr_raw(&e, "end_offset").unwrap_or(0),
                         );
-                        dashed = try_get_attr(&e, "dashed").unwrap_or(false);
-                        segment_length = try_get_attr(&e, "segment_length").unwrap_or(4000);
-                        end_length = try_get_attr(&e, "end_length").unwrap_or(0);
-                        dash_length = try_get_attr(&e, "dash_length").unwrap_or(4000);
-                        break_length = try_get_attr(&e, "break_length").unwrap_or(1000);
-                        dashes_in_group = try_get_attr(&e, "dashes_in_group").unwrap_or(1);
+                        dashed = try_get_attr_raw(&e, "dashed").unwrap_or(false);
+                        segment_length = try_get_attr_raw(&e, "segment_length").unwrap_or(4000);
+                        end_length = try_get_attr_raw(&e, "end_length").unwrap_or(0);
+                        dash_length = try_get_attr_raw(&e, "dash_length").unwrap_or(4000);
+                        break_length = try_get_attr_raw(&e, "break_length").unwrap_or(1000);
+                        dashes_in_group = try_get_attr_raw(&e, "dashes_in_group").unwrap_or(1);
                         in_group_break_length =
-                            try_get_attr(&e, "in_group_break_length").unwrap_or(500);
-                        half_outer_dashes = try_get_attr(&e, "half_outer_dashes").unwrap_or(false);
+                            try_get_attr_raw(&e, "in_group_break_length").unwrap_or(500);
+                        half_outer_dashes =
+                            try_get_attr_raw(&e, "half_outer_dashes").unwrap_or(false);
                         show_at_least_one_symbol =
-                            try_get_attr(&e, "show_at_least_one_symbol").unwrap_or(false);
+                            try_get_attr_raw(&e, "show_at_least_one_symbol").unwrap_or(false);
                         minimum_mid_symbol_count =
-                            try_get_attr(&e, "minimum_mid_symbol_count").unwrap_or(0);
+                            try_get_attr_raw(&e, "minimum_mid_symbol_count").unwrap_or(0);
                         minimum_mid_symbol_count_when_closed =
-                            try_get_attr(&e, "minimum_mid_symbol_count_when_closed").unwrap_or(0);
+                            try_get_attr_raw(&e, "minimum_mid_symbol_count_when_closed")
+                                .unwrap_or(0);
                         mid_symbols_per_spot =
-                            try_get_attr(&e, "mid_symbols_per_spot").unwrap_or(1);
-                        mid_symbol_distance = try_get_attr(&e, "mid_symbol_distance").unwrap_or(0);
+                            try_get_attr_raw(&e, "mid_symbols_per_spot").unwrap_or(1);
+                        mid_symbol_distance =
+                            try_get_attr_raw(&e, "mid_symbol_distance").unwrap_or(0);
                         mid_symbol_placement =
-                            try_get_attr(&e, "mid_symbol_placement").unwrap_or_default();
+                            try_get_attr_raw(&e, "mid_symbol_placement").unwrap_or_default();
                         suppress_dash_symbol_at_ends =
-                            try_get_attr(&e, "suppress_dash_symbol_at_ends").unwrap_or(false);
-                        scale_dash_symbol = try_get_attr(&e, "scale_dash_symbol").unwrap_or(true);
+                            try_get_attr_raw(&e, "suppress_dash_symbol_at_ends").unwrap_or(false);
+                        scale_dash_symbol =
+                            try_get_attr_raw(&e, "scale_dash_symbol").unwrap_or(true);
                     }
                     b"start_symbol" => {
                         start_symbol = Self::parse_sub_point_symbol(reader, color_set)?;
@@ -415,7 +453,7 @@ impl LineSymbol {
                 },
                 Event::Empty(e) => {
                     if e.local_name().as_ref() == b"icon"
-                        && let Some(src) = try_get_attr(&e, "src")
+                        && let Some(src) = try_get_attr_raw(&e, "src")
                     {
                         common.custom_icon = Some(src);
                     }
@@ -504,13 +542,12 @@ impl LineSymbol {
                         for attr in e.attributes().filter_map(std::result::Result::ok) {
                             match attr.key.local_name().as_ref() {
                                 b"name" => {
-                                    sub_common.name.push_str(&quick_xml::escape::unescape(
-                                        std::str::from_utf8(&attr.value)?,
-                                    )?);
+                                    sub_common.name =
+                                        parse_attr(attr, e.decoder()).unwrap_or(sub_common.name);
                                 }
                                 b"code" => {
                                     sub_common.code =
-                                        crate::utils::parse_attr(attr.value).unwrap_or_default();
+                                        parse_attr_raw(attr.value).unwrap_or_default();
                                 }
                                 _ => {}
                             }
@@ -518,17 +555,10 @@ impl LineSymbol {
                         result = Some(PointSymbol::parse(reader, color_set, sub_common)?);
                     }
                 }
-                Event::End(e) => {
-                    let name = e.local_name();
-                    let n = name.as_ref();
-                    if n == b"start_symbol"
-                        || n == b"mid_symbol"
-                        || n == b"end_symbol"
-                        || n == b"dash_symbol"
-                    {
-                        break;
-                    }
-                }
+                Event::End(e) => match e.local_name().as_ref() {
+                    b"start_symbol" | b"mid_symbol" | b"end_symbol" | b"dash_symbol" => break,
+                    _ => (),
+                },
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
                         "Unexpected EOF parsing sub point symbol".to_string(),
@@ -536,6 +566,14 @@ impl LineSymbol {
                 }
                 _ => {}
             }
+        }
+        // If the point symbol is empty. Drop it
+        if let Some(ps) = &result
+            && ps.inner_color == SymbolColor::NoColor
+            && ps.outer_color == SymbolColor::NoColor
+            && ps.elements.is_empty()
+        {
+            return Ok(None);
         }
         Ok(result)
     }
@@ -546,7 +584,7 @@ impl LineSymbol {
         element: &BytesStart<'_>,
         color_set: &ColorSet,
     ) -> Result<Option<BorderStyle>> {
-        let borders_different = try_get_attr(element, "borders_different").unwrap_or(false);
+        let borders_different = try_get_attr_raw(element, "borders_different").unwrap_or(false);
         let mut left = None;
         let mut right = None;
         let mut buf = Vec::new();
@@ -595,7 +633,7 @@ impl LineSymbol {
             ("code", self.common.code.to_string().as_str()),
             (
                 "name",
-                quick_xml::escape::unescape(self.common.name.as_str())?.as_ref(),
+                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
             ),
         ]);
         if let Some(id) = id {
@@ -672,6 +710,7 @@ impl LineSymbol {
                         ));
                     }
                     GroupDashes::UnGrouped { half_outer_dashes } => {
+                        bs.push_attribute(("dashes_in_group", "1"));
                         if *half_outer_dashes {
                             bs.push_attribute(("half_outer_dashes", "true"));
                         }
@@ -750,7 +789,6 @@ impl LineSymbol {
                     writer.write_event(Event::End(BytesEnd::new("borders")))?;
                 }
             }
-            writer.write_event(Event::End(BytesEnd::new("borders")))?;
         }
         if let Some(start_symbol) = &self.start_symbol {
             writer.write_event(Event::Start(BytesStart::new("start_symbol")))?;

@@ -1,3 +1,5 @@
+use std::rc::Weak;
+
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -5,12 +7,26 @@ use quick_xml::{
 
 use super::{AreaSymbol, LineSymbol};
 use crate::{
-    Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, Result,
     colors::{ColorSet, SymbolColor},
     objects::{AreaObject, LineObject, PointObject},
-    symbols::SymbolCommon,
-    utils::try_get_attr,
+    symbols::{SymbolCommon, WeakAreaPathSymbol, WeakLinePathSymbol},
+    utils::try_get_attr_raw,
 };
+
+/// Temporary enum used during element parsing
+enum ElementSymbolData {
+    Point(Box<PointSymbol>),
+    Line(Box<LineSymbol>),
+    Area(Box<AreaSymbol>),
+}
+
+/// Temporary enum used during element parsing
+enum ElementObjectData {
+    Point(Box<PointObject>),
+    Line(Box<LineObject>),
+    Area(Box<AreaObject>),
+}
 
 /// An element within a point symbol definition.
 #[derive(Debug, Clone)]
@@ -44,7 +60,7 @@ impl Element {
         match self {
             Element::Point { symbol, object } => {
                 symbol.write(writer, color_set, None)?;
-                object.write_as_element(writer)?;
+                object.write_as_element(writer, symbol.is_rotatable)?;
             }
             Element::Line { symbol, object } => {
                 symbol.write(writer, color_set, None)?;
@@ -63,39 +79,30 @@ impl Element {
     fn parse_element<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
-    ) -> Result<Option<Element>> {
-        let mut symbol_data: Option<ElementSymbolData> = None;
-        let mut result = None;
+    ) -> Result<Element> {
+        let mut symbol_data = None;
+        let mut object_data = None;
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
                     b"symbol" => {
-                        let sym_type: u8 = try_get_attr(&e, "type").unwrap_or(0);
-                        let mut sub_common = SymbolCommon::default();
-                        for attr in e.attributes().filter_map(std::result::Result::ok) {
-                            match attr.key.local_name().as_ref() {
-                                b"name" => {
-                                    sub_common.name.push_str(&quick_xml::escape::unescape(
-                                        std::str::from_utf8(&attr.value)?,
-                                    )?);
-                                }
-                                b"code" => {
-                                    sub_common.code =
-                                        crate::utils::parse_attr(attr.value).unwrap_or_default();
-                                }
-                                _ => {}
-                            }
-                        }
+                        let sym_type = try_get_attr_raw(&e, "type").unwrap_or(0_u8);
                         symbol_data = Some(match sym_type {
                             1 => ElementSymbolData::Point(Box::new(PointSymbol::parse(
-                                reader, color_set, sub_common,
+                                reader,
+                                color_set,
+                                Default::default(),
                             )?)),
                             2 => ElementSymbolData::Line(Box::new(LineSymbol::parse(
-                                reader, color_set, sub_common,
+                                reader,
+                                color_set,
+                                Default::default(),
                             )?)),
                             4 => ElementSymbolData::Area(Box::new(AreaSymbol::parse(
-                                reader, color_set, sub_common,
+                                reader,
+                                color_set,
+                                Default::default(),
                             )?)),
                             _ => {
                                 return Err(Error::ParseOmapFileError(format!(
@@ -106,9 +113,45 @@ impl Element {
                     }
                     b"object" => {
                         // Parse the object based on what symbol we have
-                        if let Some(sym) = symbol_data.take() {
-                            result = Some(Self::parse_element_object(reader, &e, sym)?);
-                        }
+                        let obj_type = try_get_attr_raw(&e, "type").unwrap_or(6_u8);
+                        object_data = Some(match obj_type {
+                            0 => ElementObjectData::Point(Box::new(PointObject::parse(
+                                reader,
+                                Weak::new(),
+                                0.,
+                            )?)),
+                            1 => match &symbol_data {
+                                Some(s) => match s {
+                                    ElementSymbolData::Line(_) => {
+                                        ElementObjectData::Line(Box::new(LineObject::parse(
+                                            reader,
+                                            WeakLinePathSymbol::Line(Weak::new()),
+                                        )?))
+                                    }
+                                    ElementSymbolData::Area(_) => {
+                                        ElementObjectData::Area(Box::new(AreaObject::parse(
+                                            reader,
+                                            WeakAreaPathSymbol::Area(Weak::new()),
+                                        )?))
+                                    }
+                                    _ => {
+                                        return Err(Error::ParseOmapFileError(
+                                            "Symbol Object mismatch in element".to_string(),
+                                        ));
+                                    }
+                                },
+                                None => {
+                                    return Err(Error::ParseOmapFileError(
+                                        "Object before symbol in element".to_string(),
+                                    ));
+                                }
+                            },
+                            _ => {
+                                return Err(Error::ParseOmapFileError(format!(
+                                    "Unknown element object type {obj_type}"
+                                )));
+                            }
+                        });
                     }
                     _ => {}
                 },
@@ -125,62 +168,41 @@ impl Element {
                 _ => {}
             }
         }
-        Ok(result)
-    }
-
-    fn parse_element_object<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        object_element: &BytesStart<'_>,
-        sym: ElementSymbolData,
-    ) -> Result<Element> {
-        let rotation: f64 = try_get_attr(object_element, "rotation").unwrap_or(0.0);
-
-        // Read through to find the <coords> element, then delegate
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(e) => {
-                    if e.local_name().as_ref() == b"coords" {
-                        return match sym {
-                            ElementSymbolData::Point(symbol) => {
-                                let object = PointObject::parse(reader, &e, rotation)?;
-                                Ok(Element::Point {
-                                    symbol,
-                                    object: Box::new(object),
-                                })
-                            }
-                            ElementSymbolData::Line(symbol) => {
-                                let object = LineObject::parse(reader, &e)?;
-                                Ok(Element::Line {
-                                    symbol,
-                                    object: Box::new(object),
-                                })
-                            }
-                            ElementSymbolData::Area(symbol) => {
-                                let object = AreaObject::parse(reader, &e)?;
-                                Ok(Element::Area {
-                                    symbol,
-                                    object: Box::new(object),
-                                })
-                            }
-                        };
-                    }
+        if let Some(sd) = symbol_data
+            && let Some(od) = object_data
+        {
+            match (sd, od) {
+                (
+                    ElementSymbolData::Point(point_symbol),
+                    ElementObjectData::Point(point_object),
+                ) => {
+                    return Ok(Element::Point {
+                        symbol: point_symbol,
+                        object: point_object,
+                    });
                 }
-                Event::End(e) => {
-                    if e.local_name().as_ref() == b"object" {
-                        return Err(Error::ParseOmapFileError(
-                            "Element object ended without coords".to_string(),
-                        ));
-                    }
+                (ElementSymbolData::Line(line_symbol), ElementObjectData::Line(line_object)) => {
+                    return Ok(Element::Line {
+                        symbol: line_symbol,
+                        object: line_object,
+                    });
                 }
-                Event::Eof => {
+                (ElementSymbolData::Area(area_symbol), ElementObjectData::Area(area_object)) => {
+                    return Ok(Element::Area {
+                        symbol: area_symbol,
+                        object: area_object,
+                    });
+                }
+                _ => {
                     return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF parsing element object".to_string(),
+                        "Mismatch between object and symbol type in element".to_string(),
                     ));
                 }
-                _ => {}
             }
         }
+        Err(Error::ParseOmapFileError(
+            "Either object or symbol data was not present in element".to_string(),
+        ))
     }
 }
 
@@ -205,31 +227,41 @@ pub struct PointSymbol {
     pub outer_width: NonNegativeF64,
 }
 
-/// Temporary enum used during element parsing
-enum ElementSymbolData {
-    Point(Box<PointSymbol>),
-    Line(Box<LineSymbol>),
-    Area(Box<AreaSymbol>),
-}
-
 impl PointSymbol {
+    /// Create a new empty point symbol with the given code and name.
+    pub fn new(code: Code, name: String) -> PointSymbol {
+        let common = SymbolCommon {
+            code,
+            name,
+            ..Default::default()
+        };
+        PointSymbol {
+            common,
+            is_rotatable: true,
+            elements: Vec::new(),
+            inner_color: SymbolColor::NoColor,
+            outer_color: SymbolColor::NoColor,
+            inner_radius: NonNegativeF64::default(),
+            outer_width: NonNegativeF64::default(),
+        }
+    }
+
     /// Get the display name of this point symbol.
     pub fn get_name(&self) -> &str {
         &self.common.name
     }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
-        attributes: SymbolCommon,
+        mut common: SymbolCommon,
     ) -> Result<PointSymbol> {
-        let mut common = attributes;
         let mut is_rotatable = false;
         let mut inner_radius = NonNegativeF64::default();
         let mut inner_color = SymbolColor::NoColor;
         let mut outer_width = NonNegativeF64::default();
         let mut outer_color = SymbolColor::NoColor;
         let mut elements = Vec::new();
-        let mut _found_point_symbol = false;
 
         let mut buf = Vec::new();
         loop {
@@ -241,29 +273,28 @@ impl PointSymbol {
                         }
                     }
                     b"point_symbol" => {
-                        _found_point_symbol = true;
-                        is_rotatable = try_get_attr(&e, "rotatable").unwrap_or(false);
+                        is_rotatable = try_get_attr_raw(&e, "rotatable").unwrap_or(is_rotatable);
                         inner_radius = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "inner_radius").unwrap_or(0),
+                            try_get_attr_raw(&e, "inner_radius").unwrap_or(0),
                         );
-                        let ic = try_get_attr(&e, "inner_color").unwrap_or(-1);
-                        inner_color = SymbolColor::from_index(ic, color_set);
+                        inner_color = SymbolColor::from_index(
+                            try_get_attr_raw(&e, "inner_color").unwrap_or(-1),
+                            color_set,
+                        );
                         outer_width = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "outer_width").unwrap_or(0),
+                            try_get_attr_raw(&e, "outer_width").unwrap_or(0),
                         );
-                        let oc = try_get_attr(&e, "outer_color").unwrap_or(-1);
-                        outer_color = SymbolColor::from_index(oc, color_set);
+                        outer_color = SymbolColor::from_index(
+                            try_get_attr_raw(&e, "outer_color").unwrap_or(-1),
+                            color_set,
+                        );
                     }
-                    b"element" => {
-                        if let Some(el) = Element::parse_element(reader, color_set)? {
-                            elements.push(el);
-                        }
-                    }
+                    b"element" => elements.push(Element::parse_element(reader, color_set)?),
                     _ => {}
                 },
                 Event::Empty(e) => {
                     if e.local_name().as_ref() == b"icon"
-                        && let Some(src) = try_get_attr(&e, "src")
+                        && let Some(src) = try_get_attr_raw(&e, "src")
                     {
                         common.custom_icon = Some(src);
                     }
@@ -280,6 +311,34 @@ impl PointSymbol {
                 }
                 _ => {}
             }
+        }
+
+        // Check the point symbol for empty elements. Drop them
+        let mut drop_elements = Vec::with_capacity(elements.len());
+        for (i, element) in elements.iter().enumerate() {
+            match element {
+                Element::Point { symbol, object: _ } => {
+                    if symbol.inner_color == SymbolColor::NoColor
+                        && symbol.outer_color == SymbolColor::NoColor
+                        && symbol.elements.is_empty()
+                    {
+                        drop_elements.push(i);
+                    }
+                }
+                Element::Line { symbol: _, object } => {
+                    if object.get_geometry().0.is_empty() {
+                        drop_elements.push(i);
+                    }
+                }
+                Element::Area { symbol: _, object } => {
+                    if object.get_geometry().exterior().0.is_empty() {
+                        drop_elements.push(i);
+                    }
+                }
+            }
+        }
+        for i in drop_elements.into_iter().rev() {
+            let _ = elements.swap_remove(i);
         }
 
         Ok(PointSymbol {
@@ -299,12 +358,19 @@ impl PointSymbol {
         color_set: &ColorSet,
         index: Option<usize>,
     ) -> Result<()> {
+        // Elements do not have codes so we should skip code writing for the default code
+        let code_str = if self.common.code != Default::default() {
+            self.common.code.to_string()
+        } else {
+            String::new()
+        };
+
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "1"),
-            ("code", self.common.code.to_string().as_str()),
+            ("code", code_str.as_str()),
             (
                 "name",
-                quick_xml::escape::unescape(self.common.name.as_str())?.as_ref(),
+                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
             ),
         ]);
         if let Some(id) = index {

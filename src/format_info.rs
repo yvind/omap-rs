@@ -5,7 +5,7 @@ use quick_xml::{
     events::{BytesDecl, BytesStart, Event},
 };
 
-use crate::utils::{parse_attr, try_get_attr};
+use crate::utils::{parse_attr_raw, try_get_attr_raw};
 use crate::{Code, Error, Result};
 
 /// The OMAP file format version.
@@ -17,8 +17,8 @@ pub struct OmapVersion {
 
 impl<'writer> OmapVersion {
     pub(crate) fn parse(element: &BytesStart<'_>) -> Result<Self> {
-        let xmlns = try_get_attr(element, "xmlns");
-        let version = try_get_attr(element, "version");
+        let xmlns = try_get_attr_raw(element, "xmlns");
+        let version = try_get_attr_raw(element, "version");
 
         if let Some(xmlns) = xmlns
             && let Some(version) = version
@@ -73,7 +73,7 @@ impl Default for XmlVersion {
 impl XmlVersion {
     pub(crate) fn parse(decl: BytesDecl<'_>) -> Result<Self> {
         let version = String::from_utf8(decl.version()?.into_owned())?;
-        let encoding = parse_attr(decl.encoding().ok_or(Error::UnsupportedEncoding(
+        let encoding = parse_attr_raw(decl.encoding().ok_or(Error::UnsupportedEncoding(
             "No Encoding tag found".to_owned(),
         ))??)
         .ok_or(Error::UnsupportedEncoding(
@@ -168,8 +168,8 @@ impl Barrier {
         let mut version = 0;
         for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"version" => version = parse_attr(attr.value).unwrap_or(version),
-                b"required" => required = parse_attr(attr.value).unwrap_or(required),
+                b"version" => version = parse_attr_raw(attr.value).unwrap_or(version),
+                b"required" => required = parse_attr_raw(attr.value).unwrap_or(required),
                 b"action" => skip = attr.value.as_ref() == b"skip",
                 _ => (),
             }

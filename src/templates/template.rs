@@ -9,7 +9,7 @@ use super::transform::{AdjustmentState, Transformations};
 use crate::{
     Error, Result,
     templates::transform::{PassPoint, TemplateTransform},
-    utils::parse_attr,
+    utils::parse_attr_raw,
 };
 
 /// A template attached to the map. Each variant carries type-specific data.
@@ -158,13 +158,13 @@ impl Template {
 
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"type" => template_type = parse_attr(attr.value).unwrap_or(template_type),
+                b"type" => template_type = parse_attr_raw(attr.value).unwrap_or(template_type),
                 b"open" => is_open = attr.as_bool().unwrap_or(false),
-                b"name" => name = parse_attr(attr.value).unwrap_or(name),
-                b"path" => path = parse_attr(attr.value).unwrap_or(path),
-                b"relpath" => relpath = parse_attr(attr.value).unwrap_or(relpath),
+                b"name" => name = parse_attr_raw(attr.value).unwrap_or(name),
+                b"path" => path = parse_attr_raw(attr.value).unwrap_or(path),
+                b"relpath" => relpath = parse_attr_raw(attr.value).unwrap_or(relpath),
                 b"georef" => is_georeferenced = attr.as_bool().unwrap_or(false),
-                b"group" => group = parse_attr(attr.value).unwrap_or(-1),
+                b"group" => group = parse_attr_raw(attr.value).unwrap_or(-1),
                 _ => {}
             }
         }
@@ -241,11 +241,11 @@ impl Template {
             ("name", common.name.as_str()),
             (
                 "path",
-                quick_xml::escape::unescape(common.path.to_string_lossy().as_ref())?.as_ref(),
+                quick_xml::escape::escape(common.path.to_string_lossy().as_ref()).as_ref(),
             ),
             (
                 "relpath",
-                quick_xml::escape::unescape(common.relpath.to_string_lossy().as_ref())?.as_ref(),
+                quick_xml::escape::escape(common.relpath.to_string_lossy().as_ref()).as_ref(),
             ),
         ]);
 
@@ -258,7 +258,7 @@ impl Template {
 
         writer.write_event(Event::Start(start))?;
 
-        if let Some(ref t) = common.transformations {
+        if let Some(t) = &common.transformations {
             t.write(writer)?;
         }
 

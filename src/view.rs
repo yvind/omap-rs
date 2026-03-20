@@ -6,7 +6,7 @@ use quick_xml::{Reader, Writer};
 
 use crate::colors::Rgb;
 use crate::templates::Templates;
-use crate::utils::{UnitF64, parse_attr, try_get_attr};
+use crate::utils::{UnitF64, parse_attr_raw, try_get_attr_raw};
 use crate::{Error, Result};
 
 /// Visibility settings for a template or the map layer.
@@ -32,7 +32,7 @@ impl TemplateVisibility {
         let mut tv = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"opacity" => tv.opacity = parse_attr(attr.value).unwrap_or(tv.opacity),
+                b"opacity" => tv.opacity = parse_attr_raw(attr.value).unwrap_or(tv.opacity),
                 b"visible" => tv.visible = attr.as_bool().unwrap_or(tv.visible),
                 _ => (),
             }
@@ -232,17 +232,17 @@ impl Grid {
         let mut g = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"color" => g.color = parse_attr(attr.value).unwrap_or(g.color),
-                b"display" => g.display = parse_attr(attr.value).unwrap_or(g.display),
-                b"alignment" => g.alignment = parse_attr(attr.value).unwrap_or(g.alignment),
-                b"unit" => g.unit = parse_attr(attr.value).unwrap_or(g.unit),
+                b"color" => g.color = parse_attr_raw(attr.value).unwrap_or(g.color),
+                b"display" => g.display = parse_attr_raw(attr.value).unwrap_or(g.display),
+                b"alignment" => g.alignment = parse_attr_raw(attr.value).unwrap_or(g.alignment),
+                b"unit" => g.unit = parse_attr_raw(attr.value).unwrap_or(g.unit),
                 b"additional_rotation" => {
-                    g.additional_rotation = parse_attr(attr.value).unwrap_or(g.additional_rotation)
+                    g.additional_rotation = parse_attr_raw(attr.value).unwrap_or(g.additional_rotation)
                 }
-                b"h_spacing" => g.h_spacing = parse_attr(attr.value).unwrap_or(g.h_spacing),
-                b"v_spacing" => g.v_spacing = parse_attr(attr.value).unwrap_or(g.v_spacing),
-                b"h_offset" => g.h_offset = parse_attr(attr.value).unwrap_or(g.h_offset),
-                b"v_offset" => g.v_offset = parse_attr(attr.value).unwrap_or(g.v_offset),
+                b"h_spacing" => g.h_spacing = parse_attr_raw(attr.value).unwrap_or(g.h_spacing),
+                b"v_spacing" => g.v_spacing = parse_attr_raw(attr.value).unwrap_or(g.v_spacing),
+                b"h_offset" => g.h_offset = parse_attr_raw(attr.value).unwrap_or(g.h_offset),
+                b"v_offset" => g.v_offset = parse_attr_raw(attr.value).unwrap_or(g.v_offset),
                 b"snapping_enabled" => {
                     g.snapping_enabled = attr.as_bool().unwrap_or(g.snapping_enabled)
                 }
@@ -345,10 +345,10 @@ impl View {
         bs: &BytesStart<'_>,
         templates: &mut Templates,
     ) -> Result<()> {
-        self.zoom = try_get_attr(bs, "zoom").unwrap_or(1.0);
-        self.rotation = try_get_attr(bs, "rotation").unwrap_or(0.0);
-        self.view_centre.x = try_get_attr(bs, "position_x").unwrap_or(0);
-        self.view_centre.y = try_get_attr(bs, "position_y").unwrap_or(0);
+        self.zoom = try_get_attr_raw(bs, "zoom").unwrap_or(1.0);
+        self.rotation = try_get_attr_raw(bs, "rotation").unwrap_or(0.0);
+        self.view_centre.x = try_get_attr_raw(bs, "position_x").unwrap_or(0);
+        self.view_centre.y = try_get_attr_raw(bs, "position_y").unwrap_or(0);
 
         let mut buf = Vec::new();
         loop {
@@ -382,7 +382,7 @@ impl View {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bs) if bs.local_name().as_ref() == b"ref" => {
-                    if let Some(index) = try_get_attr::<usize>(&bs, "index")
+                    if let Some(index) = try_get_attr_raw::<usize>(&bs, "index")
                         && index < templates.len()
                     {
                         templates.template_entries[index].visibilty =

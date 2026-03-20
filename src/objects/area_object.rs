@@ -4,14 +4,14 @@ use geo_types::{Coord, LineString, Polygon};
 use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
 use quick_xml::{
     Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use crate::objects::{MapCoord, PARSE_BEZIER_ERROR, write_raw_coords};
-use crate::symbols::AreaObjectSymbol;
+use super::{FileCoord, PARSE_BEZIER_ERROR};
 use crate::{
     Error, Result,
-    utils::{from_file_coords, to_file_coords, try_get_attr},
+    symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
+    utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
 
 /// A fill pattern rotation and origin used by area objects.
@@ -31,17 +31,30 @@ pub struct AreaObject {
     /// The fill-pattern rotation and origin.
     pub pattern_rotation: PatternRotation,
     /// The area or combined-area symbol used to render this object.
-    pub symbol: AreaObjectSymbol,
+    pub symbol: WeakAreaPathSymbol,
     /// Whether the coordinates should be written back as bezier curves.
     pub write_as_bezier: bool,
     geometry: Polygon,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
-    raw_map_coords: Vec<MapCoord>,
+    raw_map_coords: Vec<FileCoord>,
     is_coords_touched: bool,
 }
 
 impl AreaObject {
+    /// Create a new area object with the given symbol and geometry.
+    pub fn new(symbol: WeakAreaPathSymbol, geometry: Polygon) -> Self {
+        AreaObject {
+            tags: HashMap::new(),
+            pattern_rotation: PatternRotation::default(),
+            symbol,
+            write_as_bezier: false,
+            geometry,
+            raw_map_coords: Vec::new(),
+            is_coords_touched: true,
+        }
+    }
+
     /// Get a shared reference to the polygon geometry.
     pub fn get_geometry(&self) -> &Polygon {
         &self.geometry
@@ -67,7 +80,7 @@ impl AreaObject {
         AreaObject {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
-            symbol: AreaObjectSymbol::Area(std::rc::Weak::new()),
+            symbol: WeakAreaPathSymbol::Area(std::rc::Weak::new()),
             write_as_bezier: false,
             geometry,
             raw_map_coords: Vec::new(),
@@ -80,30 +93,81 @@ impl AreaObject {
         self.geometry.exterior().coords()
     }
 
-    /// Write just the inner content (coords + pattern) — called from MapObject::write.
-    /// Uses raw coords if untouched, otherwise converts geometry to file coords.
-    pub(super) fn write_content<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(super) fn write<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        symbol_set: &SymbolSet,
+    ) -> Result<()> {
+        let idx = match &self.symbol {
+            WeakAreaPathSymbol::Area(weak) => {
+                if let Some(sym) = weak.upgrade() {
+                    symbol_set
+                        .iter()
+                        .position(|s| match s {
+                            Symbol::Area(ref_cell) => ref_cell.as_ptr() == sym.as_ptr(),
+                            _ => false,
+                        })
+                        .map(|p| p as i32)
+                        .unwrap_or(-1)
+                } else {
+                    -1
+                }
+            }
+            WeakAreaPathSymbol::CombinedArea(weak) => {
+                if let Some(sym) = weak.upgrade() {
+                    symbol_set
+                        .iter()
+                        .position(|s| match s {
+                            Symbol::CombinedArea(ref_cell) => ref_cell.as_ptr() == sym.as_ptr(),
+                            _ => false,
+                        })
+                        .map(|p| p as i32)
+                        .unwrap_or(-1)
+                } else {
+                    -1
+                }
+            }
+        };
+        self.write_content(writer, Some(idx))?;
+        Ok(())
+    }
+
+    /// Write a full `<object>...</object>` element - used for point symbol elements
+    pub(crate) fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        self.write_content(writer, None)?;
+        Ok(())
+    }
+
+    /// Write the object.
+    /// Uses raw coords if untouched, otherwise writes geometry.
+    fn write_content<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        symbol_index: Option<i32>,
+    ) -> Result<()> {
+        let mut bs = BytesStart::new("object").with_attributes([("type", "1")]);
+        if let Some(sid) = symbol_index {
+            bs.push_attribute(("symbol", sid.to_string().as_str()));
+        }
+        writer.write_event(Event::Start(bs))?;
+        // elements are not allowed to have tags
+        if !self.tags.is_empty() && symbol_index.is_some() {
+            super::write_tags(writer, &self.tags)?;
+        }
+
         if !self.is_coords_touched && !self.raw_map_coords.is_empty() {
-            write_raw_coords(writer, &self.raw_map_coords)?;
+            super::write_raw_coords(writer, &self.raw_map_coords)?;
         } else {
             self.write_geometry_coords(writer)?;
         }
         self.write_pattern(writer)?;
-        Ok(())
-    }
-
-    /// Write a full `<object>...</object>` element — used for point symbol elements
-    pub fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let bs = BytesStart::new("object").with_attributes([("type", "1")]);
-        writer.write_event(Event::Start(bs))?;
-        self.write_element_coords(writer)?;
         writer.write_event(Event::End(BytesEnd::new("object")))?;
         Ok(())
     }
 
-    /// Write coords from the geometry (for map objects, with all rings and proper flags)
+    /// Write coords from the geometry, as bezier if self.write_as_bezier
     fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let mut all_coords: Vec<MapCoord> = Vec::new();
+        let mut all_coords: Vec<FileCoord> = Vec::new();
 
         // exterior ring
         let ext = self.geometry.exterior();
@@ -125,30 +189,7 @@ impl AreaObject {
             }
         }
 
-        write_raw_coords(writer, &all_coords)?;
-        Ok(())
-    }
-
-    /// Write coords from geometry for element objects (just exterior, with close flag)
-    fn write_element_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let ext = self.geometry.exterior();
-        let coords: Vec<_> = ext.coords().collect();
-        let bs = BytesStart::new("coords")
-            .with_attributes([("count", coords.len().to_string().as_str())]);
-        writer.write_event(Event::Start(bs))?;
-        let mut content = String::new();
-        for (i, coord) in coords.iter().enumerate() {
-            let fc = to_file_coords(**coord)?;
-            content.push_str(&fc.x.to_string());
-            content.push(' ');
-            content.push_str(&fc.y.to_string());
-            if i == coords.len() - 1 {
-                content.push_str(" 18");
-            }
-            content.push(';');
-        }
-        writer.write_event(Event::Text(BytesText::new(&content)))?;
-        writer.write_event(Event::End(BytesEnd::new("coords")))?;
+        super::write_raw_coords(writer, &all_coords)?;
         Ok(())
     }
 
@@ -167,35 +208,36 @@ impl AreaObject {
         Ok(())
     }
 
-    /// Parse an area object. The reader should be positioned right after
-    /// the `<coords>` start event. Reads through `</object>`.
+    /// Parse an area object. The reader should be positioned right after the `<object>` start event. Reads through `</object>`.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        coords_element: &BytesStart<'_>,
+        symbol: WeakAreaPathSymbol,
     ) -> Result<AreaObject> {
+        let mut tags = HashMap::new();
         let mut pr = PatternRotation::default();
-        let num_coords: usize = try_get_attr(coords_element, "count").unwrap_or(0);
-
         let mut linestrings = Vec::new();
-        let mut line = Vec::with_capacity(num_coords);
-        let mut raw_map_coords = Vec::with_capacity(num_coords);
+        let mut line = Vec::new();
+        let mut raw_map_coords = Vec::new();
 
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    b"pattern" => {
-                        pr.rotation = try_get_attr(&bytes_start, "rotation").unwrap_or(pr.rotation)
+                    b"coords" => {
+                        let num_coords: usize =
+                            try_get_attr_raw(&bytes_start, "count").unwrap_or(0);
+                        line.reserve(num_coords);
+                        raw_map_coords.reserve(num_coords);
                     }
+                    b"pattern" => {
+                        pr.rotation =
+                            try_get_attr_raw(&bytes_start, "rotation").unwrap_or(pr.rotation)
+                    }
+                    b"tags" => tags = super::parse_tags(reader)?,
                     b"coord" => {
-                        let x = try_get_attr::<i32>(&bytes_start, "x");
-                        let y = try_get_attr::<i32>(&bytes_start, "y");
-
-                        if let Some(x) = x
-                            && let Some(y) = y
-                        {
-                            pr.coord = from_file_coords(Coord { x, y });
-                        }
+                        let x = try_get_attr_raw(&bytes_start, "x").unwrap_or(0);
+                        let y = try_get_attr_raw(&bytes_start, "y").unwrap_or(0);
+                        pr.coord = from_file_coords(Coord { x, y });
                     }
                     _ => (),
                 },
@@ -205,10 +247,9 @@ impl AreaObject {
                     }
                 }
                 Event::Text(bytes_text) => {
-                    let raw_xml = String::from_utf8(bytes_text.to_vec())?;
+                    let raw_xml = str::from_utf8(bytes_text.as_ref())?;
 
-                    let mut handles_written = 0_u8;
-                    let mut bezier_on = false;
+                    let mut next_handle = 0_u8;
                     let mut bezier_buf = BezierString::empty();
                     let mut bezier_curve_buf = BezierCurve::zero();
 
@@ -216,20 +257,14 @@ impl AreaObject {
                         let mut parts: (i32, i32, u8) = (0, 0, 0);
                         let mut split = vertex.split_whitespace();
 
-                        if let Some(e) = split.next() {
-                            parts.0 = e.parse()?;
-                        } else {
-                            return Err(Error::InvalidCoordinate(
-                                "No x value in split".to_string(),
-                            ));
-                        }
-                        if let Some(e) = split.next() {
-                            parts.1 = e.parse()?;
-                        } else {
-                            return Err(Error::InvalidCoordinate(
-                                "No y value in split".to_string(),
-                            ));
-                        }
+                        parts.0 = split
+                            .next()
+                            .ok_or(Error::InvalidCoordinate("No x value in split".to_string()))?
+                            .parse()?;
+                        parts.1 = split
+                            .next()
+                            .ok_or(Error::InvalidCoordinate("No y value in split".to_string()))?
+                            .parse()?;
                         if let Some(e) = split.next() {
                             parts.2 = e.parse()?;
                         }
@@ -247,51 +282,57 @@ impl AreaObject {
                             y: parts.1,
                         });
 
-                        // check flags, we only care about the bezier flag '1' and the end flag '18'
-                        //  1 = Bezier curve start
-                        if (parts.2 & 1) == 1 && !bezier_on {
-                            // bezier start
-                            bezier_curve_buf.start = coord;
-                            bezier_on = true;
-                        } else if (parts.2 & 1) == 1 && bezier_on {
-                            // bezier end and next start
-                            bezier_curve_buf.end = coord;
-                            bezier_buf
-                                .0
-                                .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
-                            bezier_curve_buf.start = coord;
-                        } else if bezier_on && handles_written < 2 {
-                            // first handles
-                            if handles_written == 0 {
-                                bezier_curve_buf.handle1 = coord;
-                            } else if handles_written == 1 {
-                                bezier_curve_buf.handle2 = coord;
+                        // for areas we care about the bezier flag 1 and the close/hole flag 2
+                        // check for start of bezier flag, and how far along a bezier we are
+                        match (parts.2 & 1 == 1, next_handle) {
+                            (true, 0) => {
+                                // bezier start
+                                bezier_curve_buf.start = coord;
+                                next_handle += 1;
                             }
-                            handles_written += 1;
-                        } else if bezier_on && handles_written == 2 {
-                            // end point
-                            bezier_curve_buf.end = coord;
-                            bezier_buf
-                                .0
-                                .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
-
-                            // convert the bezier to line string and add to end of line
-                            line.extend(
+                            (true, 3) => {
+                                // bezier end and next start
+                                bezier_curve_buf.end = coord;
                                 bezier_buf
-                                    .clone()
-                                    .to_line_string(PARSE_BEZIER_ERROR)?
-                                    .into_inner(),
-                            );
+                                    .0
+                                    .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
+                                bezier_curve_buf.start = coord;
+                                next_handle = 1;
+                            }
+                            (false, 1) => {
+                                // bezier first handle
+                                bezier_curve_buf.handle1 = coord;
+                                next_handle += 1;
+                            }
+                            (false, 2) => {
+                                // bezier second handle
+                                bezier_curve_buf.handle2 = coord;
+                                next_handle += 1;
+                            }
+                            (false, 3) => {
+                                // end point
+                                bezier_curve_buf.end = coord;
+                                bezier_buf
+                                    .0
+                                    .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
 
-                            bezier_on = false;
-                            handles_written = 0;
-                        } else if !bezier_on {
-                            // normal coord
-                            line.push(coord);
-                        } else {
-                            debug_assert!(false, "This should not be reachable in line parsing")
+                                // convert the bezier to line string and add to end of line
+                                line.extend(
+                                    bezier_buf
+                                        .clone()
+                                        .to_line_string(PARSE_BEZIER_ERROR)?
+                                        .into_inner(),
+                                );
+                                next_handle = 0;
+                            }
+                            (false, 0) => {
+                                // normal coord
+                                line.push(coord);
+                            }
+                            _ => return Err(Error::ObjectError),
                         }
 
+                        // check for close/hole flag (flag & 2)
                         if (parts.2 & 2) == 2 {
                             linestrings.push(LineString::new(line));
                             line = Vec::new();
@@ -306,18 +347,20 @@ impl AreaObject {
                 _ => (),
             }
         }
+        // Check if the polygon is not closed. Close it
         if !line.is_empty() {
+            line.push(line[0]);
             linestrings.push(LineString::new(line));
         }
         let exterior = if linestrings.is_empty() {
-            LineString::new(vec![])
+            return Err(Error::ObjectError);
         } else {
             linestrings.remove(0)
         };
         Ok(AreaObject {
-            tags: HashMap::new(),
+            tags,
             pattern_rotation: pr,
-            symbol: AreaObjectSymbol::Area(std::rc::Weak::new()),
+            symbol,
             write_as_bezier: false,
             geometry: Polygon::new(exterior, linestrings),
             raw_map_coords,
@@ -326,7 +369,7 @@ impl AreaObject {
     }
 }
 
-pub(crate) fn reverse_raw_polygon_coords(coords: &[MapCoord]) -> Vec<MapCoord> {
+pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord> {
     // get each of the substrings for each loop and flip them
     // a substring ends with a 2 flag (often 18 or 50)
     let mut s = Vec::with_capacity(coords.len());

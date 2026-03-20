@@ -6,7 +6,7 @@ use quick_xml::{
 };
 
 use super::{Color, ColorComponent, WeakColor, color::ColorParseReturn};
-use crate::utils::{UnitF64, try_get_attr};
+use crate::utils::{UnitF64, try_get_attr_raw};
 use crate::{Error, Result};
 
 /// The order of the [Color]s in the [Vec] is the order of priority
@@ -25,7 +25,7 @@ impl ColorSet {
 
     /// Get a color by its priority index.
     pub fn get_color_by_priority(&self, priority: usize) -> Option<&Color> {
-        if self.num_colors() >= priority {
+        if priority >= self.num_colors() {
             None
         } else {
             Some(&self.0[priority])
@@ -84,7 +84,7 @@ impl ColorSet {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
     ) -> Result<ColorSet> {
-        let num_colors = try_get_attr(element, "count").ok_or(Error::ColorError)?;
+        let num_colors = try_get_attr_raw(element, "count").ok_or(Error::ColorError)?;
         let mut colors_and_components = Vec::with_capacity(num_colors);
 
         let mut buf = Vec::new();
@@ -160,7 +160,7 @@ impl ColorSet {
             BytesStart::new("colors")
                 .with_attributes([("count", self.num_colors().to_string().as_str())]),
         ))?;
-
+        writer.get_mut().write_all(b"\n".as_slice())?;
         for (priority, color) in self.0.iter().enumerate() {
             match color {
                 Color::SpotColor(ref_cell) => ref_cell.try_borrow()?.write(writer, priority)?,
@@ -168,6 +168,7 @@ impl ColorSet {
                     ref_cell.try_borrow()?.write(writer, priority, &self)?
                 }
             };
+            writer.get_mut().write_all(b"\n".as_slice())?;
         }
         writer.write_event(Event::End(BytesEnd::new("colors")))?;
         Ok(())

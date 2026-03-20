@@ -1,16 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Weak};
 
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
+use quick_xml::{Reader, Writer, events::BytesStart};
 
-use super::{AreaObject, LineObject, PointObject, TextObject, write_tags};
+use super::{AreaObject, LineObject, PointObject, TextObject};
 use crate::{
     Error, Result,
     objects::{HorizontalAlign, VerticalAlign},
-    symbols::{AreaObjectSymbol, LineObjectSymbol, SymbolSet, WeakSymbol},
-    utils::parse_attr,
+    symbols::{SymbolSet, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol},
+    utils::parse_attr_raw,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,32 +32,24 @@ pub enum MapObject {
 }
 
 impl MapObject {
-    fn type_value(&self) -> u8 {
-        match self {
-            MapObject::Point(_) => 0,
-            MapObject::Area(_) => 1,
-            MapObject::Line(_) => 1,
-            MapObject::Text(_) => 4,
-        }
-    }
-
     /// Get a non-owning reference to the symbol associated with this object.
     pub fn get_weak_symbol(&self) -> WeakSymbol {
         match self {
             MapObject::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
             MapObject::Line(line_object) => match &line_object.symbol {
-                LineObjectSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
-                LineObjectSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
+                WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
+                WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
             },
             MapObject::Area(area_object) => match &area_object.symbol {
-                AreaObjectSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
-                AreaObjectSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
+                WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
+                WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
             },
             MapObject::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
         }
     }
 
-    fn tags(&self) -> &HashMap<String, String> {
+    /// Get the tags of the object
+    pub fn tags(&self) -> &HashMap<String, String> {
         match self {
             MapObject::Point(o) => &o.tags,
             MapObject::Line(o) => &o.tags,
@@ -72,51 +61,39 @@ impl MapObject {
     pub(crate) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
-        symbols: &SymbolSet,
+        symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let mut bs = BytesStart::new("object");
-        bs.push_attribute(("type", self.type_value().to_string().as_str()));
-
-        // Write symbol index
-        if let Some(idx) = symbols.get_index_of_weak_symbol(&self.get_weak_symbol()) {
-            bs.push_attribute(("symbol", idx.to_string().as_str()));
-        }
-
-        // Write rotation and text-specific attributes
         match self {
-            MapObject::Point(p) => {
-                if p.rotation.abs() > f64::EPSILON {
-                    bs.push_attribute(("rotation", p.rotation.to_string().as_str()));
-                }
-            }
-            MapObject::Text(t) => {
-                if t.rotation.abs() > f64::EPSILON {
-                    bs.push_attribute(("rotation", t.rotation.to_string().as_str()));
-                }
-                bs.push_attribute(("h_align", (t.h_align as u8).to_string().as_str()));
-                bs.push_attribute(("v_align", (t.v_align as u8).to_string().as_str()));
-            }
-            _ => {}
+            MapObject::Point(point_object) => point_object.write(writer, symbol_set)?,
+            MapObject::Line(line_object) => line_object.write(writer, symbol_set)?,
+            MapObject::Area(area_object) => area_object.write(writer, symbol_set)?,
+            MapObject::Text(text_object) => text_object.write(writer, symbol_set)?,
         }
-
-        writer.write_event(Event::Start(bs))?;
-
-        // Write tags if present
-        let tags = self.tags();
-        if !tags.is_empty() {
-            write_tags(writer, tags)?;
-        }
-
-        // Write type-specific content (coords + extras)
-        match self {
-            MapObject::Point(p) => p.write_content(writer)?,
-            MapObject::Line(l) => l.write_content(writer)?,
-            MapObject::Area(a) => a.write_content(writer)?,
-            MapObject::Text(t) => t.write_content(writer)?,
-        }
-
-        writer.write_event(Event::End(BytesEnd::new("object")))?;
         Ok(())
+    }
+}
+
+impl From<AreaObject> for MapObject {
+    fn from(value: AreaObject) -> Self {
+        MapObject::Area(value)
+    }
+}
+
+impl From<LineObject> for MapObject {
+    fn from(value: LineObject) -> Self {
+        MapObject::Line(value)
+    }
+}
+
+impl From<PointObject> for MapObject {
+    fn from(value: PointObject) -> Self {
+        MapObject::Point(value)
+    }
+}
+
+impl From<TextObject> for MapObject {
+    fn from(value: TextObject) -> Self {
+        MapObject::Text(value)
     }
 }
 
@@ -125,6 +102,7 @@ impl MapObject {
         reader: &mut Reader<R>,
         bytes_start: &BytesStart<'_>,
         symbols: &SymbolSet,
+        is_line_element: bool,
     ) -> Result<MapObject> {
         let mut object_type = None;
         let mut symbol_id = None;
@@ -140,28 +118,42 @@ impl MapObject {
                     b"4" => object_type = Some(ObjectType::Text),
                     _ => (),
                 },
-                b"symbol" => symbol_id = parse_attr(attr.value),
-                b"rotation" => rotation = parse_attr(attr.value).unwrap_or(rotation),
-                b"h_align" => h_align = parse_attr(attr.value).unwrap_or(h_align),
-                b"v_align" => v_align = parse_attr(attr.value).unwrap_or(v_align),
+                b"symbol" => symbol_id = parse_attr_raw::<i32>(attr.value),
+                b"rotation" => rotation = parse_attr_raw(attr.value).unwrap_or(rotation),
+                b"h_align" => h_align = parse_attr_raw(attr.value).unwrap_or(h_align),
+                b"v_align" => v_align = parse_attr_raw(attr.value).unwrap_or(v_align),
                 _ => (),
             }
         }
 
-        if symbol_id.is_none() || object_type.is_none() {
+        if object_type.is_none() {
             return Err(Error::ParseOmapFileError(
-                "Could not parse object".to_string(),
+                "Could not parse object type".to_string(),
             ));
         }
         let mut object_type = object_type.unwrap();
-        let symbol_id = symbol_id.unwrap();
+        if is_line_element {
+            object_type = ObjectType::Line
+        }
 
-        let weak_symbol =
+        // for elements the symbol_id is not given as the symbol is given in the element and we need to create a dummy weaksymbol
+        // Objects can have symbol id of -1 meaning unknown symbol so create a dummy in that case also
+        let weak_symbol = if let Some(sid) = symbol_id
+            && sid >= 0
+        {
             symbols
-                .get_weak_symbol_by_id(symbol_id)
-                .ok_or(Error::ParseOmapFileError(
-                    "Unknown Symbol in MapObject parsing".to_string(),
-                ))?;
+                .get_weak_symbol_by_id(sid as usize)
+                .ok_or(Error::ParseOmapFileError(format!(
+                    "Unknown Symbol id: {sid} in Object parsing"
+                )))?
+        } else {
+            match object_type {
+                ObjectType::Point => WeakSymbol::Point(Weak::new()),
+                ObjectType::Line => WeakSymbol::Line(Weak::new()),
+                ObjectType::Area => WeakSymbol::Area(Weak::new()),
+                ObjectType::Text => WeakSymbol::Text(Weak::new()),
+            }
+        };
 
         // Mapper does not discern between area and line objects. But we do because we want a Polygon or a LineString!
         // Let's check the symbol for what the object must be
@@ -172,83 +164,29 @@ impl MapObject {
             }
         }
 
-        let mut tags = None;
-
-        // Read child elements until we find <coords>, then delegate
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(ref inner) => match inner.local_name().as_ref() {
-                    b"tags" => tags = Some(super::parse_tags(reader)?),
-                    b"coords" => {
-                        // Delegate to the appropriate object parser.
-                        // Each parser reads from inside <coords> through </object>.
-                        let mut map_object = match object_type {
-                            ObjectType::Point => {
-                                MapObject::Point(PointObject::parse(reader, inner, rotation)?)
-                            }
-                            ObjectType::Line => MapObject::Line(LineObject::parse(reader, inner)?),
-                            ObjectType::Area => MapObject::Area(AreaObject::parse(reader, inner)?),
-                            ObjectType::Text => MapObject::Text(TextObject::parse(
-                                reader, inner, h_align, v_align, rotation,
-                            )?),
-                        };
-
-                        // Set tags if we parsed any
-                        if let Some(t) = tags {
-                            match &mut map_object {
-                                MapObject::Point(o) => o.tags = t,
-                                MapObject::Line(o) => o.tags = t,
-                                MapObject::Area(o) => o.tags = t,
-                                MapObject::Text(o) => o.tags = t,
-                            }
-                        }
-
-                        // Set the symbol
-                        match (&mut map_object, &weak_symbol) {
-                            (MapObject::Point(o), WeakSymbol::Point(w)) => {
-                                o.symbol = w.clone();
-                            }
-                            (MapObject::Line(o), WeakSymbol::Line(w)) => {
-                                o.symbol = LineObjectSymbol::Line(w.clone());
-                            }
-                            (MapObject::Line(o), WeakSymbol::CombinedLine(w)) => {
-                                o.symbol = LineObjectSymbol::CombinedLine(w.clone());
-                            }
-                            (MapObject::Area(o), WeakSymbol::Area(w)) => {
-                                o.symbol = AreaObjectSymbol::Area(w.clone());
-                            }
-                            (MapObject::Area(o), WeakSymbol::CombinedArea(w)) => {
-                                o.symbol = AreaObjectSymbol::CombinedArea(w.clone());
-                            }
-                            (MapObject::Text(o), WeakSymbol::Text(w)) => {
-                                o.symbol = w.clone();
-                            }
-                            _ => {
-                                return Err(Error::ParseOmapFileError(
-                                    "Symbol type mismatch for object".to_string(),
-                                ));
-                            }
-                        }
-
-                        return Ok(map_object);
-                    }
-                    _ => (),
-                },
-                Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"object") {
-                        return Err(Error::ParseOmapFileError(
-                            "Object ended without coords".to_string(),
-                        ));
-                    }
-                }
-                Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in object parsing".to_string(),
-                    ));
-                }
-                _ => (),
+        match (object_type, weak_symbol) {
+            (ObjectType::Point, WeakSymbol::Point(ps)) => {
+                Ok(MapObject::Point(PointObject::parse(reader, ps, rotation)?))
             }
+            (ObjectType::Line, WeakSymbol::Line(ls)) => Ok(MapObject::Line(LineObject::parse(
+                reader,
+                WeakLinePathSymbol::Line(ls),
+            )?)),
+            (ObjectType::Line, WeakSymbol::CombinedLine(cls)) => Ok(MapObject::Line(
+                LineObject::parse(reader, WeakLinePathSymbol::CombinedLine(cls))?,
+            )),
+            // do not bother sending rotation to the AreaObject as it is also given in the pattern rotation
+            (ObjectType::Area, WeakSymbol::Area(ars)) => Ok(MapObject::Area(AreaObject::parse(
+                reader,
+                WeakAreaPathSymbol::Area(ars),
+            )?)),
+            (ObjectType::Area, WeakSymbol::CombinedArea(cas)) => Ok(MapObject::Area(
+                AreaObject::parse(reader, WeakAreaPathSymbol::CombinedArea(cas))?,
+            )),
+            (ObjectType::Text, WeakSymbol::Text(ts)) => Ok(MapObject::Text(TextObject::parse(
+                reader, ts, h_align, v_align, rotation,
+            )?)),
+            _ => Err(Error::ObjectError),
         }
     }
 }

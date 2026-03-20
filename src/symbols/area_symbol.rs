@@ -9,7 +9,7 @@ use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, Result,
     colors::{ColorSet, SymbolColor},
-    utils::try_get_attr,
+    utils::{parse_attr, try_get_attr_raw},
 };
 
 /// A fill pattern applied to an area.
@@ -60,7 +60,7 @@ impl FromStr for ClippingOption {
             "1" => Ok(ClippingOption::NoClippingIfCompletelyInside),
             "2" => Ok(ClippingOption::NoClippingIfCenterInside),
             "3" => Ok(ClippingOption::NoClippingIfPartiallyInside),
-            _ => Err(Error::SymbolError),
+            _ => Err(Error::SymbolError(format!("Unknown ClippingOption {s}"))),
         }
     }
 }
@@ -71,25 +71,25 @@ impl FillPattern {
         reader: &mut Reader<R>,
         color_set: &ColorSet,
     ) -> Result<FillPattern> {
-        let pattern_type = try_get_attr(element, "type").unwrap_or(0);
-        let angle = try_get_attr(element, "angle").unwrap_or(0.0);
-        let clip_options = try_get_attr(element, "no_clipping").unwrap_or_default();
-        let rotatable = try_get_attr(element, "rotatable").unwrap_or(false);
+        let pattern_type = try_get_attr_raw(element, "type").unwrap_or(0);
+        let angle = try_get_attr_raw(element, "angle").unwrap_or(0.0);
+        let clip_options = try_get_attr_raw(element, "no_clipping").unwrap_or_default();
+        let rotatable = try_get_attr_raw(element, "rotatable").unwrap_or(false);
         let line_spacing =
-            NonNegativeF64::from_file_value(try_get_attr(element, "line_spacing").unwrap_or(0));
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "line_spacing").unwrap_or(0));
         let line_offset =
-            NonNegativeF64::from_file_value(try_get_attr(element, "line_offset").unwrap_or(0));
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "line_offset").unwrap_or(0));
         let offset_along_line = NonNegativeF64::from_file_value(
-            try_get_attr(element, "offset_along_line").unwrap_or(0),
+            try_get_attr_raw(element, "offset_along_line").unwrap_or(0),
         );
 
         match pattern_type {
-            0 => {
+            1 => {
                 // LinePattern
-                let ci = try_get_attr(element, "color").unwrap_or(-1);
+                let ci = try_get_attr_raw(element, "color").unwrap_or(-1);
                 let line_color = SymbolColor::from_index(ci, color_set);
                 let line_width = NonNegativeF64::from_file_value(
-                    try_get_attr(element, "line_width").unwrap_or(0),
+                    try_get_attr_raw(element, "line_width").unwrap_or(0),
                 );
                 // Skip to end of pattern element
                 let mut buf = Vec::new();
@@ -117,10 +117,10 @@ impl FillPattern {
                     rotatable,
                 })
             }
-            1 => {
+            2 => {
                 // PointPattern
                 let point_distance = NonNegativeF64::from_file_value(
-                    try_get_attr(element, "point_distance").unwrap_or(0),
+                    try_get_attr_raw(element, "point_distance").unwrap_or(0),
                 );
                 // Parse nested point symbol
                 let mut point = None;
@@ -133,13 +133,13 @@ impl FillPattern {
                                 for attr in e.attributes().filter_map(std::result::Result::ok) {
                                     match attr.key.local_name().as_ref() {
                                         b"name" => {
-                                            sub_common.name.push_str(&quick_xml::escape::unescape(
-                                                std::str::from_utf8(&attr.value)?,
-                                            )?);
+                                            sub_common.name = parse_attr(attr, e.decoder())
+                                                .unwrap_or(sub_common.name);
                                         }
                                         b"code" => {
-                                            sub_common.code = crate::utils::parse_attr(attr.value)
-                                                .unwrap_or_default();
+                                            sub_common.code =
+                                                crate::utils::parse_attr_raw(attr.value)
+                                                    .unwrap_or_default();
                                         }
                                         _ => {}
                                     }
@@ -191,7 +191,7 @@ impl FillPattern {
                 rotatable,
             } => {
                 let mut bs = BytesStart::new("pattern")
-                    .with_attributes([("type", "0"), ("angle", angle.to_string().as_str())]);
+                    .with_attributes([("type", "1"), ("angle", angle.to_string().as_str())]);
                 if *rotatable {
                     bs.push_attribute(("rotatable", "true"));
                 }
@@ -225,7 +225,7 @@ impl FillPattern {
                 rotatable,
             } => {
                 let mut bs = BytesStart::new("pattern")
-                    .with_attributes([("type", "1"), ("angle", angle.to_string().as_str())]);
+                    .with_attributes([("type", "2"), ("angle", angle.to_string().as_str())]);
                 if *clip_options as u8 > 0 {
                     bs.push_attribute(("no_clipping", (*clip_options as u8).to_string().as_str()));
                 }
@@ -317,12 +317,12 @@ impl AreaSymbol {
                         }
                     }
                     b"area_symbol" => {
-                        let ci = try_get_attr(&e, "inner_color").unwrap_or(-1);
+                        let ci = try_get_attr_raw(&e, "inner_color").unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
                         minimum_area = NonNegativeF64::from_file_value(
-                            try_get_attr(&e, "min_area").unwrap_or(0),
+                            try_get_attr_raw(&e, "min_area").unwrap_or(0),
                         );
-                        is_rotatable = try_get_attr(&e, "rotatable").unwrap_or(false);
+                        is_rotatable = try_get_attr_raw(&e, "rotatable").unwrap_or(false);
                     }
                     b"pattern" => {
                         patterns.push(FillPattern::parse(&e, reader, color_set)?);
@@ -331,7 +331,7 @@ impl AreaSymbol {
                 },
                 Event::Empty(e) => {
                     if e.local_name().as_ref() == b"icon"
-                        && let Some(src) = try_get_attr(&e, "src")
+                        && let Some(src) = try_get_attr_raw(&e, "src")
                     {
                         common.custom_icon = Some(src);
                     }
@@ -370,7 +370,7 @@ impl AreaSymbol {
             ("code", self.common.code.to_string().as_str()),
             (
                 "name",
-                quick_xml::escape::unescape(self.common.name.as_str())?.as_ref(),
+                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
             ),
         ]);
         if let Some(id) = index {

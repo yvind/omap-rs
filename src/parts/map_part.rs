@@ -7,8 +7,9 @@ use quick_xml::{Reader, Writer};
 use crate::objects::MapObject;
 use crate::symbols::{
     AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolSet,
-    TextSymbol, WeakSymbol,
+    TextSymbol, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol,
 };
+use crate::utils::try_get_attr;
 use crate::{Error, Result};
 
 /// A map part (layer) containing objects grouped by symbol.
@@ -53,6 +54,33 @@ impl From<&WeakSymbol> for SymbolPointer {
 }
 
 impl MapPart {
+    /// Add an object to the map
+    pub fn add_object(&mut self, object: impl Into<MapObject>) {
+        let mo = object.into();
+        let pointer = match &mo {
+            MapObject::Point(o) => SymbolPointer::Point(o.symbol.as_ptr()),
+            MapObject::Line(o) => match &o.symbol {
+                WeakLinePathSymbol::Line(weak) => SymbolPointer::Line(weak.as_ptr()),
+                WeakLinePathSymbol::CombinedLine(weak) => {
+                    SymbolPointer::CombinedLine(weak.as_ptr())
+                }
+            },
+            MapObject::Area(o) => match &o.symbol {
+                WeakAreaPathSymbol::Area(weak) => SymbolPointer::Area(weak.as_ptr()),
+                WeakAreaPathSymbol::CombinedArea(weak) => {
+                    SymbolPointer::CombinedArea(weak.as_ptr())
+                }
+            },
+            MapObject::Text(o) => SymbolPointer::Text(o.symbol.as_ptr()),
+        };
+
+        if let Some(values) = self.objects.get_mut(&pointer) {
+            values.push(mo);
+        } else {
+            let _ = self.objects.insert(pointer, vec![mo]);
+        }
+    }
+
     pub(super) fn merge(&mut self, other: Self) {
         self.objects.extend(other.objects);
     }
@@ -77,13 +105,7 @@ impl MapPart {
         element: &BytesStart<'_>,
         symbols: &SymbolSet,
     ) -> Result<MapPart> {
-        let mut name = String::new();
-
-        for attr in element.attributes().filter_map(std::result::Result::ok) {
-            if matches!(attr.key.local_name().as_ref(), b"name") {
-                name = String::from_utf8(attr.value.to_vec())?;
-            }
-        }
+        let name = try_get_attr(element, "name").unwrap_or(String::new());
 
         let mut objects: HashMap<SymbolPointer, Vec<MapObject>> = HashMap::new();
 
@@ -92,7 +114,7 @@ impl MapPart {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"object") {
-                        let object = MapObject::parse(reader, &bytes_start, symbols)?;
+                        let object = MapObject::parse(reader, &bytes_start, symbols, false)?;
                         let symbol_pointer = (&object.get_weak_symbol()).into();
 
                         if let Some(contained) = objects.get_mut(&symbol_pointer) {

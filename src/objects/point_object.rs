@@ -8,7 +8,7 @@ use quick_xml::{
 
 use crate::{
     Error, Result,
-    symbols::PointSymbol,
+    symbols::{PointSymbol, Symbol, SymbolSet},
     utils::{from_file_coords, to_file_coords},
 };
 
@@ -26,27 +26,88 @@ pub struct PointObject {
 }
 
 impl PointObject {
-    /// Write just the inner content (coords) — called from MapObject::write
-    pub(super) fn write_content<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let file_coord = to_file_coords(self.geometry.0)?;
-        let bs = BytesStart::new("coords").with_attributes([("count", "1")]);
+    /// Create a new point object with the given symbol and position.
+    pub fn new(symbol: Weak<RefCell<PointSymbol>>, geometry: Point) -> Self {
+        PointObject {
+            tags: HashMap::new(),
+            rotation: 0.0,
+            symbol,
+            geometry,
+        }
+    }
+
+    pub(super) fn write<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        symbol_set: &SymbolSet,
+    ) -> Result<()> {
+        let mut is_rotatable = false;
+        // Get index of symbol and if the symbol is rotatable
+        let index = if let Some(sym) = self.symbol.upgrade() {
+            is_rotatable = sym.try_borrow().map(|p| p.is_rotatable).unwrap_or(false);
+            symbol_set
+                .iter()
+                .position(|s| {
+                    if let Symbol::Point(s) = s {
+                        s.as_ptr() == sym.as_ptr()
+                    } else {
+                        false
+                    }
+                })
+                .map(|p| p as i32)
+                .unwrap_or(-1)
+        } else {
+            -1
+        };
+
+        self.write_content(writer, Some(index), is_rotatable)?;
+        Ok(())
+    }
+
+    /// Write a full `<object>...</object>` element - used for point symbol elements
+    pub(crate) fn write_as_element<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        is_rotatable: bool,
+    ) -> Result<()> {
+        self.write_content(writer, None, is_rotatable)?;
+        Ok(())
+    }
+
+    fn write_content<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        symbol_index: Option<i32>,
+        is_rotatable: bool,
+    ) -> Result<()> {
+        let mut bs = BytesStart::new("object").with_attributes([("type", "0")]);
+        if let Some(idx) = symbol_index {
+            bs.push_attribute(("symbol", idx.to_string().as_str()));
+        }
+
+        if self.rotation.abs() > f64::EPSILON && is_rotatable {
+            // Map the rotation onto [-PI, PI]
+            // first shift the target to either (-TAU, 0] for negative or [0, TAU) for positive
+            // Take the modulus with TAU (negatives return negative values) and shift target back to [-PI, PI]
+            let rot = (self.rotation + self.rotation.signum() * std::f64::consts::PI)
+                % std::f64::consts::TAU
+                - self.rotation.signum() * std::f64::consts::PI;
+            bs.push_attribute(("rotation", rot.to_string().as_str()));
+        }
         writer.write_event(Event::Start(bs))?;
+        // elements are not allowed to have tags
+        if !self.tags.is_empty() && symbol_index.is_some() {
+            super::write_tags(writer, &self.tags)?;
+        }
+        let file_coord = to_file_coords(self.geometry.0)?;
+        writer.write_event(Event::Start(
+            BytesStart::new("coords").with_attributes([("count", "1")]),
+        ))?;
         writer.write_event(Event::Text(BytesText::new(&format!(
             "{} {};",
             file_coord.x, file_coord.y
         ))))?;
         writer.write_event(Event::End(BytesEnd::new("coords")))?;
-        Ok(())
-    }
-
-    /// Write a full `<object>...</object>` element — used for point symbol elements
-    pub fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let mut bs = BytesStart::new("object").with_attributes([("type", "0")]);
-        if self.rotation.abs() > f64::EPSILON {
-            bs.push_attribute(("rotation", self.rotation.to_string().as_str()));
-        }
-        writer.write_event(Event::Start(bs))?;
-        self.write_content(writer)?;
         writer.write_event(Event::End(BytesEnd::new("object")))?;
         Ok(())
     }
@@ -55,9 +116,10 @@ impl PointObject {
     /// the `<coords>` start event. Reads through `</object>`.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        _coords_element: &BytesStart<'_>,
+        symbol: Weak<RefCell<PointSymbol>>,
         rotation: f64,
     ) -> Result<PointObject> {
+        let mut tags = HashMap::new();
         let mut point = None;
         let mut buf = Vec::new();
         loop {
@@ -67,8 +129,13 @@ impl PointObject {
                         break;
                     }
                 }
+                Event::Start(bytes_start) => {
+                    if matches!(bytes_start.local_name().as_ref(), b"tags") {
+                        tags = super::parse_tags(reader)?;
+                    }
+                }
                 Event::Text(bytes_text) => {
-                    let raw_xml = String::from_utf8(bytes_text.to_vec())?;
+                    let raw_xml = str::from_utf8(bytes_text.as_ref())?;
 
                     for vertex in raw_xml.split_terminator(';') {
                         let mut split = vertex.split_whitespace();
@@ -81,9 +148,7 @@ impl PointObject {
                             .next()
                             .ok_or(Error::InvalidCoordinate("No y value".to_string()))?
                             .parse()?;
-
-                        let coord = from_file_coords(Coord { x, y });
-                        point = Some(Point::from(coord));
+                        point = Some(Point::from(from_file_coords(Coord { x, y })));
                     }
                 }
                 Event::Eof => {
@@ -95,9 +160,9 @@ impl PointObject {
             }
         }
         Ok(PointObject {
-            tags: HashMap::new(),
+            tags,
             rotation,
-            symbol: Weak::new(),
+            symbol,
             geometry: point.ok_or(Error::ParseOmapFileError(
                 "Could not parse point object".to_string(),
             ))?,

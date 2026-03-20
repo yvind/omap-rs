@@ -9,7 +9,7 @@ use super::{
     AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolSet,
     TextSymbol,
 };
-use crate::utils::parse_attr;
+use crate::utils::{parse_attr, parse_attr_raw};
 use crate::{Code, Error, Result, colors::ColorSet};
 
 /// Common properties shared by all symbol types.
@@ -48,15 +48,17 @@ pub enum WeakSymbol {
     CombinedLine(Weak<RefCell<CombinedLineSymbol>>),
 }
 
-impl From<&Symbol> for WeakSymbol {
-    fn from(value: &Symbol) -> Self {
-        match value {
-            Symbol::Line(rc) => WeakSymbol::Line(Rc::downgrade(rc)),
-            Symbol::Area(rc) => WeakSymbol::Area(Rc::downgrade(rc)),
-            Symbol::Point(rc) => WeakSymbol::Point(Rc::downgrade(rc)),
-            Symbol::Text(rc) => WeakSymbol::Text(Rc::downgrade(rc)),
-            Symbol::CombinedArea(rc) => WeakSymbol::CombinedArea(Rc::downgrade(rc)),
-            Symbol::CombinedLine(rc) => WeakSymbol::CombinedLine(Rc::downgrade(rc)),
+impl WeakSymbol {
+    /// Attempts to upgrade the WeakSymbol to a Symbol, delaying dropping of the inner value if successful.
+    /// Returns None if the inner value has since been dropped.
+    pub fn upgrade(&self) -> Option<Symbol> {
+        match self {
+            WeakSymbol::Line(weak) => weak.upgrade().map(Symbol::Line),
+            WeakSymbol::Area(weak) => weak.upgrade().map(Symbol::Area),
+            WeakSymbol::Point(weak) => weak.upgrade().map(Symbol::Point),
+            WeakSymbol::Text(weak) => weak.upgrade().map(Symbol::Text),
+            WeakSymbol::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
+            WeakSymbol::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
         }
     }
 }
@@ -80,6 +82,20 @@ pub enum Symbol {
     CombinedLine(Rc<RefCell<CombinedLineSymbol>>),
 }
 
+impl Symbol {
+    /// Creates a new WeakSymbol pointer to this Symbol allocation
+    pub fn downgrade(&self) -> WeakSymbol {
+        match self {
+            Symbol::Line(rc) => WeakSymbol::Line(Rc::downgrade(rc)),
+            Symbol::Area(rc) => WeakSymbol::Area(Rc::downgrade(rc)),
+            Symbol::Point(rc) => WeakSymbol::Point(Rc::downgrade(rc)),
+            Symbol::Text(rc) => WeakSymbol::Text(Rc::downgrade(rc)),
+            Symbol::CombinedArea(rc) => WeakSymbol::CombinedArea(Rc::downgrade(rc)),
+            Symbol::CombinedLine(rc) => WeakSymbol::CombinedLine(Rc::downgrade(rc)),
+        }
+    }
+}
+
 impl PartialEq for Symbol {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -90,25 +106,6 @@ impl PartialEq for Symbol {
             (Self::CombinedArea(l0), Self::CombinedArea(r0)) => l0.as_ptr() == r0.as_ptr(),
             (Self::CombinedLine(l0), Self::CombinedLine(r0)) => l0.as_ptr() == r0.as_ptr(),
             _ => false,
-        }
-    }
-}
-
-impl TryFrom<&WeakSymbol> for Symbol {
-    type Error = Error;
-
-    fn try_from(value: &WeakSymbol) -> Result<Self> {
-        match value {
-            WeakSymbol::Line(weak) => Ok(Symbol::Line(weak.upgrade().ok_or(Error::SymbolError)?)),
-            WeakSymbol::Area(weak) => Ok(Symbol::Area(weak.upgrade().ok_or(Error::SymbolError)?)),
-            WeakSymbol::Point(weak) => Ok(Symbol::Point(weak.upgrade().ok_or(Error::SymbolError)?)),
-            WeakSymbol::Text(weak) => Ok(Symbol::Text(weak.upgrade().ok_or(Error::SymbolError)?)),
-            WeakSymbol::CombinedArea(weak) => Ok(Symbol::CombinedArea(
-                weak.upgrade().ok_or(Error::SymbolError)?,
-            )),
-            WeakSymbol::CombinedLine(weak) => Ok(Symbol::CombinedLine(
-                weak.upgrade().ok_or(Error::SymbolError)?,
-            )),
         }
     }
 }
@@ -182,18 +179,6 @@ macro_rules! impl_symbol_setter {
 }
 
 impl Symbol {
-    /// Get the symbol type as a numeric value used in the file format.
-    pub fn get_type(&self) -> u8 {
-        match self {
-            Symbol::Point(_) => 1,
-            Symbol::Line(_) => 2,
-            Symbol::Area(_) => 4,
-            Symbol::Text(_) => 8,
-            Symbol::CombinedArea(_) => 16,
-            Symbol::CombinedLine(_) => 16,
-        }
-    }
-
     impl_symbol_getter!(has_custom_icon -> bool, |s| s.common.custom_icon.is_some());
     impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.common.custom_icon = icon);
     impl_symbol_getter!(get_code -> Code, |s| s.common.code);
@@ -212,24 +197,22 @@ impl Symbol {
     ) -> Result<(usize, Symbol, Vec<usize>)> {
         let mut id = usize::MAX;
         let mut symbol_type = u8::MAX;
-        let mut attributes = SymbolCommon::default();
+        let mut common = SymbolCommon::default();
         // Parse attributes
         for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"type" => symbol_type = parse_attr(attr.value).unwrap_or(symbol_type),
-                b"name" => attributes
-                    .name
-                    .push_str(&quick_xml::escape::unescape(str::from_utf8(&attr.value)?)?),
-                b"code" => attributes.code = parse_attr(attr.value).unwrap_or(attributes.code),
-                b"id" => id = parse_attr(attr.value).unwrap_or(id),
+                b"type" => symbol_type = parse_attr_raw(attr.value).unwrap_or(symbol_type),
+                b"name" => common.name = parse_attr(attr, element.decoder()).unwrap_or(common.name),
+                b"code" => common.code = parse_attr_raw(attr.value).unwrap_or(common.code),
+                b"id" => id = parse_attr_raw(attr.value).unwrap_or(id),
                 b"is_helper_symbol" => {
-                    attributes.is_helper_symbol = attr.as_bool().unwrap_or(false);
+                    common.is_helper_symbol = attr.as_bool().unwrap_or(false);
                 }
                 b"is_hidden" => {
-                    attributes.is_hidden = attr.as_bool().unwrap_or(false);
+                    common.is_hidden = attr.as_bool().unwrap_or(false);
                 }
                 b"is_protected" => {
-                    attributes.is_protected = attr.as_bool().unwrap_or(false);
+                    common.is_protected = attr.as_bool().unwrap_or(false);
                 }
                 _ => {}
             }
@@ -246,22 +229,21 @@ impl Symbol {
         let mut public_component_ids = Vec::new();
         let symbol = match symbol_type {
             1 => Symbol::Point(Rc::new(RefCell::new(PointSymbol::parse(
-                reader, color_set, attributes,
+                reader, color_set, common,
             )?))),
             2 => Symbol::Line(Rc::new(RefCell::new(LineSymbol::parse(
-                reader, color_set, attributes,
+                reader, color_set, common,
             )?))),
             4 => Symbol::Area(Rc::new(RefCell::new(AreaSymbol::parse(
-                reader, color_set, attributes,
+                reader, color_set, common,
             )?))),
             8 => Symbol::Text(Rc::new(RefCell::new(TextSymbol::parse(
-                reader, color_set, attributes,
+                reader, color_set, common,
             )?))),
             16 => {
                 // Assume the combined symbol is area for now
                 // Will be checked and corrected after all symbols have been parsed
-                let (symbol, component_ids) =
-                    CombinedAreaSymbol::parse(reader, color_set, attributes)?;
+                let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
                 public_component_ids.extend(component_ids);
 
                 Symbol::CombinedArea(Rc::new(RefCell::new(symbol)))
@@ -283,7 +265,7 @@ impl Symbol {
         color_set: &ColorSet,
         index: usize,
     ) -> Result<()> {
-        let _ = match self {
+        match self {
             // Line, area and point can be sub-symbols which do not have an index
             Symbol::Line(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
             Symbol::Area(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
@@ -295,7 +277,7 @@ impl Symbol {
             Symbol::CombinedLine(rc) => {
                 rc.try_borrow()?.write(writer, symbol_set, color_set, index)
             }
-        };
+        }?;
         Ok(())
     }
 }

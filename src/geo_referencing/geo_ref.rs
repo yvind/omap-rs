@@ -7,7 +7,7 @@ use quick_xml::{
 };
 
 use super::CrsType;
-use crate::{Error, Result, geo_referencing::Transform, notes, utils::try_get_attr};
+use crate::{Error, Result, geo_referencing::Transform, notes, utils::try_get_attr_raw};
 
 /// The georeferencing information of the map
 #[derive(Debug, Clone)]
@@ -85,24 +85,32 @@ impl GeoRef {
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        writer.write_event(Event::Start(
-            BytesStart::new("georeferencing").with_attributes([
-                ("scale", self.scale_denominator.to_string().as_str()),
-                (
-                    "grid_scale_factor",
-                    format!("{:.6}", self.combined_scale_factor()).as_str(),
-                ),
-                (
-                    "auxiliary_scale_factor",
-                    format!("{:.6}", self.auxiliary_scale_factor).as_str(),
-                ),
-                (
-                    "declination",
-                    format!("{:.3}", self.declination_deg).as_str(),
-                ),
-                ("grivation", format!("{:.3}", self.grivation_deg()).as_str()),
-            ]),
-        ))?;
+        let mut bytes_start = BytesStart::new("georeferencing")
+            .with_attributes([("scale", self.scale_denominator.to_string().as_str())]);
+        if self.combined_scale_factor() != 1. {
+            bytes_start.push_attribute((
+                "grid_scale_factor",
+                format!("{:.6}", self.combined_scale_factor()).as_str(),
+            ));
+        }
+        if self.auxiliary_scale_factor != 1. {
+            bytes_start.push_attribute((
+                "auxiliary_scale_factor",
+                format!("{:.6}", self.auxiliary_scale_factor).as_str(),
+            ));
+        }
+        if self.declination_deg != 0. {
+            bytes_start.push_attribute((
+                "declination",
+                format!("{:.3}", self.declination_deg).as_str(),
+            ));
+        }
+        if self.grivation_deg() != 0. {
+            bytes_start
+                .push_attribute(("grivation", format!("{:.3}", self.grivation_deg()).as_str()));
+        }
+
+        writer.write_event(Event::Start(bytes_start))?;
         if self.map_ref_point != Coord::zero() {
             // for some reason in mm and not µm, but y is flipped
             writer.write_event(Event::Empty(BytesStart::new("ref_point").with_attributes(
@@ -134,6 +142,7 @@ impl GeoRef {
                 BytesStart::new("spec").with_attributes([("language", "PROJ.4")]),
             ))?;
             writer.write_event(Event::Text(BytesText::new("+proj=latlong +datum=WGS84")))?;
+            writer.write_event(Event::End(BytesEnd::new("spec")))?;
             writer.write_event(Event::Empty(
                 BytesStart::new("ref_point_deg").with_attributes([
                     ("lat", self.geographic_ref_point_deg.y.to_string().as_str()),
@@ -151,14 +160,14 @@ impl GeoRef {
         reader: &mut Reader<R>,
         event: &BytesStart<'_>,
     ) -> Result<Self> {
-        let scale = try_get_attr(event, "scale").ok_or(Error::ParseOmapFileError(
+        let scale = try_get_attr_raw(event, "scale").ok_or(Error::ParseOmapFileError(
             "Could not find the map scale".to_string(),
         ))?;
-        let auxiliary_scale_factor = try_get_attr(event, "auxiliary_scale_factor").unwrap_or(1.);
+        let auxiliary_scale_factor = try_get_attr_raw(event, "auxiliary_scale_factor").unwrap_or(1.);
         let grid_scale_factor =
-            try_get_attr(event, "grid_scale_factor").unwrap_or(1.) / auxiliary_scale_factor;
-        let declination_deg = try_get_attr(event, "declination").unwrap_or(0.);
-        let convergence_deg = try_get_attr(event, "grivation").unwrap_or(0.) + declination_deg;
+            try_get_attr_raw(event, "grid_scale_factor").unwrap_or(1.) / auxiliary_scale_factor;
+        let declination_deg = try_get_attr_raw(event, "declination").unwrap_or(0.);
+        let convergence_deg = try_get_attr_raw(event, "grivation").unwrap_or(0.) + declination_deg;
 
         let mut crs_type = CrsType::Local;
         let mut map_ref_point = Coord::zero();
@@ -178,8 +187,8 @@ impl GeoRef {
                     b"ref_point" => {
                         // for some reason in mm and not µm, but y is flipped
                         map_ref_point = Coord {
-                            x: try_get_attr(&bs, "x").unwrap_or(map_ref_point.x),
-                            y: try_get_attr(&bs, "y")
+                            x: try_get_attr_raw(&bs, "x").unwrap_or(map_ref_point.x),
+                            y: try_get_attr_raw(&bs, "y")
                                 .map(|y: f64| -y)
                                 .unwrap_or(map_ref_point.y),
                         }
@@ -263,8 +272,8 @@ fn parse_projected_crs<R: std::io::BufRead>(
             Event::Start(bs) => {
                 if matches!(bs.local_name().as_ref(), b"ref_point") {
                     proj_ref_point = Coord {
-                        x: try_get_attr(&bs, "x").unwrap_or(proj_ref_point.x),
-                        y: try_get_attr(&bs, "y").unwrap_or(proj_ref_point.y),
+                        x: try_get_attr_raw(&bs, "x").unwrap_or(proj_ref_point.x),
+                        y: try_get_attr_raw(&bs, "y").unwrap_or(proj_ref_point.y),
                     }
                 }
             }
@@ -295,8 +304,8 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
             Event::Start(bs) => {
                 if matches!(bs.local_name().as_ref(), b"ref_point_deg") {
                     geo_ref_point = Coord {
-                        x: try_get_attr(&bs, "lon").unwrap_or(geo_ref_point.x),
-                        y: try_get_attr(&bs, "lat").unwrap_or(geo_ref_point.y),
+                        x: try_get_attr_raw(&bs, "lon").unwrap_or(geo_ref_point.x),
+                        y: try_get_attr_raw(&bs, "lat").unwrap_or(geo_ref_point.y),
                     }
                 }
             }

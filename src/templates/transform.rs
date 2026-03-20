@@ -4,7 +4,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use crate::{Error, Result, utils::parse_attr, utils::try_get_attr};
+use crate::{Error, Result, utils::parse_attr_raw, utils::try_get_attr_raw};
 
 /// A 3×3 matrix stored in row-major order.
 #[derive(Debug, Clone)]
@@ -148,7 +148,11 @@ impl Transformations {
                     }
                     _ => {}
                 },
-                Event::End(ref be) if be.local_name().as_ref() == b"transformations" => break,
+                Event::End(be) => {
+                    if be.local_name().as_ref() == b"transformations" {
+                        break;
+                    }
+                }
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
                         "Unexpected EOF in transformations".into(),
@@ -175,12 +179,12 @@ impl TemplateTransform {
         let mut t = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"x" => t.template_pos.x = parse_attr(attr.value).unwrap_or(0),
-                b"y" => t.template_pos.x = parse_attr(attr.value).unwrap_or(0),
-                b"rotation" => t.template_rotation = parse_attr(attr.value).unwrap_or(0.),
-                b"scale_x" => t.template_scale.x = parse_attr(attr.value).unwrap_or(1.),
-                b"scale_y" => t.template_scale.y = parse_attr(attr.value).unwrap_or(1.),
-                b"shear" => t.template_shear = parse_attr(attr.value).unwrap_or(0.),
+                b"x" => t.template_pos.x = parse_attr_raw(attr.value).unwrap_or(0),
+                b"y" => t.template_pos.x = parse_attr_raw(attr.value).unwrap_or(0),
+                b"rotation" => t.template_rotation = parse_attr_raw(attr.value).unwrap_or(0.),
+                b"scale_x" => t.template_scale.x = parse_attr_raw(attr.value).unwrap_or(1.),
+                b"scale_y" => t.template_scale.y = parse_attr_raw(attr.value).unwrap_or(1.),
+                b"shear" => t.template_shear = parse_attr_raw(attr.value).unwrap_or(0.),
                 _ => {}
             }
         }
@@ -220,13 +224,17 @@ impl PassPoint {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(ref child) => match child.local_name().as_ref() {
+                Event::Start(child) => match child.local_name().as_ref() {
                     b"source" => src = parse_inner_coord(reader)?,
                     b"destination" => dest = parse_inner_coord(reader)?,
                     b"calculated" => calc = parse_inner_coord(reader)?,
                     _ => {}
                 },
-                Event::End(ref be) if be.local_name().as_ref() == b"passpoint" => break,
+                Event::End(be) => {
+                    if be.local_name().as_ref() == b"passpoint" {
+                        break;
+                    }
+                }
                 Event::Eof => {
                     return Err(Error::ParseOmapFileError(
                         "Unexpected EOF in passpoint".into(),
@@ -268,7 +276,7 @@ impl Matrix3x3 {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) if child.local_name().as_ref() == b"element" => {
-                    values[i] = try_get_attr(&child, "value").unwrap_or(0.);
+                    values[i] = try_get_attr_raw(&child, "value").unwrap_or(0.);
                     i += 1;
                 }
                 Event::End(be) if be.local_name().as_ref() == b"matrix" => break,
@@ -326,8 +334,8 @@ fn parse_inner_coord<R: std::io::BufRead, T: std::str::FromStr + geo_types::Coor
         match reader.read_event_into(&mut buf)? {
             Event::Start(bs) if bs.local_name().as_ref() == b"coord" => {
                 coord = Coord {
-                    x: try_get_attr(&bs, "x").unwrap_or(T::zero()),
-                    y: try_get_attr(&bs, "y").unwrap_or(T::zero()),
+                    x: try_get_attr_raw(&bs, "x").unwrap_or(T::zero()),
+                    y: try_get_attr_raw(&bs, "y").unwrap_or(T::zero()),
                 };
             }
             Event::End(_) => break,

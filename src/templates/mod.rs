@@ -10,7 +10,7 @@ use quick_xml::{
 
 use crate::{
     Error, NonNegativeF64, Result,
-    utils::{parse_attr, try_get_attr},
+    utils::{parse_attr_raw, try_get_attr_raw},
     view::TemplateVisibility,
 };
 
@@ -47,18 +47,18 @@ impl TemplateDefaults {
                     d.use_meters_per_pixel = attr.as_bool().unwrap_or(d.use_meters_per_pixel)
                 }
                 b"meters_per_pixel" => {
-                    d.meters_per_pixel = parse_attr(attr.value)
+                    d.meters_per_pixel = parse_attr_raw(attr.value)
                         .unwrap_or(d.meters_per_pixel.get())
                         .try_into()
                         .unwrap_or_default()
                 }
                 b"dpi" => {
-                    d.dpi = parse_attr(attr.value)
+                    d.dpi = parse_attr_raw(attr.value)
                         .unwrap_or(d.dpi.get())
                         .try_into()
                         .unwrap_or_default()
                 }
-                b"scale" => d.scale = parse_attr(attr.value).unwrap_or(d.scale),
+                b"scale" => d.scale = parse_attr_raw(attr.value).unwrap_or(d.scale),
                 _ => {}
             }
         }
@@ -117,6 +117,11 @@ impl Templates {
         self.template_entries.len()
     }
 
+    /// Iterate through the templates
+    pub fn iter(&self) -> impl Iterator<Item = &TemplateEntry> {
+        self.template_entries.iter()
+    }
+
     /// Whether there are no templates.
     pub fn is_empty(&self) -> bool {
         self.template_entries.is_empty()
@@ -126,7 +131,7 @@ impl Templates {
         reader: &mut Reader<R>,
         event: &BytesStart<'_>,
     ) -> Result<Self> {
-        let first_front_template = try_get_attr(event, "first_front_template").unwrap_or(0);
+        let first_front_template = try_get_attr_raw(event, "first_front_template").unwrap_or(0);
 
         let mut templates = Vec::new();
         let mut defaults = TemplateDefaults::default();
