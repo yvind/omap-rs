@@ -63,6 +63,56 @@ impl WeakSymbol {
     }
 }
 
+impl PartialEq for WeakSymbol {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Line(l0), Self::Line(r0)) => l0.ptr_eq(r0),
+            (Self::Area(l0), Self::Area(r0)) => l0.ptr_eq(r0),
+            (Self::Point(l0), Self::Point(r0)) => l0.ptr_eq(r0),
+            (Self::Text(l0), Self::Text(r0)) => l0.ptr_eq(r0),
+            (Self::CombinedArea(l0), Self::CombinedArea(r0)) => l0.ptr_eq(r0),
+            (Self::CombinedLine(l0), Self::CombinedLine(r0)) => l0.ptr_eq(r0),
+            _ => false,
+        }
+    }
+}
+
+impl From<Weak<RefCell<AreaSymbol>>> for WeakSymbol {
+    fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
+        WeakSymbol::Area(value)
+    }
+}
+
+impl From<Weak<RefCell<LineSymbol>>> for WeakSymbol {
+    fn from(value: Weak<RefCell<LineSymbol>>) -> Self {
+        WeakSymbol::Line(value)
+    }
+}
+
+impl From<Weak<RefCell<PointSymbol>>> for WeakSymbol {
+    fn from(value: Weak<RefCell<PointSymbol>>) -> Self {
+        WeakSymbol::Point(value)
+    }
+}
+
+impl From<Weak<RefCell<TextSymbol>>> for WeakSymbol {
+    fn from(value: Weak<RefCell<TextSymbol>>) -> Self {
+        WeakSymbol::Text(value)
+    }
+}
+
+impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakSymbol {
+    fn from(value: Weak<RefCell<CombinedAreaSymbol>>) -> Self {
+        WeakSymbol::CombinedArea(value)
+    }
+}
+
+impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakSymbol {
+    fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
+        WeakSymbol::CombinedLine(value)
+    }
+}
+
 /// An owning reference to a symbol of any type.
 #[derive(Debug, Clone)]
 pub enum Symbol {
@@ -107,6 +157,42 @@ impl PartialEq for Symbol {
             (Self::CombinedLine(l0), Self::CombinedLine(r0)) => l0.as_ptr() == r0.as_ptr(),
             _ => false,
         }
+    }
+}
+
+impl From<LineSymbol> for Symbol {
+    fn from(value: LineSymbol) -> Self {
+        Symbol::Line(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl From<AreaSymbol> for Symbol {
+    fn from(value: AreaSymbol) -> Self {
+        Symbol::Area(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl From<TextSymbol> for Symbol {
+    fn from(value: TextSymbol) -> Self {
+        Symbol::Text(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl From<PointSymbol> for Symbol {
+    fn from(value: PointSymbol) -> Self {
+        Symbol::Point(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl From<CombinedLineSymbol> for Symbol {
+    fn from(value: CombinedLineSymbol) -> Self {
+        Symbol::CombinedLine(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl From<CombinedAreaSymbol> for Symbol {
+    fn from(value: CombinedAreaSymbol) -> Self {
+        Symbol::CombinedArea(Rc::new(RefCell::new(value)))
     }
 }
 

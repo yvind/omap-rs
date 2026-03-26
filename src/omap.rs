@@ -181,10 +181,7 @@ impl Omap {
                     b"templates" => {
                         templates = Templates::parse(&mut reader, &bytes_start).unwrap_or_default()
                     }
-                    b"view" => {
-                        view = View::parse(&mut reader, &bytes_start, &mut templates)
-                            .unwrap_or_default()
-                    }
+                    b"view" => view = View::parse(&mut reader, &mut templates).unwrap_or_default(),
                     _ => (),
                 },
                 Event::Eof => break,

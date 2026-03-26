@@ -35,13 +35,17 @@ impl SpotColor {
     /// Create a new spot color with the given name and CMYK values.
     ///
     /// The RGB mode defaults to `FromCmyk` and screen parameters to `150.0` frequency and `0.0` angle.
-    pub fn new(color_name: String, spotcolor_name: String, cmyk: Cmyk) -> Self {
+    pub fn new(
+        color_name: impl Into<String>,
+        spotcolor_name: impl Into<String>,
+        cmyk: Cmyk,
+    ) -> Self {
         SpotColor {
-            color_name,
+            color_name: color_name.into(),
             knockout: false,
             cmyk_mode: CmykMode::Cmyk(cmyk),
             rgb_mode: RgbMode::FromCmyk,
-            spotcolor_name,
+            spotcolor_name: spotcolor_name.into(),
             screen_frequency: NonNegativeF64::default(),
             screen_angle_deg: 0.0,
         }
@@ -188,9 +192,9 @@ impl MixedColor {
     /// Create a new mixed color with the given name and spot-color components.
     ///
     /// Both CMYK and RGB modes default to `FromSpotColors`.
-    pub fn new(color_name: String, components: Vec<ColorComponent>) -> Self {
+    pub fn new(color_name: impl Into<String>, components: Vec<ColorComponent>) -> Self {
         MixedColor {
-            color_name,
+            color_name: color_name.into(),
             knockout: false,
             cmyk_mode: CmykMode::FromSpotColors,
             rgb_mode: RgbMode::FromSpotColors,
@@ -393,6 +397,18 @@ impl PartialEq for WeakColor {
     }
 }
 
+impl From<Weak<RefCell<SpotColor>>> for WeakColor {
+    fn from(value: Weak<RefCell<SpotColor>>) -> Self {
+        WeakColor::SpotColor(value)
+    }
+}
+
+impl From<Weak<RefCell<MixedColor>>> for WeakColor {
+    fn from(value: Weak<RefCell<MixedColor>>) -> Self {
+        WeakColor::MixedColor(value)
+    }
+}
+
 /// An owning reference to either a [`SpotColor`] or [`MixedColor`].
 #[derive(Debug, Clone)]
 pub enum Color {
@@ -472,6 +488,18 @@ impl Color {
             Color::SpotColor(ref_cell) => WeakColor::SpotColor(Rc::downgrade(ref_cell)),
             Color::MixedColor(ref_cell) => WeakColor::MixedColor(Rc::downgrade(ref_cell)),
         }
+    }
+}
+
+impl From<SpotColor> for Color {
+    fn from(value: SpotColor) -> Self {
+        Color::SpotColor(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl From<MixedColor> for Color {
+    fn from(value: MixedColor) -> Self {
+        Color::MixedColor(Rc::new(RefCell::new(value)))
     }
 }
 

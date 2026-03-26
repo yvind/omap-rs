@@ -10,7 +10,8 @@ use crate::{
     Code, Error, Result,
     colors::ColorSet,
     symbols::{
-        AreaOrLineSymbol, CombinedLineSymbol, PubOrPrivSymbol, WeakLinePathSymbol, WeakPathSymbol,
+        AreaOrLineSymbol, CombinedLineSymbol, PublicOrPrivateSymbol, WeakLinePathSymbol,
+        WeakPathSymbol,
     },
     utils::{try_get_attr, try_get_attr_raw},
 };
@@ -25,29 +26,35 @@ pub struct SymbolSet {
 }
 
 impl SymbolSet {
-    /// Get a symbol by its index in the set.
+    /// Get the number of symbol in the [SymbolSet]
+    pub fn num_symbols(&self) -> usize {
+        self.symbols.len()
+    }
+
+    /// Add a new symbol to the [SymbolSet]
+    pub fn push(&mut self, symbol: impl Into<Symbol>) {
+        self.symbols.push(symbol.into());
+    }
+
+    /// Get a symbol by its index in the [SymbolSet]
     pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
-        if self.num_symbols() <= id {
+        if id >= self.num_symbols() {
             None
         } else {
             Some(&self.symbols[id])
         }
     }
 
-    pub(crate) fn get_weak_symbol_by_id(&self, id: usize) -> Option<WeakSymbol> {
-        self.get_symbol_by_id(id).map(|c| c.downgrade())
-    }
-
-    /// Find a symbol by its code.
+    /// Find a symbol by its [Code].
     pub fn get_symbol_by_code(&self, code: Code) -> Option<&Symbol> {
         self.symbols
             .iter()
             .find(|s| s.get_code().map(|c| c == code).unwrap_or(false))
     }
 
-    /// Find a symbol by its display name. The first match is returned
-    /// If a symbol cannot be borrowed for name checking (because it is mutably borrowed somewhere else)
-    /// it is simply skipped. This means that a symbol-name that actually exists in symbol set can return None in some cases
+    /// Find a [Symbol] by its display name. The first match is returned.
+    /// If a symbol cannot be borrowed for name checking (because it is mutably borrowed somewhere else) it is simply skipped.
+    /// This means that a symbol-name that actually exists in the [SymbolSet] can return `None` in some cases
     pub fn get_symbol_by_name(&self, name: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|s| match s {
             Symbol::Line(ref_cell) => ref_cell
@@ -92,9 +99,8 @@ impl SymbolSet {
         self.symbols.iter_mut()
     }
 
-    /// Get the number of symbol in the symbol set
-    pub fn num_symbols(&self) -> usize {
-        self.symbols.len()
+    pub(crate) fn get_weak_symbol_by_id(&self, id: usize) -> Option<WeakSymbol> {
+        self.get_symbol_by_id(id).map(|c| c.downgrade())
     }
 }
 
@@ -165,9 +171,9 @@ impl SymbolSet {
         for (i, symbol) in symbol_set.symbols.iter().enumerate() {
             if let Symbol::CombinedArea(rc) = symbol {
                 let ca = rc.try_borrow()?;
-                let has_private_area = ca
-                    .components()
-                    .any(|p| matches!(p, PubOrPrivSymbol::Private(AreaOrLineSymbol::Area(_))));
+                let has_private_area = ca.components().any(|p| {
+                    matches!(p, PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(_)))
+                });
                 if has_private_area {
                     continue;
                 }
@@ -213,10 +219,10 @@ impl SymbolSet {
                     cl.common = common;
                     let part_count = ca.components().count();
                     for _ in 0..part_count {
-                        if let Some(PubOrPrivSymbol::Private(AreaOrLineSymbol::Line(line))) =
+                        if let Some(PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Line(line))) =
                             ca.remove_component(0)
                         {
-                            cl.add_component(PubOrPrivSymbol::Private(line))?;
+                            cl.add_component(PublicOrPrivateSymbol::Private(line))?;
                         }
                     }
                     Symbol::CombinedLine(Rc::new(RefCell::new(cl)))
@@ -245,16 +251,16 @@ impl SymbolSet {
                                 )))?;
                         match weak_component {
                             WeakSymbol::Line(weak) => symb.add_component(
-                                PubOrPrivSymbol::Public(WeakPathSymbol::Line(weak)),
+                                PublicOrPrivateSymbol::Public(WeakPathSymbol::Line(weak)),
                             )?,
                             WeakSymbol::Area(weak) => symb.add_component(
-                                PubOrPrivSymbol::Public(WeakPathSymbol::Area(weak)),
+                                PublicOrPrivateSymbol::Public(WeakPathSymbol::Area(weak)),
                             )?,
                             WeakSymbol::CombinedArea(weak) => symb.add_component(
-                                PubOrPrivSymbol::Public(WeakPathSymbol::CombinedArea(weak)),
+                                PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedArea(weak)),
                             )?,
                             WeakSymbol::CombinedLine(weak) => symb.add_component(
-                                PubOrPrivSymbol::Public(WeakPathSymbol::CombinedLine(weak)),
+                                PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(weak)),
                             )?,
                             e => {
                                 return Err(Error::SymbolError(format!(
@@ -276,11 +282,13 @@ impl SymbolSet {
                                 )))?;
                         match weak_component {
                             WeakSymbol::Line(weak) => symb.add_component(
-                                PubOrPrivSymbol::Public(WeakLinePathSymbol::Line(weak)),
+                                PublicOrPrivateSymbol::Public(WeakLinePathSymbol::Line(weak)),
                             )?,
-                            WeakSymbol::CombinedLine(weak) => symb.add_component(
-                                PubOrPrivSymbol::Public(WeakLinePathSymbol::CombinedLine(weak)),
-                            )?,
+                            WeakSymbol::CombinedLine(weak) => {
+                                symb.add_component(PublicOrPrivateSymbol::Public(
+                                    WeakLinePathSymbol::CombinedLine(weak),
+                                ))?
+                            }
                             e => {
                                 return Err(Error::SymbolError(format!(
                                     "A combined line symbol contains a non-line symbol {:?}",

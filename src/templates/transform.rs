@@ -132,7 +132,7 @@ impl Transformations {
                         passpoints.push(PassPoint::parse(reader)?);
                     }
                     b"matrix" => {
-                        let m = Matrix3x3::parse(reader, &child)?;
+                        let m = Matrix3x3::parse(reader)?;
                         if let Some(role) = child
                             .attributes()
                             .filter_map(std::result::Result::ok)
@@ -266,10 +266,7 @@ impl PassPoint {
 }
 
 impl Matrix3x3 {
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        _bs: &BytesStart<'_>,
-    ) -> Result<Self> {
+    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
         let mut values = [0.; 9];
         let mut i = 0;
         let mut buf = Vec::new();

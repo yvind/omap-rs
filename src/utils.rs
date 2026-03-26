@@ -108,6 +108,16 @@ impl UnitF64 {
             Self(value.clamp(0., 1.))
         }
     }
+
+    /// Get the unit value
+    pub fn one() -> Self {
+        UnitF64(1.)
+    }
+
+    /// Get the zero value
+    pub fn zero() -> Self {
+        UnitF64(0.)
+    }
 }
 
 /// Tries to create a UnitF64 from a f64, but succeeds only for values in the unit interval
@@ -140,6 +150,16 @@ impl NonNegativeF64 {
         } else {
             Self(value.max(0.))
         }
+    }
+
+    /// Get the unit value
+    pub fn one() -> Self {
+        NonNegativeF64(1.)
+    }
+
+    /// Get the zero value
+    pub fn zero() -> Self {
+        NonNegativeF64(0.)
     }
 
     /// The files uses 1/1000 mm as the unit

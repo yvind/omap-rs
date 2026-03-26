@@ -5,7 +5,7 @@ use omap::{
     Code, Error, Omap,
     colors::Color,
     objects::LineObject,
-    symbols::{PubOrPrivSymbol, Symbol},
+    symbols::{PublicOrPrivateSymbol, Symbol, WeakLinePathSymbol},
 };
 
 fn main() -> Result<(), Error> {
@@ -45,7 +45,7 @@ fn main() -> Result<(), Error> {
         .downgrade();
 
     let mut ls = LineObject::new(
-        erosion_gully.try_into().unwrap(),
+        WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
@@ -86,7 +86,7 @@ fn main() -> Result<(), Error> {
             let borrowed = s.borrow();
 
             for part in borrowed.components() {
-                if let PubOrPrivSymbol::Private(s) = part {
+                if let PublicOrPrivateSymbol::Private(s) = part {
                     if let Some(_ss_) = &s.start_symbol {
                         num += 1;
                     }

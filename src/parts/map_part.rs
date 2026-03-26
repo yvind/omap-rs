@@ -100,6 +100,21 @@ impl MapPart {
         self.objects.len()
     }
 
+    /// Iterate through the all the objects stored in this map-part, symbol by symbol
+    pub fn iter(&self) -> impl Iterator<Item = &Vec<MapObject>> {
+        self.objects.values()
+    }
+
+    /// Iterate mutabley through the all the objects stored in this map-part, symbol by symbol
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Vec<MapObject>> {
+        self.objects.values_mut()
+    }
+
+    /// Consume this map-part and get all the objects it contains
+    pub fn into_objects(self) -> Vec<MapObject> {
+        self.objects.into_values().flatten().collect()
+    }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,

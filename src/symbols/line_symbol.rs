@@ -51,10 +51,10 @@ pub struct LineSymbol {
 
 impl LineSymbol {
     /// Create a new empty line symbol with the given code and name.
-    pub fn new(code: Code, name: String) -> LineSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> LineSymbol {
         let common = SymbolCommon {
             code,
-            name,
+            name: name.into(),
             ..Default::default()
         };
         LineSymbol {

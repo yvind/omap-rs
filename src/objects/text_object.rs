@@ -123,10 +123,14 @@ pub struct TextObject {
 
 impl TextObject {
     /// Create a new text object with the given symbol, geometry, and text content.
-    pub fn new(symbol: Weak<RefCell<TextSymbol>>, geometry: TextGeometry, text: String) -> Self {
+    pub fn new(
+        symbol: impl Into<Weak<RefCell<TextSymbol>>>,
+        geometry: TextGeometry,
+        text: String,
+    ) -> Self {
         TextObject {
             tags: HashMap::new(),
-            symbol,
+            symbol: symbol.into(),
             geometry,
             text,
             h_align: HorizontalAlign::default(),

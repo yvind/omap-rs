@@ -163,7 +163,8 @@ impl GeoRef {
         let scale = try_get_attr_raw(event, "scale").ok_or(Error::ParseOmapFileError(
             "Could not find the map scale".to_string(),
         ))?;
-        let auxiliary_scale_factor = try_get_attr_raw(event, "auxiliary_scale_factor").unwrap_or(1.);
+        let auxiliary_scale_factor =
+            try_get_attr_raw(event, "auxiliary_scale_factor").unwrap_or(1.);
         let grid_scale_factor =
             try_get_attr_raw(event, "grid_scale_factor").unwrap_or(1.) / auxiliary_scale_factor;
         let declination_deg = try_get_attr_raw(event, "declination").unwrap_or(0.);

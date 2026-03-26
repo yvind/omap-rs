@@ -1,7 +1,12 @@
 use geo_types::{Coord, LineString};
 #[cfg(feature = "geo_ref")]
 use omap::geo_referencing::{CrsType, GeoRef};
-use omap::{Code, Error, Omap, colors::Color, objects::LineObject, symbols::Symbol};
+use omap::{
+    Code, Error, Omap,
+    colors::Color,
+    objects::LineObject,
+    symbols::{Symbol, WeakLinePathSymbol},
+};
 
 fn main() -> Result<(), Error> {
     let mut map = Omap::from_path("./test.omap")?;
@@ -42,7 +47,7 @@ fn main() -> Result<(), Error> {
         .downgrade();
 
     let mut ls = LineObject::new(
-        erosion_gully.try_into().unwrap(),
+        WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );

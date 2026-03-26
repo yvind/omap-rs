@@ -53,6 +53,18 @@ impl TryFrom<WeakSymbol> for WeakLinePathSymbol {
     }
 }
 
+impl From<Weak<RefCell<LineSymbol>>> for WeakLinePathSymbol {
+    fn from(value: Weak<RefCell<LineSymbol>>) -> Self {
+        WeakLinePathSymbol::Line(value)
+    }
+}
+
+impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakLinePathSymbol {
+    fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
+        WeakLinePathSymbol::CombinedLine(value)
+    }
+}
+
 /// The symbol used to render an area object.
 #[derive(Debug, Clone)]
 pub enum WeakAreaPathSymbol {
@@ -72,6 +84,18 @@ impl WeakAreaPathSymbol {
     }
 }
 
+impl From<Weak<RefCell<AreaSymbol>>> for WeakAreaPathSymbol {
+    fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
+        WeakAreaPathSymbol::Area(value)
+    }
+}
+
+impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakAreaPathSymbol {
+    fn from(value: Weak<RefCell<CombinedAreaSymbol>>) -> Self {
+        WeakAreaPathSymbol::CombinedArea(value)
+    }
+}
+
 impl TryFrom<WeakSymbol> for WeakAreaPathSymbol {
     type Error = Error;
 
@@ -88,7 +112,7 @@ impl TryFrom<WeakSymbol> for WeakAreaPathSymbol {
 
 /// A combined-symbol part that is either a public (shared) reference or a private (embedded) symbol.
 #[derive(Debug, Clone)]
-pub enum PubOrPrivSymbol<W: std::fmt::Debug + Clone, P: std::fmt::Debug + Clone> {
+pub enum PublicOrPrivateSymbol<W: std::fmt::Debug + Clone, P: std::fmt::Debug + Clone> {
     /// A public (shared) reference to another symbol in the symbol set.
     Public(W),
     /// A private (embedded) sub-symbol.
@@ -102,6 +126,30 @@ pub enum AreaOrLineSymbol {
     Area(Box<AreaSymbol>),
     /// A line sub-symbol.
     Line(Box<LineSymbol>),
+}
+
+impl From<AreaSymbol> for AreaOrLineSymbol {
+    fn from(value: AreaSymbol) -> Self {
+        AreaOrLineSymbol::Area(Box::new(value))
+    }
+}
+
+impl From<Box<AreaSymbol>> for AreaOrLineSymbol {
+    fn from(value: Box<AreaSymbol>) -> Self {
+        AreaOrLineSymbol::Area(value)
+    }
+}
+
+impl From<LineSymbol> for AreaOrLineSymbol {
+    fn from(value: LineSymbol) -> Self {
+        AreaOrLineSymbol::Line(Box::new(value))
+    }
+}
+
+impl From<Box<LineSymbol>> for AreaOrLineSymbol {
+    fn from(value: Box<LineSymbol>) -> Self {
+        AreaOrLineSymbol::Line(value)
+    }
 }
 
 /// A non-owning reference to a area or line symbol, used in public parts of area combined symbols
@@ -126,6 +174,48 @@ impl WeakPathSymbol {
             WeakPathSymbol::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
             WeakPathSymbol::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
         }
+    }
+}
+
+impl From<WeakAreaPathSymbol> for WeakPathSymbol {
+    fn from(value: WeakAreaPathSymbol) -> Self {
+        match value {
+            WeakAreaPathSymbol::Area(weak) => WeakPathSymbol::Area(weak),
+            WeakAreaPathSymbol::CombinedArea(weak) => WeakPathSymbol::CombinedArea(weak),
+        }
+    }
+}
+
+impl From<WeakLinePathSymbol> for WeakPathSymbol {
+    fn from(value: WeakLinePathSymbol) -> Self {
+        match value {
+            WeakLinePathSymbol::Line(weak) => WeakPathSymbol::Line(weak),
+            WeakLinePathSymbol::CombinedLine(weak) => WeakPathSymbol::CombinedLine(weak),
+        }
+    }
+}
+
+impl From<Weak<RefCell<AreaSymbol>>> for WeakPathSymbol {
+    fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
+        WeakPathSymbol::Area(value)
+    }
+}
+
+impl From<Weak<RefCell<LineSymbol>>> for WeakPathSymbol {
+    fn from(value: Weak<RefCell<LineSymbol>>) -> Self {
+        WeakPathSymbol::Line(value)
+    }
+}
+
+impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakPathSymbol {
+    fn from(value: Weak<RefCell<CombinedAreaSymbol>>) -> Self {
+        WeakPathSymbol::CombinedArea(value)
+    }
+}
+
+impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakPathSymbol {
+    fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
+        WeakPathSymbol::CombinedLine(value)
     }
 }
 

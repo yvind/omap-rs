@@ -3,7 +3,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
-use super::{LineSymbol, PubOrPrivSymbol, SymbolCommon, SymbolSet};
+use super::{LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
     Code, Error, Result,
     colors::ColorSet,
@@ -15,21 +15,21 @@ use crate::{
 pub struct CombinedLineSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
-    parts: Vec<PubOrPrivSymbol<WeakLinePathSymbol, Box<LineSymbol>>>,
+    parts: Vec<PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>>,
 }
 
 impl CombinedLineSymbol {
     /// Iterate through the symbol component of the symbol
     pub fn components(
         &self,
-    ) -> impl Iterator<Item = &PubOrPrivSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
+    ) -> impl Iterator<Item = &PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
         self.parts.iter()
     }
 
     /// Iterate through the mutable symbol component of the symbol
     pub fn components_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut PubOrPrivSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
+    ) -> impl Iterator<Item = &mut PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
         self.parts.iter_mut()
     }
 
@@ -38,7 +38,7 @@ impl CombinedLineSymbol {
     pub fn remove_component(
         &mut self,
         index: usize,
-    ) -> Option<PubOrPrivSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
+    ) -> Option<PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
         if self.parts.len() > index {
             Some(self.parts.remove(index))
         } else {
@@ -51,7 +51,7 @@ impl CombinedLineSymbol {
     pub fn swap_remove_component(
         &mut self,
         index: usize,
-    ) -> Option<PubOrPrivSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
+    ) -> Option<PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
         if self.parts.len() > index {
             Some(self.parts.swap_remove(index))
         } else {
@@ -66,11 +66,11 @@ impl CombinedLineSymbol {
     /// are already being borrowed (through any of the .(try_)borrow(), .(try_)borrow_mut() functions) it fails
     pub fn add_component(
         &mut self,
-        new_component: PubOrPrivSymbol<WeakLinePathSymbol, Box<LineSymbol>>,
+        new_component: PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>,
     ) -> Result<()> {
         if matches!(
             new_component,
-            PubOrPrivSymbol::Public(WeakLinePathSymbol::CombinedLine(_))
+            PublicOrPrivateSymbol::Public(WeakLinePathSymbol::CombinedLine(_))
         ) {
             self.parts.push(new_component);
             match self.contains_cycle() {
@@ -93,10 +93,10 @@ impl CombinedLineSymbol {
     }
 
     /// Create a new empty combined line symbol with the given code and name.
-    pub fn new(code: Code, name: String) -> CombinedLineSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> CombinedLineSymbol {
         let common = SymbolCommon {
             code,
-            name,
+            name: name.into(),
             ..Default::default()
         };
         CombinedLineSymbol {
@@ -117,7 +117,7 @@ impl CombinedLineSymbol {
         let mut min = f64::MAX;
         for s in self.parts.iter() {
             match s {
-                PubOrPrivSymbol::Public(weak) => {
+                PublicOrPrivateSymbol::Public(weak) => {
                     if let Some(line) = weak.upgrade() {
                         match line {
                             Symbol::Line(line) => {
@@ -137,7 +137,7 @@ impl CombinedLineSymbol {
                         }
                     }
                 }
-                PubOrPrivSymbol::Private(line_symbol) => {
+                PublicOrPrivateSymbol::Private(line_symbol) => {
                     if line_symbol.minimum_length.get() > 0. {
                         min = min.min(line_symbol.minimum_length.get());
                     }
@@ -155,7 +155,7 @@ impl CombinedLineSymbol {
     /// This relies on the ref cells borrow checking
     pub(super) fn contains_cycle(&self) -> Result<bool> {
         for part in &self.parts {
-            if let PubOrPrivSymbol::Public(WeakLinePathSymbol::CombinedLine(weak)) = part
+            if let PublicOrPrivateSymbol::Public(WeakLinePathSymbol::CombinedLine(weak)) = part
                 && let Some(cl) = weak.upgrade()
             {
                 match cl.try_borrow_mut() {
@@ -184,7 +184,7 @@ impl CombinedLineSymbol {
             _ => (),
         }
         for part in &self.parts {
-            if let PubOrPrivSymbol::Public(s) = part {
+            if let PublicOrPrivateSymbol::Public(s) = part {
                 match (s, other_symbol) {
                     (WeakLinePathSymbol::CombinedLine(weak), _) => {
                         let combined_line = weak.upgrade();
@@ -245,7 +245,7 @@ impl CombinedLineSymbol {
 
         for part in &self.parts {
             match part {
-                PubOrPrivSymbol::Public(weak) => {
+                PublicOrPrivateSymbol::Public(weak) => {
                     let sym_index = if let Some(sym) = weak.upgrade() {
                         symbol_set
                             .iter()
@@ -260,7 +260,7 @@ impl CombinedLineSymbol {
                             .with_attributes([("symbol", sym_index.to_string().as_str())]),
                     ))?;
                 }
-                PubOrPrivSymbol::Private(line) => {
+                PublicOrPrivateSymbol::Private(line) => {
                     writer.write_event(Event::Start(
                         BytesStart::new("part").with_attributes([("private", "true")]),
                     ))?;

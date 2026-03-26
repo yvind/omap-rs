@@ -6,14 +6,14 @@ use quick_xml::{Reader, Writer};
 
 use crate::colors::Rgb;
 use crate::templates::Templates;
-use crate::utils::{UnitF64, parse_attr_raw, try_get_attr_raw};
-use crate::{Error, Result};
+use crate::utils::{self, UnitF64, parse_attr_raw, try_get_attr_raw};
+use crate::{Error, NonNegativeF64, Result};
 
 /// Visibility settings for a template or the map layer.
 #[derive(Debug, Clone, Copy)]
 pub struct TemplateVisibility {
     /// Opacity from 0.0 (invisible) to 1.0 (opaque).
-    pub opacity: f64,
+    pub opacity: UnitF64,
     /// Whether this layer is visible.
     pub visible: bool,
 }
@@ -21,7 +21,7 @@ pub struct TemplateVisibility {
 impl Default for TemplateVisibility {
     fn default() -> Self {
         Self {
-            opacity: 1.0,
+            opacity: UnitF64::one(),
             visible: false,
         }
     }
@@ -32,7 +32,11 @@ impl TemplateVisibility {
         let mut tv = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"opacity" => tv.opacity = parse_attr_raw(attr.value).unwrap_or(tv.opacity),
+                b"opacity" => {
+                    tv.opacity = UnitF64::clamped_from(
+                        parse_attr_raw(attr.value).unwrap_or(tv.opacity.get()),
+                    )
+                }
                 b"visible" => tv.visible = attr.as_bool().unwrap_or(tv.visible),
                 _ => (),
             }
@@ -282,11 +286,11 @@ pub struct View {
     /// Grid display settings.
     pub grid: Grid,
     /// Zoom factor.
-    pub zoom: f64,
+    pub zoom: NonNegativeF64,
     /// View rotation in radians (counter-clockwise).
     pub rotation: f64,
-    /// Horizontal position of the view centre (in µm map coordinates).
-    pub view_centre: Coord<i32>,
+    /// Horizontal position of the view centre (in mm map coordinates).
+    pub view_centre: Coord,
     /// Visibility of the map drawing itself.
     pub map_visibility: TemplateVisibility,
     /// Whether all templates are hidden in this view.
@@ -301,11 +305,11 @@ impl Default for View {
     fn default() -> Self {
         Self {
             grid: Grid::default(),
-            zoom: 1.0,
+            zoom: NonNegativeF64::one(),
             rotation: 0.0,
             view_centre: Coord::zero(),
             map_visibility: TemplateVisibility {
-                opacity: 1.0,
+                opacity: UnitF64::one(),
                 visible: true,
             },
             all_templates_hidden: false,
@@ -318,7 +322,6 @@ impl Default for View {
 impl View {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        _event: &BytesStart<'_>,
         templates: &mut Templates,
     ) -> Result<Self> {
         let mut view = Self::default();
@@ -346,10 +349,12 @@ impl View {
         bs: &BytesStart<'_>,
         templates: &mut Templates,
     ) -> Result<()> {
-        self.zoom = try_get_attr_raw(bs, "zoom").unwrap_or(1.0);
+        self.zoom = NonNegativeF64::clamped_from(try_get_attr_raw(bs, "zoom").unwrap_or(1.0));
         self.rotation = try_get_attr_raw(bs, "rotation").unwrap_or(0.0);
-        self.view_centre.x = try_get_attr_raw(bs, "position_x").unwrap_or(0);
-        self.view_centre.y = try_get_attr_raw(bs, "position_y").unwrap_or(0);
+        self.view_centre.x =
+            utils::from_file_value(try_get_attr_raw(bs, "position_x").unwrap_or(0));
+        self.view_centre.y =
+            utils::from_file_value(try_get_attr_raw(bs, "position_y").unwrap_or(0));
 
         let mut buf = Vec::new();
         loop {
@@ -410,7 +415,7 @@ impl View {
         self.grid.write(writer)?;
 
         let mut mv = BytesStart::new("map_view").with_attributes([
-            ("zoom", format!("{:.4}", self.zoom).as_str()),
+            ("zoom", format!("{:.4}", self.zoom.get()).as_str()),
             ("position_x", self.view_centre.x.to_string().as_str()),
             ("position_y", self.view_centre.y.to_string().as_str()),
         ]);
@@ -424,7 +429,7 @@ impl View {
         writer.write_event(Event::Empty(BytesStart::new("map").with_attributes([
             (
                 "opacity",
-                format!("{:.2}", self.map_visibility.opacity).as_str(),
+                format!("{:.2}", self.map_visibility.opacity.get()).as_str(),
             ),
             ("visible", self.map_visibility.visible.to_string().as_str()),
         ])))?;
@@ -442,7 +447,7 @@ impl View {
             for (index, vis) in visibilities.into_iter().enumerate() {
                 writer.write_event(Event::Empty(BytesStart::new("ref").with_attributes([
                     ("template", index.to_string().as_str()),
-                    ("opacity", format!("{:.2}", vis.opacity).as_str()),
+                    ("opacity", format!("{:.2}", vis.opacity.get()).as_str()),
                     ("visible", vis.visible.to_string().as_str()),
                 ])))?;
             }

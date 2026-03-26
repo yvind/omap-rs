@@ -163,9 +163,9 @@ impl From<Cmyk> for Rgb {
 impl Default for Rgb {
     fn default() -> Self {
         Self {
-            r: UnitF64::clamped_from(1.),
-            g: UnitF64::clamped_from(1.),
-            b: UnitF64::clamped_from(1.),
+            r: UnitF64::one(),
+            g: UnitF64::one(),
+            b: UnitF64::one(),
         }
     }
 }

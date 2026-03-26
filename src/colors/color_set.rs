@@ -23,6 +23,15 @@ impl ColorSet {
         self.0.len()
     }
 
+    /// Insert a new color into the ColorSet with priority `index`, fails if `index > self.num_colors()`
+    pub fn insert(&mut self, index: usize, color: impl Into<Color>) -> Result<()> {
+        if index > self.num_colors() {
+            return Err(Error::ColorError);
+        }
+        self.0.insert(index, color.into());
+        Ok(())
+    }
+
     /// Get a color by its priority index.
     pub fn get_color_by_priority(&self, priority: usize) -> Option<&Color> {
         if priority >= self.num_colors() {
@@ -53,14 +62,11 @@ impl ColorSet {
 
     /// Get the priority index of a specific color in the set (by pointer identity).
     pub fn get_id_of_color(&self, color: &Color) -> Option<usize> {
-        self.iter()
-            .enumerate()
-            .find(|(_, c)| match (color, c) {
-                (Color::SpotColor(c1), Color::SpotColor(c2)) => c1.as_ptr() == c2.as_ptr(),
-                (Color::MixedColor(c1), Color::MixedColor(c2)) => c1.as_ptr() == c2.as_ptr(),
-                _ => false,
-            })
-            .map(|(i, _)| i)
+        self.iter().position(|c| match (color, c) {
+            (Color::SpotColor(c1), Color::SpotColor(c2)) => c1.as_ptr() == c2.as_ptr(),
+            (Color::MixedColor(c1), Color::MixedColor(c2)) => c1.as_ptr() == c2.as_ptr(),
+            _ => false,
+        })
     }
 
     /// Access the colors through an iterator

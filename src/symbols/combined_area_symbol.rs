@@ -3,7 +3,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
-use super::{AreaSymbol, LineSymbol, PubOrPrivSymbol, SymbolCommon, SymbolSet};
+use super::{AreaSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
     Code, Error, Result,
     colors::ColorSet,
@@ -18,21 +18,21 @@ pub struct CombinedAreaSymbol {
     pub common: SymbolCommon,
     /// The component parts of this combined symbol.
     /// Be careful not to make circular symbol definitions (combined symbol A contains B which contains C which contains A)
-    parts: Vec<PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>>,
+    parts: Vec<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>>,
 }
 
 impl CombinedAreaSymbol {
     /// Iterate through the symbol component of the symbol
     pub fn components(
         &self,
-    ) -> impl Iterator<Item = &PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> impl Iterator<Item = &PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
         self.parts.iter()
     }
 
     /// Iterate through the mutable symbol component of the symbol
     pub fn components_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> impl Iterator<Item = &mut PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
         self.parts.iter_mut()
     }
 
@@ -41,7 +41,7 @@ impl CombinedAreaSymbol {
     pub fn remove_component(
         &mut self,
         index: usize,
-    ) -> Option<PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> Option<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
         if self.parts.len() > index {
             Some(self.parts.remove(index))
         } else {
@@ -54,7 +54,7 @@ impl CombinedAreaSymbol {
     pub fn swap_remove_component(
         &mut self,
         index: usize,
-    ) -> Option<PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> Option<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
         if self.parts.len() > index {
             Some(self.parts.swap_remove(index))
         } else {
@@ -69,12 +69,12 @@ impl CombinedAreaSymbol {
     /// are already being borrowed (through any of the .(try_)borrow(), .(try_)borrow_mut() functions) it fails and the component will not be added
     pub fn add_component(
         &mut self,
-        new_component: PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>,
+        new_component: PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>,
     ) -> Result<()> {
         if matches!(
             new_component,
-            PubOrPrivSymbol::Public(WeakPathSymbol::CombinedLine(_))
-                | PubOrPrivSymbol::Public(WeakPathSymbol::CombinedArea(_))
+            PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(_))
+                | PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedArea(_))
         ) {
             self.parts.push(new_component);
             match self.contains_cycle() {
@@ -97,10 +97,10 @@ impl CombinedAreaSymbol {
     }
 
     /// Create a new empty combined area symbol with the given code and name.
-    pub fn new(code: Code, name: String) -> CombinedAreaSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> CombinedAreaSymbol {
         let common = SymbolCommon {
             code,
-            name,
+            name: name.into(),
             ..Default::default()
         };
         CombinedAreaSymbol {
@@ -120,7 +120,7 @@ impl CombinedAreaSymbol {
         let mut min = f64::MAX;
         for s in self.parts.iter() {
             match s {
-                PubOrPrivSymbol::Public(p) => {
+                PublicOrPrivateSymbol::Public(p) => {
                     if let WeakPathSymbol::Area(weak) = p
                         && let Some(area) = weak.upgrade()
                     {
@@ -130,7 +130,7 @@ impl CombinedAreaSymbol {
                         }
                     }
                 }
-                PubOrPrivSymbol::Private(p) => {
+                PublicOrPrivateSymbol::Private(p) => {
                     if let AreaOrLineSymbol::Area(area_symbol) = p
                         && area_symbol.minimum_area.get() > 0.
                     {
@@ -151,7 +151,7 @@ impl CombinedAreaSymbol {
     pub(super) fn contains_cycle(&self) -> Result<bool> {
         for part in &self.parts {
             match part {
-                PubOrPrivSymbol::Public(WeakPathSymbol::CombinedArea(weak)) => {
+                PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedArea(weak)) => {
                     if let Some(ca) = weak.upgrade() {
                         match ca.try_borrow_mut() {
                             Ok(borrowed) => {
@@ -163,7 +163,7 @@ impl CombinedAreaSymbol {
                         }
                     }
                 }
-                PubOrPrivSymbol::Public(WeakPathSymbol::CombinedLine(weak)) => {
+                PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(weak)) => {
                     if let Some(ca) = weak.upgrade() {
                         match ca.try_borrow_mut() {
                             Ok(borrowed) => {
@@ -192,7 +192,7 @@ impl CombinedAreaSymbol {
         }
 
         for part in &self.parts {
-            if let PubOrPrivSymbol::Public(s) = part {
+            if let PublicOrPrivateSymbol::Public(s) = part {
                 match (s, other_symbol) {
                     (WeakPathSymbol::CombinedArea(weak), _) => {
                         let combined_area = weak.upgrade();
@@ -233,7 +233,7 @@ impl CombinedAreaSymbol {
         attributes: SymbolCommon,
     ) -> Result<(CombinedAreaSymbol, Vec<usize>)> {
         let mut common = attributes;
-        let mut parts: Vec<PubOrPrivSymbol<WeakPathSymbol, AreaOrLineSymbol>> = Vec::new();
+        let mut parts: Vec<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> = Vec::new();
         let mut public_component_ids: Vec<usize> = Vec::new();
 
         let mut buf = Vec::new();
@@ -253,7 +253,7 @@ impl CombinedAreaSymbol {
                         if is_private {
                             // Parse the private sub-symbol
                             let sym = Self::parse_private_part(reader, color_set)?;
-                            parts.push(PubOrPrivSymbol::Private(sym));
+                            parts.push(PublicOrPrivateSymbol::Private(sym));
                         } else {
                             let symbol_index = try_get_attr_raw(&e, "symbol").unwrap_or(usize::MAX);
                             // Record the public component ID for later resolution
@@ -410,7 +410,7 @@ impl CombinedAreaSymbol {
 
         for part in &self.parts {
             match part {
-                PubOrPrivSymbol::Public(weak_path) => {
+                PublicOrPrivateSymbol::Public(weak_path) => {
                     let sym_index = if let Some(sym) = weak_path.upgrade() {
                         symbol_set
                             .iter()
@@ -426,7 +426,7 @@ impl CombinedAreaSymbol {
                             .with_attributes([("symbol", sym_index.to_string().as_str())]),
                     ))?;
                 }
-                PubOrPrivSymbol::Private(path_sym) => {
+                PublicOrPrivateSymbol::Private(path_sym) => {
                     writer.write_event(Event::Start(
                         BytesStart::new("part").with_attributes([("private", "true")]),
                     ))?;

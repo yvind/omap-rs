@@ -229,10 +229,10 @@ pub struct PointSymbol {
 
 impl PointSymbol {
     /// Create a new empty point symbol with the given code and name.
-    pub fn new(code: Code, name: String) -> PointSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> PointSymbol {
         let common = SymbolCommon {
             code,
-            name,
+            name: name.into(),
             ..Default::default()
         };
         PointSymbol {

@@ -281,10 +281,10 @@ impl AreaSymbol {
     }
 
     /// Create a new empty area symbol with the given code and name.
-    pub fn new(code: Code, name: String) -> AreaSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> AreaSymbol {
         let common = SymbolCommon {
             code,
-            name,
+            name: name.into(),
             ..Default::default()
         };
         AreaSymbol {
@@ -292,7 +292,7 @@ impl AreaSymbol {
             is_rotatable: true,
             color: SymbolColor::NoColor,
             patterns: Vec::new(),
-            minimum_area: NonNegativeF64::clamped_from(0.),
+            minimum_area: NonNegativeF64::zero(),
         }
     }
 

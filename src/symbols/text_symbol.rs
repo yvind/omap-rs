@@ -100,10 +100,10 @@ pub struct TextSymbol {
 
 impl TextSymbol {
     /// Create a new text symbol with the given code, name, and font family.
-    pub fn new(code: Code, name: String) -> TextSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> TextSymbol {
         let common = SymbolCommon {
             code,
-            name,
+            name: name.into(),
             ..Default::default()
         };
         TextSymbol {
@@ -113,7 +113,7 @@ impl TextSymbol {
             color: SymbolColor::NoColor,
             custom_tabs: Vec::new(),
             line_below: None,
-            line_spacing: NonNegativeF64::clamped_from(1.0),
+            line_spacing: NonNegativeF64::one(),
             character_spacing: 0.0,
             font_size: NonNegativeF64::clamped_from(4.0),
             paragraph_spacing: 0.0,
@@ -145,7 +145,7 @@ impl TextSymbol {
         let mut italic = false;
         let mut underline = false;
         let mut color = SymbolColor::NoColor;
-        let mut line_spacing = NonNegativeF64::clamped_from(1.0);
+        let mut line_spacing = NonNegativeF64::one();
         let mut paragraph_spacing = 0.0;
         let mut character_spacing = 0.0;
         let mut kerning = true;

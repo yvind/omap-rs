@@ -32,10 +32,10 @@ pub struct LineObject {
 
 impl LineObject {
     /// Create a new line object with the given symbol and geometry.
-    pub fn new(symbol: WeakLinePathSymbol, geometry: LineString) -> Self {
+    pub fn new(symbol: impl Into<WeakLinePathSymbol>, geometry: LineString) -> Self {
         LineObject {
             tags: HashMap::new(),
-            symbol,
+            symbol: symbol.into(),
             write_as_bezier: false,
             geometry,
             raw_map_coords: Vec::new(),
@@ -62,7 +62,7 @@ impl LineObject {
             write_as_bezier: false,
             geometry,
             raw_map_coords: Vec::new(),
-            is_coords_touched: false,
+            is_coords_touched: true,
         }
     }
 

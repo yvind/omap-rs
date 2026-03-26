@@ -43,11 +43,11 @@ pub struct AreaObject {
 
 impl AreaObject {
     /// Create a new area object with the given symbol and geometry.
-    pub fn new(symbol: WeakAreaPathSymbol, geometry: Polygon) -> Self {
+    pub fn new(symbol: impl Into<WeakAreaPathSymbol>, geometry: Polygon) -> Self {
         AreaObject {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
-            symbol,
+            symbol: symbol.into(),
             write_as_bezier: false,
             geometry,
             raw_map_coords: Vec::new(),
@@ -84,7 +84,7 @@ impl AreaObject {
             write_as_bezier: false,
             geometry,
             raw_map_coords: Vec::new(),
-            is_coords_touched: false,
+            is_coords_touched: true,
         }
     }
 
