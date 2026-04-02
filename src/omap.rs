@@ -28,7 +28,7 @@ use crate::{
 /// All objects are in map coordinates i.e given in mm of paper
 /// relative the ref point with positive y towards the magnetic north
 ///
-/// The Undo history is wiped
+/// The Undo/Redo history and printer information is ignored
 #[derive(Debug, Clone)]
 pub struct Omap {
     /// Free-text notes embedded in the file.
@@ -87,7 +87,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 4_000)?;
-        let mut omap = Self::from_path("./src/default_maps/issprom4000.omap")?;
+        let mut omap = Self::from_path("./src/default_maps/issprom_4000.omap")?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -107,7 +107,7 @@ impl Omap {
     /// Create a new 1:4_000 map with a complete ISSprOM symbolset and color order
     #[cfg(not(feature = "geo_ref"))]
     pub fn default_4_000() -> Result<Self> {
-        Self::from_path("./src/default_maps/issprom4000.omap")
+        Self::from_path("./src/default_maps/issprom_4000.omap")
     }
 
     /// Create a new empty map
@@ -181,7 +181,10 @@ impl Omap {
                     b"templates" => {
                         templates = Templates::parse(&mut reader, &bytes_start).unwrap_or_default()
                     }
-                    b"view" => view = View::parse(&mut reader, &mut templates).unwrap_or_default(),
+                    b"view" => {
+                        view = View::parse(&mut reader, &bytes_start, &mut templates)
+                            .unwrap_or_default()
+                    }
                     _ => (),
                 },
                 Event::Eof => break,

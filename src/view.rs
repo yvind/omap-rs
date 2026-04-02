@@ -4,7 +4,7 @@ use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-use crate::colors::Rgb;
+use crate::colors::Argb;
 use crate::templates::Templates;
 use crate::utils::{self, UnitF64, parse_attr_raw, try_get_attr_raw};
 use crate::{Error, NonNegativeF64, Result};
@@ -189,7 +189,7 @@ impl AsRef<str> for GridUnit {
 #[derive(Debug, Clone)]
 pub struct Grid {
     /// Rgb Grid colour parsed from a hex string, e.g. `"#646464"`.
-    pub color: Rgb,
+    pub color: Argb,
     /// Display mode.
     pub display: GridDisplay,
     /// Grid alignment reference direction.
@@ -213,7 +213,8 @@ pub struct Grid {
 impl Default for Grid {
     fn default() -> Self {
         Self {
-            color: Rgb {
+            color: Argb {
+                a: UnitF64::one(),
                 r: UnitF64::clamped_from(100. / 255.),
                 g: UnitF64::clamped_from(100. / 255.),
                 b: UnitF64::clamped_from(100. / 255.),
@@ -259,7 +260,7 @@ impl Grid {
 
     fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         writer.write_event(Event::Empty(BytesStart::new("grid").with_attributes([
-            ("color", self.color.to_hexstring().as_str()),
+            ("color", self.color.to_string().as_str()),
             ("display", self.display.as_ref()),
             ("alignment", self.alignment.as_ref()),
             (
@@ -279,6 +280,7 @@ impl Grid {
         Ok(())
     }
 }
+
 /// The view onto the map, including zoom, position, rotation, grid settings,
 /// and visibility of the map layer and templates.
 #[derive(Debug, Clone)]
@@ -299,6 +301,10 @@ pub struct View {
     pub grid_visible: bool,
     /// Whether overprinting simulation is enabled.
     pub overprinting_simulation_enabled: bool,
+    /// Render hatched polygons for the area objects
+    pub area_hatching_enabled: bool,
+    /// Render only baselines for the objects
+    pub baseline_view_enabled: bool,
 }
 
 impl Default for View {
@@ -315,6 +321,8 @@ impl Default for View {
             all_templates_hidden: false,
             grid_visible: false,
             overprinting_simulation_enabled: false,
+            area_hatching_enabled: false,
+            baseline_view_enabled: false,
         }
     }
 }
@@ -322,10 +330,14 @@ impl Default for View {
 impl View {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
+        bs: &BytesStart<'_>,
         templates: &mut Templates,
     ) -> Result<Self> {
         let mut view = Self::default();
         let mut buf = Vec::new();
+
+        view.area_hatching_enabled = try_get_attr_raw(bs, "area_hatching_enabled").unwrap_or(false);
+        view.baseline_view_enabled = try_get_attr_raw(bs, "baseline_view_enabled").unwrap_or(false);
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -408,10 +420,15 @@ impl View {
         writer: &mut Writer<W>,
         visibilities: Vec<TemplateVisibility>,
     ) -> Result<()> {
-        // <view>
-        writer.write_event(Event::Start(BytesStart::new("view")))?;
+        let mut bs = BytesStart::new("view");
+        if self.area_hatching_enabled {
+            bs.push_attribute(("area_hatching_enabled", "true"));
+        }
+        if self.baseline_view_enabled {
+            bs.push_attribute(("baseline_view_enabled", "true"));
+        }
+        writer.write_event(Event::Start(bs))?;
 
-        // <grid ... />
         self.grid.write(writer)?;
 
         let mut mv = BytesStart::new("map_view").with_attributes([

@@ -114,22 +114,34 @@ impl FromStr for Rgb {
     }
 }
 
-impl Rgb {
-    /// Convert the RGB color to a `#rrggbb` hex string.
-    pub fn to_hexstring(self) -> String {
-        fn to_hex(value: UnitF64) -> String {
+impl std::fmt::Display for Rgb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn to_hex(value: UnitF64, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let value = (value.get() * 255.).round() as u32;
 
             let first = char::from_digit(value / 16, 16).unwrap();
             let last = char::from_digit(value % 16, 16).unwrap();
 
-            format!("{first}{last}")
+            write!(f, "{first}{last}")
         }
-        format!("#{}{}{}", to_hex(self.r), to_hex(self.g), to_hex(self.b))
+        to_hex(self.r, f)?;
+        to_hex(self.g, f)?;
+        to_hex(self.b, f)
     }
+}
 
-    /// Parse an RGB color from a `#rrggbb` hex string.
-    pub fn from_hexstring(s: &str) -> Result<Self> {
+impl From<Argb> for Rgb {
+    fn from(value: Argb) -> Self {
+        Rgb {
+            r: value.r,
+            g: value.g,
+            b: value.b,
+        }
+    }
+}
+
+impl Rgb {
+    fn from_hexstring(s: &str) -> Result<Self> {
         let (_, s) = s.split_once('#').ok_or(Error::ColorError)?;
         if s.len() < 6 {
             return Err(Error::ColorError);
@@ -146,6 +158,7 @@ impl Rgb {
         })
     }
 }
+
 impl From<Cmyk> for Rgb {
     fn from(value: Cmyk) -> Self {
         let r = (1.0 - value.c.get()) * (1.0 - value.k.get());
@@ -163,9 +176,9 @@ impl From<Cmyk> for Rgb {
 impl Default for Rgb {
     fn default() -> Self {
         Self {
-            r: UnitF64::one(),
-            g: UnitF64::one(),
-            b: UnitF64::one(),
+            r: UnitF64::zero(),
+            g: UnitF64::zero(),
+            b: UnitF64::zero(),
         }
     }
 }
@@ -197,5 +210,92 @@ impl RgbMode {
         };
         writer.write_event(Event::Empty(bs))?;
         Ok(())
+    }
+}
+
+/// An RGB color value with each component in the range `[0, 1]`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Argb {
+    /// Alpha component
+    pub a: UnitF64,
+    /// Red component.
+    pub r: UnitF64,
+    /// Green component.
+    pub g: UnitF64,
+    /// Blue component.
+    pub b: UnitF64,
+}
+
+impl FromStr for Argb {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let (_, split) = s.split_once('#').ok_or(Error::ColorError)?;
+        if split.len() < 8 {
+            Ok(Rgb::from_hexstring(s)?.into())
+        } else {
+            Argb::from_hexstring(s)
+        }
+    }
+}
+
+impl std::fmt::Display for Argb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn to_hex(value: UnitF64, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let value = (value.get() * 255.).round() as u32;
+
+            let first = char::from_digit(value / 16, 16).unwrap();
+            let last = char::from_digit(value % 16, 16).unwrap();
+
+            write!(f, "{first}{last}")
+        }
+
+        to_hex(self.a, f)?;
+        to_hex(self.r, f)?;
+        to_hex(self.g, f)?;
+        to_hex(self.b, f)
+    }
+}
+
+impl From<Rgb> for Argb {
+    fn from(value: Rgb) -> Self {
+        Argb {
+            a: UnitF64::one(),
+            r: value.r,
+            g: value.g,
+            b: value.b,
+        }
+    }
+}
+
+impl Default for Argb {
+    fn default() -> Self {
+        Self {
+            a: UnitF64::one(),
+            r: UnitF64::zero(),
+            g: UnitF64::zero(),
+            b: UnitF64::zero(),
+        }
+    }
+}
+
+impl Argb {
+    fn from_hexstring(s: &str) -> Result<Self> {
+        let (_, s) = s.split_once('#').ok_or(Error::ColorError)?;
+        if s.len() < 8 {
+            return Err(Error::ColorError);
+        }
+        let mut pieces = s.as_bytes().chunks(2).map(|b| str::from_utf8(b));
+        let a = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
+        let r = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
+        let g = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
+        let b = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
+
+        Ok(Argb {
+            a: UnitF64::clamped_from(a as f64 / 255.),
+            r: UnitF64::clamped_from(r as f64 / 255.),
+            g: UnitF64::clamped_from(g as f64 / 255.),
+            b: UnitF64::clamped_from(b as f64 / 255.),
+        })
     }
 }
