@@ -32,7 +32,7 @@ impl MapParts {
     /// Merge two of the map parts.
     /// The second part is merged into the first part. The name of the first part is kept
     /// The order of parts is also kept
-    pub fn merge_two_parts(&mut self, part_1_index: usize, part_2_index: usize) -> Result<()> {
+    pub fn merge_two_parts(&mut self, mut part_1_index: usize, part_2_index: usize) -> Result<()> {
         if part_1_index >= self.num_map_parts()
             || part_2_index >= self.num_map_parts()
             || part_1_index == part_2_index
@@ -40,7 +40,9 @@ impl MapParts {
             Err(Error::MapPartMergeError)
         } else {
             let part2 = self.0.remove(part_2_index);
-
+            if part_1_index > part_2_index {
+                part_1_index -= 1;
+            }
             self.0[part_1_index].merge(part2);
             Ok(())
         }
@@ -109,9 +111,11 @@ impl MapParts {
             ("count", self.0.len().to_string().as_str()),
             ("current", "0"),
         ])))?;
+        writer.get_mut().write_all(b"\n")?;
 
         for part in self.0 {
             part.write(writer, symbols)?;
+            writer.get_mut().write_all(b"\n")?;
         }
 
         writer.write_event(Event::End(BytesEnd::new("parts")))?;

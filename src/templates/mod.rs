@@ -186,14 +186,14 @@ impl Templates {
                 ),
             ],
         )))?;
-
+        writer.get_mut().write_all(b"\n")?;
         let mut visibilities = Vec::with_capacity(self.len());
         for entry in self.template_entries {
             visibilities.push(entry.write(writer)?);
+            writer.get_mut().write_all(b"\n")?;
         }
-
         self.defaults.write(writer)?;
-
+        writer.get_mut().write_all(b"\n")?;
         writer.write_event(Event::End(BytesEnd::new("templates")))?;
         Ok(visibilities)
     }

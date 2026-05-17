@@ -12,7 +12,7 @@ use crate::{Error, Result};
 /// The order of the [Color]s in the [Vec] is the order of priority
 /// Move the colors around to change priority, f.ex. using `color_set.0.swap(2, 5)`
 /// Deleting a [Color] from the [ColorSet] will drop that colors allocation (if no outstanding [Rc]s have been made)
-/// as [crate::editor::symbols::Symbol]s and [ColorComponent]s in [super::MixedColor] only have [std::rc::Weak] references
+/// as [crate::symbols::Symbol]s and [ColorComponent]s in [super::MixedColor] only have [std::rc::Weak] references
 /// If a weak reference is referencing a deleted color at the time of writing to file, no color will be used
 #[derive(Debug, Clone)]
 pub struct ColorSet(pub Vec<Color>);
@@ -34,11 +34,7 @@ impl ColorSet {
 
     /// Get a color by its priority index.
     pub fn get_color_by_priority(&self, priority: usize) -> Option<&Color> {
-        if priority >= self.num_colors() {
-            None
-        } else {
-            Some(&self.0[priority])
-        }
+        self.0.get(priority)
     }
 
     /// Get a weak reference to a color by its priority index.

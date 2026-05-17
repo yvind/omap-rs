@@ -126,12 +126,12 @@ impl MapObject {
             }
         }
 
-        if object_type.is_none() {
+        let Some(mut object_type) = object_type else {
             return Err(Error::ParseOmapFileError(
                 "Could not parse object type".to_string(),
             ));
-        }
-        let mut object_type = object_type.unwrap();
+        };
+
         if is_line_element {
             object_type = ObjectType::Line
         }

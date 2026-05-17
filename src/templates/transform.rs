@@ -180,7 +180,7 @@ impl TemplateTransform {
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"x" => t.template_pos.x = parse_attr_raw(attr.value).unwrap_or(0),
-                b"y" => t.template_pos.x = parse_attr_raw(attr.value).unwrap_or(0),
+                b"y" => t.template_pos.y = parse_attr_raw(attr.value).unwrap_or(0),
                 b"rotation" => t.template_rotation = parse_attr_raw(attr.value).unwrap_or(0.),
                 b"scale_x" => t.template_scale.x = parse_attr_raw(attr.value).unwrap_or(1.),
                 b"scale_y" => t.template_scale.y = parse_attr_raw(attr.value).unwrap_or(1.),

@@ -39,7 +39,7 @@ fn main() {
         map_center_elevation_meters,
     ).unwrap();
 
-    // T
+    // Iterate through the colors
     for color in map.colors.iter() {
         match color {
             // Colors are split between `SpotColor` which defines new colors
@@ -54,15 +54,15 @@ fn main() {
         }
     }
 
-    // The Symbol set holds `Rc`s (owning pointers) of the symbols (which again hold weak
-    // The Objects hold
+    // The Symbol set holds `Rc`s (owning pointers) of the symbols (which again hold weak pointers of the colors)
+    // The objects hold weak pointers of the symbol
     let erosion_gully = map
         .symbols
         .get_symbol_by_code(Code::new(107, 0, 0))
         .unwrap()
         .downgrade();
 
-    // O-mapper makes no difference between line objects and area objects, but we do
+    // O-mapper makes no difference between line objects and area objects, but we do as we repesent them with LineString and Polygon
     let mut ls = LineObject::new(
         WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
         // geometry coordinates are always in mm of paper
@@ -70,9 +70,8 @@ fn main() {
     );
     // Let's convert this LineString to a Cubic bezier when writing to file
     ls.write_as_bezier = true;
-    // Object tags
-    ls.tags
-        .insert("Some Key".to_string(), "My value".to_string());
+    // Add some tags to the object
+    ls.tags.insert("Some Key".to_string(), "My value".to_string());
 
     // A map can have multiple parts let's add the object to the first one
     map.parts.get_map_part_by_index_mut(0).unwrap().add_object(ls);
@@ -80,7 +79,7 @@ fn main() {
     // O-mapper makes no difference between combined line symbols and combined area symbols, but we do
     // This will debug-print a `CombinedLineSymbol`
     if let Some(s) = map.symbols.get_symbol_by_name("Railway, Olive background") {
-        println!("{:?}", s);
+        dbg!(s);
     }
 
     map.write_to_file("./test_write.omap")

@@ -255,9 +255,12 @@ impl CombinedAreaSymbol {
                             let sym = Self::parse_private_part(reader, color_set)?;
                             parts.push(PublicOrPrivateSymbol::Private(sym));
                         } else {
-                            let symbol_index = try_get_attr_raw(&e, "symbol").unwrap_or(usize::MAX);
-                            // Record the public component ID for later resolution
-                            public_component_ids.push(symbol_index);
+                            let symbol_index = try_get_attr_raw::<i32>(&e, "symbol");
+                            // Record the public component ID for later resolution.
+                            // Mapper uses -1 for unknown / empty public parts; skip those.
+                            if let Some(symbol_index) = symbol_index.filter(|&id| id >= 0) {
+                                public_component_ids.push(symbol_index as usize);
+                            }
                             // Don't push to parts here - will be resolved by symbol_set after all symbols are loaded
                         }
                     }
@@ -271,8 +274,10 @@ impl CombinedAreaSymbol {
                     } else if e.local_name().as_ref() == b"part" {
                         let is_private = try_get_attr_raw(&e, "private").unwrap_or(false);
                         if !is_private {
-                            let symbol_index = try_get_attr_raw(&e, "symbol").unwrap_or(usize::MAX);
-                            public_component_ids.push(symbol_index);
+                            let symbol_index = try_get_attr_raw::<i32>(&e, "symbol");
+                            if let Some(symbol_index) = symbol_index.filter(|&id| id >= 0) {
+                                public_component_ids.push(symbol_index as usize);
+                            }
                         }
                     }
                 }

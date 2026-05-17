@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Write};
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
@@ -13,7 +13,6 @@ use quick_xml::{
 
 use crate::{
     colors::ColorSet,
-    format_info::Barrier,
     format_info::{OmapVersion, XmlVersion},
     geo_referencing::GeoRef,
     notes,
@@ -24,6 +23,10 @@ use crate::{
     view::View,
     {Error, Result},
 };
+
+const DEFAULT_ISOM_15000: &[u8] = include_bytes!("default_maps/isom_15000.omap");
+const DEFAULT_ISOM_10000: &[u8] = include_bytes!("default_maps/isom_10000.omap");
+const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.omap");
 
 /// All objects are in map coordinates i.e given in mm of paper
 /// relative the ref point with positive y towards the magnetic north
@@ -49,7 +52,6 @@ pub struct Omap {
     pub templates: Templates,
     /// View settings (zoom, grid, visibility).
     pub view: View,
-    symbol_barrier: Barrier,
 }
 
 impl Omap {
@@ -61,7 +63,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 15_000)?;
-        let mut omap = Self::from_path("./src/default_maps/isom_15000.omap")?;
+        let mut omap = Self::from_bytes(DEFAULT_ISOM_15000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -74,7 +76,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 10_000)?;
-        let mut omap = Self::from_path("./src/default_maps/isom_10000.omap")?;
+        let mut omap = Self::from_bytes(DEFAULT_ISOM_10000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -87,7 +89,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 4_000)?;
-        let mut omap = Self::from_path("./src/default_maps/issprom_4000.omap")?;
+        let mut omap = Self::from_bytes(DEFAULT_ISSPROM_4000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -95,19 +97,19 @@ impl Omap {
     /// Create a new 1:15_000 map with a complete ISOM symbolset and color order
     #[cfg(not(feature = "geo_ref"))]
     pub fn default_15_000() -> Result<Self> {
-        Self::from_path("./src/default_maps/isom_15000.omap")
+        Self::from_bytes(DEFAULT_ISOM_15000)
     }
 
     /// Create a new 1:10_000 map with a complete ISOM symbolset and color order
     #[cfg(not(feature = "geo_ref"))]
     pub fn default_10_000() -> Result<Self> {
-        Self::from_path("./src/default_maps/isom_10000.omap")
+        Self::from_bytes(DEFAULT_ISOM_10000)
     }
 
     /// Create a new 1:4_000 map with a complete ISSprOM symbolset and color order
     #[cfg(not(feature = "geo_ref"))]
     pub fn default_4_000() -> Result<Self> {
-        Self::from_path("./src/default_maps/issprom_4000.omap")
+        Self::from_bytes(DEFAULT_ISSPROM_4000)
     }
 
     /// Create a new empty map
@@ -125,13 +127,15 @@ impl Omap {
             xml_version: Default::default(),
             templates: Default::default(),
             view: Default::default(),
-            symbol_barrier: Default::default(),
         }
     }
 
-    /// Create an Omap given a path to an omap file
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let mut reader = Reader::from_file(path)?;
+    fn from_bytes(bytes: &'static [u8]) -> Result<Self> {
+        Self::from_reader(Cursor::new(bytes))
+    }
+
+    fn from_reader<R: BufRead>(reader: R) -> Result<Self> {
+        let mut reader = Reader::from_reader(reader);
         reader.config_mut().expand_empty_elements = true;
 
         // these must be parsed successfully
@@ -141,7 +145,6 @@ impl Omap {
         let mut parts = None;
 
         // these have sensible defaults and are not worth bailing over if parsing fails
-        let mut symbol_barrier = Barrier::default();
         let mut xml_version = XmlVersion::default();
         let mut omap_version = OmapVersion::default();
         let mut notes = String::new();
@@ -156,7 +159,6 @@ impl Omap {
                 }
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
                     b"map" => omap_version = OmapVersion::parse(&bytes_start).unwrap_or_default(),
-                    b"barrier" => symbol_barrier = Barrier::parse(&bytes_start).unwrap_or_default(),
                     b"notes" => notes = notes::parse(&mut reader).unwrap_or_default(),
                     b"georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
                     b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
@@ -199,12 +201,27 @@ impl Omap {
             colors: colors.ok_or(Error::ParseOmapFileError("Colors".to_string()))?,
             symbols: symbols.ok_or(Error::ParseOmapFileError("Symbols".to_string()))?,
             parts: parts.ok_or(Error::ParseOmapFileError("Parts".to_string()))?,
-            symbol_barrier,
             omap_version,
             xml_version,
             templates,
             view,
         })
+    }
+
+    /// Create an [`Omap`] from a path to an `.omap` file.
+    ///
+    /// Parsing is intentionally permissive for some sections.
+    /// This function falls back to sensible defaults
+    /// for `map` (omap file version), `notes`, `templates`, or `view`
+    /// if those sections cannot be parsed
+    ///
+    /// `barrier`s, `undo` and `redo` sections of the file are ignored
+    ///
+    /// The core sections `georeferencing`, `colors`, `symbols`, and `parts`
+    /// must still parse successfully or else loading fails.
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let file = File::open(path)?;
+        Self::from_reader(BufReader::new(file))
     }
 
     /// Write the map to an `.omap` file at the given path.
@@ -235,7 +252,6 @@ impl Omap {
         // write colors
         self.colors.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
-        self.symbol_barrier.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         writer.get_mut().flush()?;
         writer.get_mut().write_all(&written_symbols)?;
@@ -247,9 +263,6 @@ impl Omap {
         let vis = self.templates.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         self.view.write(&mut writer, vis)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-
-        writer.write_event(Event::End(BytesEnd::new("barrier")))?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         writer.write_event(Event::End(BytesEnd::new("map")))?;
 

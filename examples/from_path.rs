@@ -4,8 +4,8 @@ use omap::geo_referencing::{CrsType, GeoRef};
 use omap::{
     Code, Error, Omap,
     colors::Color,
-    objects::LineObject,
-    symbols::{Symbol, WeakLinePathSymbol},
+    objects::{LineObject, TextGeometry, TextObject},
+    symbols::{Symbol, WeakLinePathSymbol, WeakSymbol},
 };
 
 fn main() -> Result<(), Error> {
@@ -55,6 +55,22 @@ fn main() -> Result<(), Error> {
         .insert("Some Key".to_string(), "My value".to_string());
 
     map.parts.0[0].add_object(ls);
+
+    let weak_symbol = map
+        .symbols
+        .get_symbol_by_name("Contour value")
+        .unwrap()
+        .downgrade();
+    let WeakSymbol::Text(weak_text_symbol) = weak_symbol else {
+        panic!("The symbol type of Contour value is not Text")
+    };
+
+    let ts = TextObject::new(
+        weak_text_symbol,
+        TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
+        "This is the middle of the map".to_string(),
+    );
+    map.parts.0[0].add_object(ts);
 
     println!("\nCombined Line symbols:");
     for symbol in map.symbols.iter() {

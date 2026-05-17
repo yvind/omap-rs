@@ -157,7 +157,7 @@ impl SymbolSet {
             ));
         }
         let mut symbol_set = SymbolSet {
-            symbols: symbols.into_iter().map(|s| s.unwrap()).collect(),
+            symbols: symbols.into_iter().collect::<Option<Vec<_>>>().unwrap(),
             name: symbol_set_name,
         };
 
@@ -180,6 +180,7 @@ impl SymbolSet {
                 let has_area_public = components[i].iter().any(|&id| {
                     matches!(
                         symbol_set.symbols.get(id),
+                        // Point and text is not allowed in combined symbol, that is treated later on
                         Some(Symbol::Area(_)) | Some(Symbol::Point(_)) | Some(Symbol::Text(_))
                     )
                 });

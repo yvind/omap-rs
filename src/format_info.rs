@@ -6,7 +6,7 @@ use quick_xml::{
 };
 
 use crate::utils::{parse_attr_raw, try_get_attr_raw};
-use crate::{Code, Error, Result};
+use crate::{Error, Result};
 
 /// The OMAP file format version.
 #[derive(Debug, Clone)]
@@ -133,67 +133,5 @@ impl FromStr for Encoding {
             "UTF-8" | "utf-8" | "Utf-8" => Ok(Encoding::Utf8),
             _ => Err(Error::UnsupportedEncoding(s.to_string())),
         }
-    }
-}
-
-/// A compatibility barrier declaring the minimum reader version.
-#[derive(Debug, Clone)]
-pub struct Barrier {
-    /// The barrier version number.
-    pub version: u8,
-    /// The minimum required reader version.
-    pub required: Code,
-    /// Whether to skip unknown data beyond the barrier.
-    pub skip: bool,
-}
-
-impl Default for Barrier {
-    fn default() -> Self {
-        Self {
-            version: 6,
-            required: Code {
-                major: 0,
-                minor: 6,
-                patch: 0,
-            },
-            skip: false,
-        }
-    }
-}
-
-impl Barrier {
-    pub(crate) fn parse(element: &BytesStart<'_>) -> Result<Self> {
-        let mut skip = false;
-        let mut required = Code::default();
-        let mut version = 0;
-        for attr in element.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                b"version" => version = parse_attr_raw(attr.value).unwrap_or(version),
-                b"required" => required = parse_attr_raw(attr.value).unwrap_or(required),
-                b"action" => skip = attr.value.as_ref() == b"skip",
-                _ => (),
-            }
-        }
-        if required == Code::default() || version == 0 {
-            Err(Error::ParseOmapFileError("Bad barrier".to_string()))
-        } else {
-            Ok(Barrier {
-                version,
-                required,
-                skip,
-            })
-        }
-    }
-
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        let mut bytes_start = BytesStart::new("barrier").with_attributes([
-            ("version", format!("{}", self.version).as_str()),
-            ("required", format!("{}", self.required).as_str()),
-        ]);
-        if self.skip {
-            bytes_start.push_attribute(("action", "skip"));
-        }
-        writer.write_event(Event::Start(bytes_start))?;
-        Ok(())
     }
 }

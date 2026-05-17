@@ -277,7 +277,7 @@ impl Template {
 
 impl Transformations {
     pub(super) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let mut start = BytesStart::new("transformation");
+        let mut start = BytesStart::new("transformations");
         match self.adjustment {
             AdjustmentState::Adjusted => start.push_attribute(("adjusted", "true")),
             AdjustmentState::AdjustmentDirty => start.push_attribute(("adjustment_dirty", "true")),

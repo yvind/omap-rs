@@ -214,7 +214,6 @@ impl TextObject {
         writer.write_event(Event::Start(BytesStart::new("text")))?;
         writer.write_event(Event::Text(BytesText::new(&self.text)))?;
         writer.write_event(Event::End(BytesEnd::new("text")))?;
-        writer.write_event(Event::End(BytesEnd::new("coords")))?;
         writer.write_event(Event::End(BytesEnd::new("object")))?;
         Ok(())
     }

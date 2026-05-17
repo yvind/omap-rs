@@ -82,7 +82,13 @@ impl MapPart {
     }
 
     pub(super) fn merge(&mut self, other: Self) {
-        self.objects.extend(other.objects);
+        for (p, object_vec) in other.objects {
+            if let Some(contained_objects) = self.objects.get_mut(&p) {
+                contained_objects.extend(object_vec);
+            } else {
+                let _ = self.objects.insert(p, object_vec);
+            }
+        }
     }
 
     /// Get objects associated with a symbol.
@@ -173,9 +179,9 @@ impl MapPart {
         for (_, objects) in self.objects {
             for object in objects {
                 object.write(writer, symbols)?;
+                writer.get_mut().write_all(b"\n")?;
             }
         }
-
         writer.write_event(Event::End(BytesEnd::new("objects")))?;
         writer.write_event(Event::End(BytesEnd::new("part")))?;
         Ok(())
