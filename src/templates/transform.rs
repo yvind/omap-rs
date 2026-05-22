@@ -200,15 +200,12 @@ impl TemplateTransform {
             ("role", role),
             ("x", self.template_pos.x.to_string().as_str()),
             ("y", self.template_pos.y.to_string().as_str()),
-            ("scale_x", format!("{:.5}", self.template_scale.x).as_str()),
-            ("scale_y", format!("{:.5}", self.template_scale.y).as_str()),
-            (
-                "rotation",
-                format!("{:.5}", self.template_rotation).as_str(),
-            ),
+            ("scale_x", self.template_scale.x.to_string().as_str()),
+            ("scale_y", self.template_scale.y.to_string().as_str()),
+            ("rotation", self.template_rotation.to_string().as_str()),
         ]);
         if self.template_shear != 0.0 {
-            start.push_attribute(("shear", format!("{:.5}", self.template_shear).as_str()));
+            start.push_attribute(("shear", self.template_shear.to_string().as_str()));
         }
         writer.write_event(Event::Empty(start))?;
         Ok(())

@@ -90,24 +90,20 @@ impl GeoRef {
         if self.combined_scale_factor() != 1. {
             bytes_start.push_attribute((
                 "grid_scale_factor",
-                format!("{:.6}", self.combined_scale_factor()).as_str(),
+                self.combined_scale_factor().to_string().as_str(),
             ));
         }
         if self.auxiliary_scale_factor != 1. {
             bytes_start.push_attribute((
                 "auxiliary_scale_factor",
-                format!("{:.6}", self.auxiliary_scale_factor).as_str(),
+                self.auxiliary_scale_factor.to_string().as_str(),
             ));
         }
         if self.declination_deg != 0. {
-            bytes_start.push_attribute((
-                "declination",
-                format!("{:.3}", self.declination_deg).as_str(),
-            ));
+            bytes_start.push_attribute(("declination", self.declination_deg.to_string().as_str()));
         }
         if self.grivation_deg() != 0. {
-            bytes_start
-                .push_attribute(("grivation", format!("{:.3}", self.grivation_deg()).as_str()));
+            bytes_start.push_attribute(("grivation", self.grivation_deg().to_string().as_str()));
         }
 
         writer.write_event(Event::Start(bytes_start))?;
