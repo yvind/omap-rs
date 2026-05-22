@@ -55,6 +55,11 @@ impl AreaObject {
         }
     }
 
+    /// Decompose it into its geometry
+    pub fn into_geometry(self) -> Polygon {
+        self.geometry
+    }
+
     /// Get a shared reference to the polygon geometry.
     pub fn get_geometry(&self) -> &Polygon {
         &self.geometry
@@ -86,11 +91,6 @@ impl AreaObject {
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
-    }
-
-    /// Get coords for element writing (exterior ring coords)
-    pub fn get_element_coords(&self) -> impl Iterator<Item = &Coord<f64>> {
-        self.geometry.exterior().coords()
     }
 
     pub(super) fn write<W: std::io::Write>(

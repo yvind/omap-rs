@@ -431,10 +431,12 @@ impl View {
 
         self.grid.write(writer)?;
 
+        let position_x = utils::to_file_value(self.view_centre.x)?;
+        let position_y = utils::to_file_value(self.view_centre.y)?;
         let mut mv = BytesStart::new("map_view").with_attributes([
             ("zoom", format!("{:.4}", self.zoom.get()).as_str()),
-            ("position_x", self.view_centre.x.to_string().as_str()),
-            ("position_y", self.view_centre.y.to_string().as_str()),
+            ("position_x", position_x.to_string().as_str()),
+            ("position_y", position_y.to_string().as_str()),
         ]);
 
         if self.rotation != 0.0 {

@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::collections::HashSet;
+
 use quick_xml::{
     Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -110,6 +113,17 @@ impl CombinedLineSymbol {
         &self.common.name
     }
 
+    /// Get the number of components in this combined symbol.
+    pub fn num_components(&self) -> usize {
+        self.parts.len()
+    }
+
+    /// Mark as a helper symbol (builder-style).
+    pub fn as_helper_symbol(mut self) -> Self {
+        self.common.is_helper_symbol = true;
+        self
+    }
+
     /// Get the minimum length (in paper dimensions mm) among all line sub-symbols.
     /// The check fails if any child combined line symbols cannot be borrowed
     /// This will recurse forever if any cycles exist
@@ -152,20 +166,39 @@ impl CombinedLineSymbol {
 
     /// Check if this symbol definition is cyclic.
     ///
-    /// This relies on the ref cells borrow checking
+    /// Uses an explicit visited set to detect cycles reliably.
     pub(super) fn contains_cycle(&self) -> Result<bool> {
+        let mut visited = HashSet::new();
+        self.contains_cycle_with_visited(&mut visited)
+    }
+
+    /// Check for cycles using a pre-existing visited set (called from CombinedAreaSymbol).
+    pub(super) fn contains_cycle_line_with_visited(
+        &self,
+        visited: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
+    ) -> Result<bool> {
+        self.contains_cycle_with_visited(visited)
+    }
+
+    fn contains_cycle_with_visited(
+        &self,
+        visited: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
+    ) -> Result<bool> {
         for part in &self.parts {
             if let PublicOrPrivateSymbol::Public(WeakLinePathSymbol::CombinedLine(weak)) = part
                 && let Some(cl) = weak.upgrade()
             {
-                match cl.try_borrow_mut() {
-                    Ok(borrowed) => {
-                        if borrowed.contains_cycle()? {
-                            return Ok(true);
-                        }
-                    }
-                    Err(_) => return Ok(true), // Cannot borrow mut. Indicates a cycle
+                let ptr = std::rc::Rc::as_ptr(&cl);
+                if !visited.insert(ptr) {
+                    return Ok(true); // Already visited — cycle detected
                 }
+                let borrowed = cl.try_borrow().map_err(|_| {
+                    Error::SymbolError("Cannot borrow symbol during cycle check".to_string())
+                })?;
+                if borrowed.contains_cycle_with_visited(visited)? {
+                    return Ok(true);
+                }
+                let _ = visited.remove(&ptr);
             }
         }
         Ok(false)

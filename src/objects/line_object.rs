@@ -54,6 +54,11 @@ impl LineObject {
         &mut self.geometry
     }
 
+    /// Consume this object and return its geometry.
+    pub fn into_geometry(self) -> LineString {
+        self.geometry
+    }
+
     /// Create a LineObject for use as a PointSymbol element (no map symbol needed)
     pub fn new_element(geometry: LineString) -> Self {
         LineObject {

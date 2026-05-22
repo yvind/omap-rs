@@ -91,6 +91,11 @@ impl MapPart {
         }
     }
 
+    /// Remove all objects with a symbol from the map
+    pub fn remove(&mut self, key: &WeakSymbol) -> Option<Vec<MapObject>> {
+        self.objects.remove(&key.into())
+    }
+
     /// Get objects associated with a symbol.
     pub fn get(&self, key: &WeakSymbol) -> Option<&Vec<MapObject>> {
         self.objects.get(&key.into())
@@ -102,8 +107,28 @@ impl MapPart {
     }
 
     /// Get the number of distinct symbols with objects in this part.
-    pub fn num_objects(&self) -> usize {
+    pub fn num_symbols(&self) -> usize {
         self.objects.len()
+    }
+
+    /// Get the total number of objects in this part across all symbols.
+    pub fn len(&self) -> usize {
+        self.objects.values().map(|v| v.len()).sum()
+    }
+
+    /// Returns `true` if this part contains no objects.
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    /// Iterate through all objects in this map-part in a flat iterator.
+    pub fn iter_all_objects(&self) -> impl Iterator<Item = &MapObject> {
+        self.objects.values().flatten()
+    }
+
+    /// Iterate mutably through all objects in this map-part in a flat iterator.
+    pub fn iter_all_objects_mut(&mut self) -> impl Iterator<Item = &mut MapObject> {
+        self.objects.values_mut().flatten()
     }
 
     /// Iterate through the all the objects stored in this map-part, symbol by symbol

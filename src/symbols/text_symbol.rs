@@ -131,6 +131,54 @@ impl TextSymbol {
         &self.common.name
     }
 
+    /// Set the font family (builder-style).
+    pub fn with_font_family(mut self, family: impl Into<String>) -> Self {
+        self.font_family = family.into();
+        self
+    }
+
+    /// Set the font size in mm (builder-style).
+    pub fn with_font_size(mut self, size: NonNegativeF64) -> Self {
+        self.font_size = size;
+        self
+    }
+
+    /// Set the text colour (builder-style).
+    pub fn with_color(mut self, color: SymbolColor) -> Self {
+        self.color = color;
+        self
+    }
+
+    /// Set bold style (builder-style).
+    pub fn with_bold(mut self, bold: bool) -> Self {
+        self.bold = bold;
+        self
+    }
+
+    /// Set italic style (builder-style).
+    pub fn with_italic(mut self, italic: bool) -> Self {
+        self.italic = italic;
+        self
+    }
+
+    /// Set whether the symbol is rotatable (builder-style).
+    pub fn with_rotatable(mut self, rotatable: bool) -> Self {
+        self.is_rotatable = rotatable;
+        self
+    }
+
+    /// Set line spacing as factor of original (builder-style).
+    pub fn with_line_spacing(mut self, spacing: NonNegativeF64) -> Self {
+        self.line_spacing = spacing;
+        self
+    }
+
+    /// Mark as a helper symbol (builder-style).
+    pub fn as_helper_symbol(mut self) -> Self {
+        self.common.is_helper_symbol = true;
+        self
+    }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,

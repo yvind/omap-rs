@@ -79,6 +79,72 @@ impl LineSymbol {
     pub fn get_name(&self) -> &str {
         &self.common.name
     }
+
+    /// Set the line colour (builder-style).
+    pub fn with_color(mut self, color: SymbolColor) -> Self {
+        self.color = color;
+        self
+    }
+
+    /// Set the line width in mm (builder-style).
+    pub fn with_line_width(mut self, width: NonNegativeF64) -> Self {
+        self.line_width = width;
+        self
+    }
+
+    /// Set the start symbol (builder-style).
+    pub fn with_start_symbol(mut self, symbol: PointSymbol) -> Self {
+        self.start_symbol = Some(symbol);
+        self
+    }
+
+    /// Set the mid symbol (builder-style).
+    pub fn with_mid_symbol(mut self, symbol: MidSymbol) -> Self {
+        self.mid_symbol = Some(symbol);
+        self
+    }
+
+    /// Set the end symbol (builder-style).
+    pub fn with_end_symbol(mut self, symbol: PointSymbol) -> Self {
+        self.end_symbol = Some(symbol);
+        self
+    }
+
+    /// Set the dash symbol (builder-style).
+    pub fn with_dash_symbol(mut self, symbol: DashSymbol) -> Self {
+        self.dash_symbol = Some(symbol);
+        self
+    }
+
+    /// Set the border style (builder-style).
+    pub fn with_border(mut self, border: BorderStyle) -> Self {
+        self.border = Some(border);
+        self
+    }
+
+    /// Set the cap style (builder-style).
+    pub fn with_cap_style(mut self, cap: CapStyle) -> Self {
+        self.cap_style = cap;
+        self
+    }
+
+    /// Set the join style (builder-style).
+    pub fn with_join_style(mut self, join: JoinStyle) -> Self {
+        self.join_style = join;
+        self
+    }
+
+    /// Set the dash style (builder-style).
+    pub fn with_dash_style(mut self, dash: DashStyle) -> Self {
+        self.dash_style = dash;
+        self
+    }
+
+    /// Mark as a helper symbol (builder-style).
+    pub fn as_helper_symbol(mut self) -> Self {
+        self.common.is_helper_symbol = true;
+        self
+    }
 }
 
 /// A dash symbol placed on dashes of a dashed line.

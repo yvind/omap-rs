@@ -129,6 +129,9 @@ pub enum Error {
     /// A template-related error.
     #[error("Template error")]
     TemplateError,
+    /// Could not convert signed integer to unsigned integer
+    #[error(transparent)]
+    TryFromIntError(#[from] std::num::TryFromIntError),
     /// A view-related error.
     #[error("View error")]
     ViewError,

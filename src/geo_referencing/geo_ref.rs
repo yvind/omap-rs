@@ -168,7 +168,7 @@ impl GeoRef {
         let grid_scale_factor =
             try_get_attr_raw(event, "grid_scale_factor").unwrap_or(1.) / auxiliary_scale_factor;
         let declination_deg = try_get_attr_raw(event, "declination").unwrap_or(0.);
-        let convergence_deg = try_get_attr_raw(event, "grivation").unwrap_or(0.) + declination_deg;
+        let convergence_deg = declination_deg - try_get_attr_raw(event, "grivation").unwrap_or(0.);
 
         let mut crs_type = CrsType::Local;
         let mut map_ref_point = Coord::zero();

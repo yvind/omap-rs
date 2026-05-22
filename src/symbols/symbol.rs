@@ -271,10 +271,14 @@ impl Symbol {
     impl_symbol_setter!(set_code(code: Code), |s| s.common.code = code);
     impl_symbol_getter!(is_helper_symbol -> bool, |s| s.common.is_helper_symbol);
     impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.common.is_helper_symbol = is_helper);
-    impl_symbol_getter!(is_hidden -> bool, |s| s.common.is_helper_symbol);
+    impl_symbol_getter!(is_hidden -> bool, |s| s.common.is_hidden);
     impl_symbol_setter!(set_hidden(is_hidden: bool), |s| s.common.is_hidden = is_hidden);
-    impl_symbol_getter!(is_protected -> bool, |s| s.common.is_helper_symbol);
+    impl_symbol_getter!(is_protected -> bool, |s| s.common.is_protected);
     impl_symbol_setter!(set_protected(is_protected: bool), |s| s.common.is_protected = is_protected);
+    impl_symbol_getter!(get_name -> String, |s| s.common.name.clone());
+    impl_symbol_setter!(set_name(name: String), |s| s.common.name = name);
+    impl_symbol_getter!(get_description -> String, |s| s.common.description.clone());
+    impl_symbol_setter!(set_description(description: String), |s| s.common.description = description);
 
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,

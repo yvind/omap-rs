@@ -296,6 +296,36 @@ impl AreaSymbol {
         }
     }
 
+    /// Set the fill colour (builder-style).
+    pub fn with_color(mut self, color: SymbolColor) -> Self {
+        self.color = color;
+        self
+    }
+
+    /// Add a fill pattern (builder-style).
+    pub fn with_pattern(mut self, pattern: FillPattern) -> Self {
+        self.patterns.push(pattern);
+        self
+    }
+
+    /// Set the minimum area in mm² (builder-style).
+    pub fn with_minimum_area(mut self, area: NonNegativeF64) -> Self {
+        self.minimum_area = area;
+        self
+    }
+
+    /// Set whether the symbol is rotatable (builder-style).
+    pub fn with_rotatable(mut self, rotatable: bool) -> Self {
+        self.is_rotatable = rotatable;
+        self
+    }
+
+    /// Mark as a helper symbol (builder-style).
+    pub fn as_helper_symbol(mut self) -> Self {
+        self.common.is_helper_symbol = true;
+        self
+    }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,

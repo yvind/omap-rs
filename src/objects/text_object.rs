@@ -109,8 +109,7 @@ pub struct TextObject {
     pub tags: HashMap<String, String>,
     /// Weak reference to the text symbol used to render this object.
     pub symbol: Weak<RefCell<TextSymbol>>,
-    /// The text geometry (anchor or wrap box).
-    pub geometry: TextGeometry,
+    geometry: TextGeometry,
     /// The text content.
     pub text: String,
     /// Horizontal alignment.
@@ -137,6 +136,21 @@ impl TextObject {
             v_align: VerticalAlign::default(),
             rotation: 0.0,
         }
+    }
+
+    /// Get a shared reference to the text geometry.
+    pub fn get_geometry(&self) -> &TextGeometry {
+        &self.geometry
+    }
+
+    /// Get a mutable reference to the text geometry.
+    pub fn get_geometry_mut(&mut self) -> &mut TextGeometry {
+        &mut self.geometry
+    }
+
+    /// Consume this object and return its geometry.
+    pub fn into_geometry(self) -> TextGeometry {
+        self.geometry
     }
 
     pub(super) fn write<W: std::io::Write>(

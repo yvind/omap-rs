@@ -164,7 +164,7 @@ impl NonNegativeF64 {
 
     /// The files uses 1/1000 mm as the unit
     pub(crate) fn to_file_value(self) -> Result<u32> {
-        Ok(to_file_value(self.0)? as u32)
+        Ok(to_file_value(self.0)?.try_into()?)
     }
 
     /// Create from file value (1/1000 mm integer) to mm

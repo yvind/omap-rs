@@ -7,10 +7,25 @@ use super::MapPart;
 use crate::{Error, Result, symbols::SymbolSet};
 
 /// An ordered collection of map parts (layers).
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct MapParts(pub Vec<MapPart>);
 
 impl MapParts {
+    /// Add a new map part to the end of the collection.
+    pub fn push(&mut self, part: MapPart) {
+        self.0.push(part);
+    }
+
+    /// Get the number of map parts.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns `true` if there are no map parts.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Merge all map parts into a single part
     /// If new_name is some, then the new name is applied, else the name of the first map part is kept
     pub fn merge_all_parts(&mut self, new_name: Option<String>) {
@@ -19,6 +34,7 @@ impl MapParts {
                 first.merge(part);
             } else {
                 self.0.push(part);
+                break;
             }
         }
 
@@ -33,9 +49,7 @@ impl MapParts {
     /// The second part is merged into the first part. The name of the first part is kept
     /// The order of parts is also kept
     pub fn merge_two_parts(&mut self, mut part_1_index: usize, part_2_index: usize) -> Result<()> {
-        if part_1_index >= self.num_map_parts()
-            || part_2_index >= self.num_map_parts()
-            || part_1_index == part_2_index
+        if part_1_index >= self.len() || part_2_index >= self.len() || part_1_index == part_2_index
         {
             Err(Error::MapPartMergeError)
         } else {
@@ -50,7 +64,7 @@ impl MapParts {
 
     /// Remove and return the map part at the given index, or `None` if out of bounds.
     pub fn remove_map_part_by_index(&mut self, index: usize) -> Option<MapPart> {
-        if index < self.num_map_parts() {
+        if index < self.len() {
             Some(self.0.remove(index))
         } else {
             None
@@ -93,11 +107,6 @@ impl MapParts {
     /// Iterate mutably over map parts.
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, MapPart> {
         self.0.iter_mut()
-    }
-
-    /// Get the number of map parts.
-    pub fn num_map_parts(&self) -> usize {
-        self.0.len()
     }
 }
 

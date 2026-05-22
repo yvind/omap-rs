@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::collections::HashSet;
+
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -7,7 +10,7 @@ use super::{AreaSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolS
 use crate::{
     Code, Error, Result,
     colors::ColorSet,
-    symbols::{AreaOrLineSymbol, WeakPathSymbol, WeakSymbol},
+    symbols::{AreaOrLineSymbol, CombinedLineSymbol, WeakPathSymbol, WeakSymbol},
     utils::{parse_attr, try_get_attr_raw},
 };
 
@@ -114,6 +117,17 @@ impl CombinedAreaSymbol {
         &self.common.name
     }
 
+    /// Get the number of components in this combined symbol.
+    pub fn num_components(&self) -> usize {
+        self.parts.len()
+    }
+
+    /// Mark as a helper symbol (builder-style).
+    pub fn as_helper_symbol(mut self) -> Self {
+        self.common.is_helper_symbol = true;
+        self
+    }
+
     /// Get the minimum area (in paper dimensions mm²) among all area sub-symbols.
     /// The check fails if any child combined area symbols cannot be borrowed
     pub fn minimum_area(&self) -> Result<f64> {
@@ -147,32 +161,52 @@ impl CombinedAreaSymbol {
 
     /// Check if this symbol definition is cyclic.
     ///
-    /// This relies on the ref cells borrow checking
+    /// Uses an explicit visited set to detect cycles reliably.
     pub(super) fn contains_cycle(&self) -> Result<bool> {
+        let mut visited_area = HashSet::new();
+        let mut visited_line = HashSet::new();
+        self.contains_cycle_with_visited(&mut visited_area, &mut visited_line)
+    }
+
+    fn contains_cycle_with_visited(
+        &self,
+        visited_area: &mut HashSet<*const RefCell<CombinedAreaSymbol>>,
+        visited_line: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
+    ) -> Result<bool> {
         for part in &self.parts {
             match part {
                 PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedArea(weak)) => {
                     if let Some(ca) = weak.upgrade() {
-                        match ca.try_borrow_mut() {
-                            Ok(borrowed) => {
-                                if borrowed.contains_cycle()? {
-                                    return Ok(true);
-                                }
-                            }
-                            Err(_) => return Ok(true), // Cannot borrow mut. Indicates a cycle
+                        let ptr = std::rc::Rc::as_ptr(&ca);
+                        if !visited_area.insert(ptr) {
+                            return Ok(true); // Already visited — cycle detected
                         }
+                        let borrowed = ca.try_borrow().map_err(|_| {
+                            Error::SymbolError(
+                                "Cannot borrow symbol during cycle check".to_string(),
+                            )
+                        })?;
+                        if borrowed.contains_cycle_with_visited(visited_area, visited_line)? {
+                            return Ok(true);
+                        }
+                        let _ = visited_area.remove(&ptr);
                     }
                 }
                 PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(weak)) => {
-                    if let Some(ca) = weak.upgrade() {
-                        match ca.try_borrow_mut() {
-                            Ok(borrowed) => {
-                                if borrowed.contains_cycle()? {
-                                    return Ok(true);
-                                }
-                            }
-                            Err(_) => return Ok(true), // Cannot borrow mut. Indicates a cycle
+                    if let Some(cl) = weak.upgrade() {
+                        let ptr = std::rc::Rc::as_ptr(&cl);
+                        if !visited_line.insert(ptr) {
+                            return Ok(true); // Already visited — cycle detected
                         }
+                        let borrowed = cl.try_borrow().map_err(|_| {
+                            Error::SymbolError(
+                                "Cannot borrow symbol during cycle check".to_string(),
+                            )
+                        })?;
+                        if borrowed.contains_cycle_line_with_visited(visited_line)? {
+                            return Ok(true);
+                        }
+                        let _ = visited_line.remove(&ptr);
                     }
                 }
                 _ => (),

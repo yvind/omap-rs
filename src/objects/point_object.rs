@@ -21,8 +21,7 @@ pub struct PointObject {
     pub rotation: f64,
     /// Weak reference to the point symbol used to render this object.
     pub symbol: Weak<RefCell<PointSymbol>>,
-    /// The point coordinates in mm on the map.
-    pub geometry: Point,
+    geometry: Point,
 }
 
 impl PointObject {
@@ -34,6 +33,21 @@ impl PointObject {
             symbol,
             geometry,
         }
+    }
+
+    /// Get a shared reference to the point geometry.
+    pub fn get_geometry(&self) -> &Point {
+        &self.geometry
+    }
+
+    /// Get a mutable reference to the point geometry.
+    pub fn get_geometry_mut(&mut self) -> &mut Point {
+        &mut self.geometry
+    }
+
+    /// Consume this object and return its geometry.
+    pub fn into_geometry(self) -> Point {
+        self.geometry
     }
 
     pub(super) fn write<W: std::io::Write>(

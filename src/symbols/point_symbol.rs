@@ -251,6 +251,48 @@ impl PointSymbol {
         &self.common.name
     }
 
+    /// Set the inner circle colour (builder-style).
+    pub fn with_inner_color(mut self, color: SymbolColor) -> Self {
+        self.inner_color = color;
+        self
+    }
+
+    /// Set the outer ring colour (builder-style).
+    pub fn with_outer_color(mut self, color: SymbolColor) -> Self {
+        self.outer_color = color;
+        self
+    }
+
+    /// Set the inner circle radius in mm (builder-style).
+    pub fn with_inner_radius(mut self, radius: NonNegativeF64) -> Self {
+        self.inner_radius = radius;
+        self
+    }
+
+    /// Set the outer ring width in mm (builder-style).
+    pub fn with_outer_width(mut self, width: NonNegativeF64) -> Self {
+        self.outer_width = width;
+        self
+    }
+
+    /// Add a graphical element (builder-style).
+    pub fn with_element(mut self, element: Element) -> Self {
+        self.elements.push(element);
+        self
+    }
+
+    /// Set whether the symbol is rotatable (builder-style).
+    pub fn with_rotatable(mut self, rotatable: bool) -> Self {
+        self.is_rotatable = rotatable;
+        self
+    }
+
+    /// Mark as a helper symbol (builder-style).
+    pub fn as_helper_symbol(mut self) -> Self {
+        self.common.is_helper_symbol = true;
+        self
+    }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,

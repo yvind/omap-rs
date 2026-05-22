@@ -10,8 +10,8 @@ use crate::{
     Code, Error, Result,
     colors::ColorSet,
     symbols::{
-        AreaOrLineSymbol, CombinedLineSymbol, PublicOrPrivateSymbol, WeakLinePathSymbol,
-        WeakPathSymbol,
+        AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol,
+        PointSymbol, PublicOrPrivateSymbol, TextSymbol, WeakLinePathSymbol, WeakPathSymbol,
     },
     utils::{try_get_attr, try_get_attr_raw},
 };
@@ -26,8 +26,8 @@ pub struct SymbolSet {
 }
 
 impl SymbolSet {
-    /// Get the number of symbol in the [SymbolSet]
-    pub fn num_symbols(&self) -> usize {
+    /// Get the number of symbols in the [SymbolSet].
+    pub fn len(&self) -> usize {
         self.symbols.len()
     }
 
@@ -38,7 +38,7 @@ impl SymbolSet {
 
     /// Get a symbol by its index in the [SymbolSet]
     pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
-        if id >= self.num_symbols() {
+        if id >= self.len() {
             None
         } else {
             Some(&self.symbols[id])
@@ -97,6 +97,63 @@ impl SymbolSet {
     /// Access the mutable symbols through an iterator
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Symbol> {
         self.symbols.iter_mut()
+    }
+
+    /// Iterate over only the point symbols.
+    pub fn iter_point_symbols(&self) -> impl Iterator<Item = &Rc<RefCell<PointSymbol>>> {
+        self.symbols.iter().filter_map(|s| match s {
+            Symbol::Point(ref_cell) => Some(ref_cell),
+            _ => None,
+        })
+    }
+
+    /// Iterate over only the line symbols.
+    pub fn iter_line_symbols(&self) -> impl Iterator<Item = &Rc<RefCell<LineSymbol>>> {
+        self.symbols.iter().filter_map(|s| match s {
+            Symbol::Line(ref_cell) => Some(ref_cell),
+            _ => None,
+        })
+    }
+
+    /// Iterate over only the area symbols.
+    pub fn iter_area_symbols(&self) -> impl Iterator<Item = &Rc<RefCell<AreaSymbol>>> {
+        self.symbols.iter().filter_map(|s| match s {
+            Symbol::Area(ref_cell) => Some(ref_cell),
+            _ => None,
+        })
+    }
+
+    /// Iterate over only the text symbols.
+    pub fn iter_text_symbols(&self) -> impl Iterator<Item = &Rc<RefCell<TextSymbol>>> {
+        self.symbols.iter().filter_map(|s| match s {
+            Symbol::Text(ref_cell) => Some(ref_cell),
+            _ => None,
+        })
+    }
+
+    /// Iterate over only the combined line symbols.
+    pub fn iter_combined_line_symbols(
+        &self,
+    ) -> impl Iterator<Item = &Rc<RefCell<CombinedLineSymbol>>> {
+        self.symbols.iter().filter_map(|s| match s {
+            Symbol::CombinedLine(ref_cell) => Some(ref_cell),
+            _ => None,
+        })
+    }
+
+    /// Iterate over only the combined area symbols.
+    pub fn iter_combined_area_symbols(
+        &self,
+    ) -> impl Iterator<Item = &Rc<RefCell<CombinedAreaSymbol>>> {
+        self.symbols.iter().filter_map(|s| match s {
+            Symbol::CombinedArea(ref_cell) => Some(ref_cell),
+            _ => None,
+        })
+    }
+
+    /// Returns `true` if the symbol set contains no symbols.
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty()
     }
 
     pub(crate) fn get_weak_symbol_by_id(&self, id: usize) -> Option<WeakSymbol> {
@@ -317,7 +374,7 @@ impl SymbolSet {
         colors: &ColorSet,
     ) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("symbols").with_attributes([
-            ("count", self.num_symbols().to_string().as_str()),
+            ("count", self.len().to_string().as_str()),
             ("name", self.name.as_str()),
         ])))?;
         writer.get_mut().write_all(b"\n".as_slice())?;

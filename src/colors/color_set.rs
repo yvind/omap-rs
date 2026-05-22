@@ -14,18 +14,37 @@ use crate::{Error, Result};
 /// Deleting a [Color] from the [ColorSet] will drop that colors allocation (if no outstanding [Rc]s have been made)
 /// as [crate::symbols::Symbol]s and [ColorComponent]s in [super::MixedColor] only have [std::rc::Weak] references
 /// If a weak reference is referencing a deleted color at the time of writing to file, no color will be used
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ColorSet(pub Vec<Color>);
 
 impl ColorSet {
     /// Get the number of colors in the set.
-    pub fn num_colors(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Insert a new color into the ColorSet with priority `index`, fails if `index > self.num_colors()`
+    /// Returns `true` if the color set contains no colors.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Append a new color with the lowest priority.
+    pub fn push(&mut self, color: impl Into<Color>) {
+        self.0.push(color.into());
+    }
+
+    /// Remove a color by its priority index.
+    pub fn remove(&mut self, index: usize) -> Option<Color> {
+        if index < self.len() {
+            Some(self.0.remove(index))
+        } else {
+            None
+        }
+    }
+
+    /// Insert a new color into the ColorSet with priority `index`, fails if `index > self.len()`
     pub fn insert(&mut self, index: usize, color: impl Into<Color>) -> Result<()> {
-        if index > self.num_colors() {
+        if index > self.len() {
             return Err(Error::ColorError);
         }
         self.0.insert(index, color.into());
@@ -159,8 +178,7 @@ impl ColorSet {
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
         writer.write_event(Event::Start(
-            BytesStart::new("colors")
-                .with_attributes([("count", self.num_colors().to_string().as_str())]),
+            BytesStart::new("colors").with_attributes([("count", self.len().to_string().as_str())]),
         ))?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         for (priority, color) in self.0.iter().enumerate() {
