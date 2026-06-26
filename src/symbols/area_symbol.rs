@@ -270,7 +270,7 @@ pub struct AreaSymbol {
     pub color: SymbolColor,
     /// Fill patterns applied to the area.
     pub patterns: Vec<FillPattern>,
-    /// Minimum area in mm² for the symbol to be drawn.
+    /// Minimum allowed area in mm².
     pub minimum_area: NonNegativeF64,
 }
 

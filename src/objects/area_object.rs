@@ -9,7 +9,7 @@ use quick_xml::{
 
 use super::{FileCoord, PARSE_BEZIER_ERROR};
 use crate::{
-    Error, Result,
+    Error, NonNegativeF64, Result,
     symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
@@ -32,8 +32,8 @@ pub struct AreaObject {
     pub pattern_rotation: PatternRotation,
     /// The area or combined-area symbol used to render this object.
     pub symbol: WeakAreaPathSymbol,
-    /// Whether the coordinates should be written back as bezier curves.
-    pub write_as_bezier: bool,
+    /// Whether the coordinates should be written back as bezier curves and the permitted error. Minimum error for attempting bezier conversion is 0.1
+    pub allowed_bezier_error: Option<NonNegativeF64>,
     geometry: Polygon,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
@@ -48,7 +48,7 @@ impl AreaObject {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
             symbol: symbol.into(),
-            write_as_bezier: false,
+            allowed_bezier_error: None,
             geometry,
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
@@ -86,7 +86,7 @@ impl AreaObject {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
             symbol: WeakAreaPathSymbol::Area(std::rc::Weak::new()),
-            write_as_bezier: false,
+            allowed_bezier_error: None,
             geometry,
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
@@ -361,7 +361,7 @@ impl AreaObject {
             tags,
             pattern_rotation: pr,
             symbol,
-            write_as_bezier: false,
+            allowed_bezier_error: None,
             geometry: Polygon::new(exterior, linestrings),
             raw_map_coords,
             is_coords_touched: false,

@@ -34,7 +34,7 @@ pub struct LineSymbol {
     pub color: SymbolColor,
     /// The line width in mm.
     pub line_width: NonNegativeF64,
-    /// Minimum length required for the line to be drawn.
+    /// Minimum allowed length in mm.
     pub minimum_length: NonNegativeF64,
     /// Offset applied at the start of the line.
     pub start_offset: NonNegativeF64,

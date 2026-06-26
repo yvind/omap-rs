@@ -9,7 +9,7 @@ use quick_xml::{
 
 use super::{FileCoord, PARSE_BEZIER_ERROR};
 use crate::{
-    Error, Result,
+    Error, NonNegativeF64, Result,
     symbols::{Symbol, SymbolSet, WeakLinePathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
@@ -21,8 +21,8 @@ pub struct LineObject {
     pub tags: HashMap<String, String>,
     /// The line or combined-line symbol used to render this object.
     pub symbol: WeakLinePathSymbol,
-    /// Whether the coordinates should be written back as bezier curves.
-    pub write_as_bezier: bool,
+    /// Whether the coordinates should be written back as bezier curves and the permitted error. Minimum error for attempting bezier conversion is 0.1
+    pub write_as_bezier: Option<NonNegativeF64>,
     geometry: LineString,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
@@ -36,7 +36,7 @@ impl LineObject {
         LineObject {
             tags: HashMap::new(),
             symbol: symbol.into(),
-            write_as_bezier: false,
+            write_as_bezier: None,
             geometry,
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
@@ -64,7 +64,7 @@ impl LineObject {
         LineObject {
             tags: HashMap::new(),
             symbol: WeakLinePathSymbol::Line(std::rc::Weak::new()),
-            write_as_bezier: false,
+            write_as_bezier: None,
             geometry,
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
@@ -158,8 +158,10 @@ impl LineObject {
 
     /// Write coords from the geometry, as bezier if self.write_as_bezier
     fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let content = if self.write_as_bezier {
-            let bezier = BezierString::from_line_string(self.geometry.clone(), PARSE_BEZIER_ERROR)?;
+        let content = if let Some(bezier_error) = self.write_as_bezier
+            && bezier_error.get() > PARSE_BEZIER_ERROR
+        {
+            let bezier = BezierString::from_line_string(self.geometry.clone(), bezier_error.get())?;
 
             let num_coords = bezier.num_points();
 
@@ -397,7 +399,7 @@ impl LineObject {
         Ok(LineObject {
             tags,
             symbol,
-            write_as_bezier: false,
+            write_as_bezier: None,
             geometry: LineString::new(line),
             raw_map_coords,
             is_coords_touched: false,
