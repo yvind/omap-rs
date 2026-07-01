@@ -14,7 +14,7 @@ It is not enabled by default because of the extra dependencies needed (Proj4rs f
 **NB!** if you change any field (or the entire thing) in the map's `geo_referencing`-field then all the map objects projected/geographic positions will change as their coordinates are given in mm-of-paper and remain untouched.
 The best practice is to set the map's geo referencing before adding any objects.
 
-`omap::geo_referencing::Transform` provides functions for going back and forth between mm-of-paper and projected coordinates given by map's georeferencing. And is obtained with calling `get_transform` on the map's `geo_referencing`-field.
+`omap::geo_referencing::MapTransform` provides functions for going back and forth between mm-of-paper and projected coordinates given by map's georeferencing. And is obtained with calling `get_transform` on the map's `geo_referencing`-field.
 
 
 ## Dash-points and beziers
@@ -33,7 +33,7 @@ fn main() {
     let crs_epsg_code = 25832;
 
     // feature "geo_ref" is activated
-    let mut map = Omap::default_15_000(
+    let mut map = Omap::default_15_000_geo_referenced(
         proj_center,
         CrsType::Epsg(crs_epsg_code),
         map_center_elevation_meters,

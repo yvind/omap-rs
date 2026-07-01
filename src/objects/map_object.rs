@@ -58,6 +58,32 @@ impl MapObject {
         }
     }
 
+    /// Get mutable tags of the object
+    pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
+        match self {
+            MapObject::Point(o) => &mut o.tags,
+            MapObject::Line(o) => &mut o.tags,
+            MapObject::Area(o) => &mut o.tags,
+            MapObject::Text(o) => &mut o.tags,
+        }
+    }
+
+    /// Get a weak pointer to the objects symbol
+    pub fn get_symbol(&self) -> WeakSymbol {
+        match self {
+            MapObject::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
+            MapObject::Line(line_object) => match &line_object.symbol {
+                WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
+                WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
+            },
+            MapObject::Area(area_object) => match &area_object.symbol {
+                WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
+                WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
+            },
+            MapObject::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
+        }
+    }
+
     pub(crate) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,

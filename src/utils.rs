@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use geo_types::Coord;
 use quick_xml::{
-    Decoder,
+    Decoder, XmlVersion,
     events::{BytesStart, attributes::Attribute},
 };
 
@@ -76,7 +76,7 @@ pub(crate) fn try_get_attr_raw<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -
 
 /// This escapes any xml-codes, use for user-strings
 pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>, decoder: Decoder) -> Option<T> {
-    attr.decode_and_unescape_value(decoder)
+    attr.decoded_and_normalized_value(XmlVersion::Explicit1_0, decoder)
         .ok()
         .and_then(|s| T::from_str(&s).ok())
 }

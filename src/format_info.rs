@@ -1,7 +1,7 @@
-use std::{fmt::Display, str::FromStr};
+use std::str::FromStr;
 
 use quick_xml::{
-    Writer,
+    Writer, XmlVersion,
     events::{BytesDecl, BytesStart, Event},
 };
 
@@ -10,33 +10,39 @@ use crate::{Error, Result};
 
 /// The OMAP file format version.
 #[derive(Debug, Clone)]
-pub struct OmapVersion {
-    xmlns: String,
-    version: u8,
-}
+pub(crate) struct OmapVersion;
 
 impl<'writer> OmapVersion {
-    pub(crate) fn parse(element: &BytesStart<'_>) -> Result<Self> {
+    pub(crate) fn parse(element: &BytesStart<'_>) -> Result<()> {
         let xmlns = try_get_attr_raw(element, "xmlns");
-        let version = try_get_attr_raw(element, "version");
+        let version = try_get_attr_raw::<u8>(element, "version");
 
-        if let Some(xmlns) = xmlns
-            && let Some(version) = version
-        {
-            Ok(OmapVersion { xmlns, version })
-        } else {
-            Err(Error::InvalidFormat(
-                "Could not read Omap version".to_string(),
-            ))
+        if xmlns != Some("http://openorienteering.org/apps/mapper/xml/v2".to_string()) {
+            return Err(Error::InvalidFormat(
+                "Cannot not read Omap version".to_string(),
+            ));
         }
+        if version.is_none() {
+            return Err(Error::InvalidFormat(
+                "Cannot not read Omap version".to_string(),
+            ));
+        }
+        if let Some(v) = version
+            && v != 9_u8
+        {
+            return Err(Error::InvalidFormat(
+                "Cannot not read Omap version".to_string(),
+            ));
+        }
+        Ok(())
     }
 
-    pub(crate) fn write<W: std::io::Write>(self, writer: &'writer mut Writer<W>) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(writer: &'writer mut Writer<W>) -> Result<()> {
         writer.write_event(Event::Start(
             BytesStart::new("map").with_attributes(
                 [
-                    ("xmlns", self.xmlns.as_str()),
-                    ("version", self.version.to_string().as_str()),
+                    ("xmlns", "http://openorienteering.org/apps/mapper/xml/v2"),
+                    ("version", "9"),
                 ]
                 .into_iter(),
             ),
@@ -45,84 +51,40 @@ impl<'writer> OmapVersion {
     }
 }
 
-impl Default for OmapVersion {
-    fn default() -> Self {
-        Self {
-            xmlns: "http://openorienteering.org/apps/mapper/xml/v2".into(),
-            version: 9,
-        }
-    }
-}
-
 /// The XML declaration (version and encoding).
 #[derive(Debug, Clone)]
-pub struct XmlVersion {
-    version: String,
-    encoding: Encoding,
-}
+pub(crate) struct XmlDeclaration;
 
-impl Default for XmlVersion {
-    fn default() -> Self {
-        Self {
-            version: "1.0".to_string(),
-            encoding: Encoding::Utf8,
+impl XmlDeclaration {
+    pub(crate) fn parse(decl: BytesDecl<'_>) -> Result<()> {
+        let version = decl.xml_version()?;
+        if version != XmlVersion::Explicit1_0 {
+            return Err(Error::InvalidFormat(format!(
+                "The XML version {:?} is not supported",
+                version
+            )));
         }
-    }
-}
 
-impl XmlVersion {
-    pub(crate) fn parse(decl: BytesDecl<'_>) -> Result<Self> {
-        let version = String::from_utf8(decl.version()?.into_owned())?;
-        let encoding = parse_attr_raw(decl.encoding().ok_or(Error::UnsupportedEncoding(
-            "No Encoding tag found".to_owned(),
-        ))??)
+        let _ = parse_attr_raw::<Encoding>(decl.encoding().ok_or(
+            Error::UnsupportedEncoding("No Encoding tag found".to_owned()),
+        )??)
         .ok_or(Error::UnsupportedEncoding(
             "No Encoding tag found".to_owned(),
         ))?;
-        Ok(XmlVersion { version, encoding })
-    }
-
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        writer.write_event(Event::Decl(BytesDecl::new(
-            self.version.as_str(),
-            Some(self.encoding.as_ref()),
-            None,
-        )))?;
         Ok(())
     }
 
-    /// Get the XML version string (e.g. `"1.0"`).
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    /// Get the encoding used in the XML declaration.
-    pub fn encoding(&self) -> Encoding {
-        self.encoding
+    pub(crate) fn write<W: std::io::Write>(writer: &mut Writer<W>) -> Result<()> {
+        writer.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))?;
+        Ok(())
     }
 }
 
 /// Supported XML encodings.
-#[derive(Debug, Clone, Copy, Default)]
-pub enum Encoding {
+#[derive(Debug, Clone, Copy)]
+enum Encoding {
     /// UTF-8 encoding.
-    #[default]
     Utf8,
-}
-
-impl AsRef<str> for Encoding {
-    fn as_ref(&self) -> &str {
-        match self {
-            Encoding::Utf8 => "UTF-8",
-        }
-    }
-}
-impl Display for Encoding {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Encoding::Utf8 => f.write_str("UTF-8"),
-        }
-    }
 }
 
 impl FromStr for Encoding {

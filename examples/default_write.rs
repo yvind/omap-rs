@@ -17,7 +17,7 @@ fn main() -> Result<(), Error> {
         };
         let map_center_elevation_meters = 2_469.;
         let crs_epsg_code = 25832;
-        Omap::default_15_000(
+        Omap::default_15_000_geo_referenced(
             proj_center,
             CrsType::Epsg(crs_epsg_code),
             map_center_elevation_meters,

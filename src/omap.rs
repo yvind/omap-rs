@@ -13,7 +13,7 @@ use quick_xml::{
 
 use crate::{
     colors::ColorSet,
-    format_info::{OmapVersion, XmlVersion},
+    format_info::{OmapVersion, XmlDeclaration},
     geo_referencing::GeoRef,
     notes,
     parts::MapPart,
@@ -44,10 +44,6 @@ pub struct Omap {
     pub symbols: SymbolSet,
     /// The map parts (layers) containing objects.
     pub parts: MapParts,
-    /// The OMAP file-format version.
-    pub omap_version: OmapVersion,
-    /// The XML declaration version and encoding.
-    pub xml_version: XmlVersion,
     /// Background templates attached to the map.
     pub templates: Templates,
     /// View settings (zoom, grid, visibility).
@@ -57,7 +53,7 @@ pub struct Omap {
 impl Omap {
     /// Create a new georeferenced 1:15_000 map with a complete ISOM symbolset and color order
     #[cfg(feature = "geo_ref")]
-    pub fn default_15_000(
+    pub fn default_15_000_geo_referenced(
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
@@ -70,7 +66,7 @@ impl Omap {
 
     /// Create a new georeferenced 1:10_000 map with a complete ISOM symbolset and color order
     #[cfg(feature = "geo_ref")]
-    pub fn default_10_000(
+    pub fn default_10_000_geo_referenced(
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
@@ -83,7 +79,7 @@ impl Omap {
 
     /// Create a new georeferenced 1:4_000 map with a complete ISSprOM symbolset and color order
     #[cfg(feature = "geo_ref")]
-    pub fn default_4_000(
+    pub fn default_4_000_geo_referenced(
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
@@ -95,19 +91,16 @@ impl Omap {
     }
 
     /// Create a new 1:15_000 map with a complete ISOM symbolset and color order
-    #[cfg(not(feature = "geo_ref"))]
     pub fn default_15_000() -> Result<Self> {
         Self::from_bytes(DEFAULT_ISOM_15000)
     }
 
     /// Create a new 1:10_000 map with a complete ISOM symbolset and color order
-    #[cfg(not(feature = "geo_ref"))]
     pub fn default_10_000() -> Result<Self> {
         Self::from_bytes(DEFAULT_ISOM_10000)
     }
 
     /// Create a new 1:4_000 map with a complete ISSprOM symbolset and color order
-    #[cfg(not(feature = "geo_ref"))]
     pub fn default_4_000() -> Result<Self> {
         Self::from_bytes(DEFAULT_ISSPROM_4000)
     }
@@ -123,8 +116,6 @@ impl Omap {
                 name: "Custom".to_string(),
             },
             parts: MapParts(vec![MapPart::new("Map")]),
-            omap_version: Default::default(),
-            xml_version: Default::default(),
             templates: Default::default(),
             view: Default::default(),
         }
@@ -145,8 +136,6 @@ impl Omap {
         let mut parts = None;
 
         // these have sensible defaults and are not worth bailing over if parsing fails
-        let mut xml_version = XmlVersion::default();
-        let mut omap_version = OmapVersion::default();
         let mut notes = String::new();
         let mut templates = Templates::default();
         let mut view = View::default();
@@ -154,11 +143,9 @@ impl Omap {
         let mut xml_buf = Vec::new();
         loop {
             match reader.read_event_into(&mut xml_buf)? {
-                Event::Decl(dec) => {
-                    xml_version = XmlVersion::parse(dec)?;
-                }
+                Event::Decl(dec) => XmlDeclaration::parse(dec)?,
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    b"map" => omap_version = OmapVersion::parse(&bytes_start).unwrap_or_default(),
+                    b"map" => OmapVersion::parse(&bytes_start)?,
                     b"notes" => notes = notes::parse(&mut reader).unwrap_or_default(),
                     b"georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
                     b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
@@ -201,8 +188,6 @@ impl Omap {
             colors: colors.ok_or(Error::ParseOmapFileError("Colors".to_string()))?,
             symbols: symbols.ok_or(Error::ParseOmapFileError("Symbols".to_string()))?,
             parts: parts.ok_or(Error::ParseOmapFileError("Parts".to_string()))?,
-            omap_version,
-            xml_version,
             templates,
             view,
         })
@@ -212,7 +197,7 @@ impl Omap {
     ///
     /// Parsing is intentionally permissive for some sections.
     /// This function falls back to sensible defaults
-    /// for `map` (omap file version), `notes`, `templates`, or `view`
+    /// for `notes`, `templates`, or `view`
     /// if those sections cannot be parsed
     ///
     /// `barrier`s, `undo` and `redo` sections of the file are ignored
@@ -229,9 +214,9 @@ impl Omap {
         let file = File::create(path)?;
         let mut writer = Writer::new(BufWriter::new(file));
 
-        self.xml_version.write(&mut writer)?;
+        XmlDeclaration::write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
-        self.omap_version.write(&mut writer)?;
+        OmapVersion::write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
 
         notes::write(self.notes.as_str(), &mut writer)?;

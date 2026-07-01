@@ -1,13 +1,15 @@
 use std::str::FromStr;
 
 use geo_types::Coord;
+#[cfg(feature = "geo_ref")]
+use proj_core::{CrsDef, Transform};
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
 use super::CrsType;
-use crate::{Error, Result, geo_referencing::Transform, notes, utils::try_get_attr_raw};
+use crate::{Error, Result, geo_referencing::MapTransform, notes, utils::try_get_attr_raw};
 
 /// The georeferencing information of the map
 #[derive(Debug, Clone)]
@@ -43,8 +45,8 @@ pub struct GeoRef {
 
 impl GeoRef {
     /// The transform is used to go from map coordinates to projected coordinates or back
-    pub fn get_transform(&self) -> Transform {
-        Transform::from_geo_ref(self)
+    pub fn get_transform(&self) -> MapTransform {
+        MapTransform::from_geo_ref(self)
     }
 
     /// Create a new local georeferencing with the given map scale.
@@ -345,8 +347,6 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
 }
 
 #[cfg(feature = "geo_ref")]
-use proj4rs::{Proj, transform::transform};
-#[cfg(feature = "geo_ref")]
 impl GeoRef {
     /// Initialise full georeferencing from a projected reference point, CRS, elevation and scale.
     ///
@@ -358,40 +358,36 @@ impl GeoRef {
         meters_above_sea: f64,
         scale: u32,
     ) -> Result<Self> {
-        let local_proj = match &crs {
+        let local_crs = match &crs {
             CrsType::Local => {
                 let mut gr = GeoRef::new(scale);
                 gr.projected_ref_point = projected_ref_point;
                 return Ok(gr);
             }
-            CrsType::Epsg(e) => Proj::from_epsg_code(*e),
-            c => Proj::from_proj_string(c.get_proj_string().unwrap().as_str()),
-        }?;
+            CrsType::Epsg(e) => proj_wkt::parse_crs(e.to_string().as_str())?,
+            c => proj_wkt::parse_crs(c.get_proj_string().unwrap().as_str())?,
+        };
+        let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
+
+        let transform = Transform::from_crs_defs(&local_crs, &geographic_crs)?;
 
         // get geographic ref point
-        let mut geo_ref_point = projected_ref_point;
-        let geo_proj = Proj::from_user_string("WGS84")?;
-        transform(&local_proj, &geo_proj, &mut geo_ref_point)?;
+        let geographic_ref_point_deg = transform.convert(projected_ref_point)?;
 
         // get magnetic declination
-        let declination = Self::get_declination(geo_ref_point, meters_above_sea)?;
+        let declination_deg = Self::get_declination(geographic_ref_point_deg, meters_above_sea)?;
         let auxiliary_scale_factor =
-            Self::get_elevation_scale_factor(geo_ref_point, meters_above_sea);
+            Self::get_elevation_scale_factor(geographic_ref_point_deg, meters_above_sea);
 
-        let (convergence, grid_scale_factor) =
-            Self::get_convergence_and_grid_scale_factor(&local_proj, geo_ref_point)?;
-
-        let geographic_ref_point_deg = Coord {
-            x: geo_ref_point.x.to_degrees(),
-            y: geo_ref_point.y.to_degrees(),
-        };
+        let (convergence_deg, grid_scale_factor) =
+            Self::get_convergence_and_grid_scale_factor(&local_crs, geographic_ref_point_deg)?;
 
         Ok(GeoRef {
             scale_denominator: scale,
             grid_scale_factor,
             auxiliary_scale_factor,
-            declination_deg: declination.to_degrees(),
-            convergence_deg: convergence.to_degrees(),
+            declination_deg,
+            convergence_deg,
             crs_type: crs,
             map_ref_point: Coord::zero(),
             projected_ref_point,
@@ -401,36 +397,37 @@ impl GeoRef {
 
     #[cfg(feature = "geo_ref")]
     fn get_convergence_and_grid_scale_factor(
-        local_proj: &Proj,
+        local_proj: &CrsDef,
         geo_ref_point: Coord,
     ) -> Result<(f64, f64)> {
-        let baseline_proj = Proj::from_proj_string(
+        let baseline_proj = proj_wkt::parse_crs(
             format!(
                 "+proj=sterea +lat_0={} +lon_0={} +ellps=WGS84 +units=m",
-                geo_ref_point.y.to_degrees(),
-                geo_ref_point.x.to_degrees()
+                geo_ref_point.y, geo_ref_point.x
             )
             .as_str(),
         )?;
 
+        let transform = Transform::from_crs_defs(&baseline_proj, local_proj)?;
+
         const D: f64 = 1000.0;
-        let mut meridian =
+        let meridian =
             geo_types::Line::new(Coord { x: 0., y: -D / 2. }, Coord { x: 0., y: D / 2. });
-        let mut parallel =
+        let parallel =
             geo_types::Line::new(Coord { x: -D / 2., y: 0. }, Coord { x: D / 2., y: 0. });
 
         // Project the stereographic baselines to the local grid
-        transform(&baseline_proj, local_proj, &mut meridian)?;
-        transform(&baseline_proj, local_proj, &mut parallel)?;
+        let projected_meridian = transform.convert_geometry(meridian)?;
+        let projected_parallel = transform.convert_geometry(parallel)?;
 
         // Points on the same meridian
-        let meridian_delta = meridian.delta() / D;
-        let parallel_delta = parallel.delta() / D;
+        let meridian_delta = projected_meridian.delta() / D;
+        let parallel_delta = projected_parallel.delta() / D;
 
         // Check determinant
         let determinant = parallel_delta.x * meridian_delta.y - parallel_delta.y * meridian_delta.x;
         if determinant < 0.00001 {
-            Err(proj4rs::errors::Error::ToleranceConditionError)?;
+            Err(Error::ProjScaleToleranceError)?;
         }
 
         let convergence =
@@ -438,7 +435,7 @@ impl GeoRef {
 
         let grid_scale_factor = determinant.sqrt();
 
-        Ok((convergence, grid_scale_factor))
+        Ok((convergence.to_degrees(), grid_scale_factor))
     }
 
     #[cfg(feature = "geo_ref")]
@@ -463,7 +460,7 @@ impl GeoRef {
             GeomagneticField,
             time::Date,
             uom::si::{
-                angle::{Angle, radian},
+                angle::{Angle, degree},
                 length::{Length, meter},
             },
         };
@@ -474,12 +471,12 @@ impl GeoRef {
 
         let field = GeomagneticField::new(
             Length::new::<meter>(meters_above_sea_level as f32),
-            Angle::new::<radian>(geo_ref_point.y as f32),
-            Angle::new::<radian>(geo_ref_point.x as f32),
+            Angle::new::<degree>(geo_ref_point.y as f32),
+            Angle::new::<degree>(geo_ref_point.x as f32),
             Date::from_ordinal_date(year, day)
                 .unwrap_or(Date::from_ordinal_date(2026, 180).unwrap()),
         )?;
-        let dec = field.declination().get::<radian>();
+        let dec = field.declination().get::<degree>();
 
         Ok(dec as f64)
     }

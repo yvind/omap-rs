@@ -5,10 +5,10 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
-use super::transform::{AdjustmentState, Transformations};
+use super::template_transform::{AdjustmentState, TemplateTransformations};
 use crate::{
     Error, Result,
-    templates::transform::{PassPoint, TemplateTransform},
+    templates::template_transform::{PassPoint, TemplateTransform},
     utils::parse_attr_raw,
 };
 
@@ -179,7 +179,7 @@ impl Template {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) => match child.local_name().as_ref() {
                     b"transformations" => {
-                        transformations = Some(Transformations::parse(reader, &child)?);
+                        transformations = Some(TemplateTransformations::parse(reader, &child)?);
                     }
                     b"crs_spec" => {
                         crs_spec = crate::notes::parse(reader)?;
@@ -275,7 +275,7 @@ impl Template {
     }
 }
 
-impl Transformations {
+impl TemplateTransformations {
     pub(super) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let mut start = BytesStart::new("transformations");
         match self.adjustment {
@@ -325,7 +325,7 @@ pub struct TemplateCommon {
     /// Template group number (-1 = ungrouped).
     pub group: i32,
     /// Transformation data for non-georeferenced templates.
-    pub transformations: Option<Transformations>,
+    pub transformations: Option<TemplateTransformations>,
 }
 
 impl TemplateCommon {

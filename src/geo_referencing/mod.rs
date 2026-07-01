@@ -1,8 +1,8 @@
 mod geo_ref;
-mod transform;
+mod map_transform;
 
 pub use geo_ref::GeoRef;
-pub use transform::Transform;
+pub use map_transform::MapTransform;
 
 use quick_xml::{
     Writer,

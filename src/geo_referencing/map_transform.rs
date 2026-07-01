@@ -4,7 +4,7 @@ use super::GeoRef;
 
 /// Coordinate transform between map and projected (CRS) coordinates.
 #[derive(Debug, Clone)]
-pub struct Transform {
+pub struct MapTransform {
     map_center: Coord,
     proj_center: Coord,
     scale_factor: f64,
@@ -12,7 +12,7 @@ pub struct Transform {
     cos: f64,
 }
 
-impl Transform {
+impl MapTransform {
     /// Convert a [Coord] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_coordinates(&self, proj_coord: Coord) -> Coord {
         let (x, mut y) = ((proj_coord - self.proj_center) / self.scale_factor).x_y();

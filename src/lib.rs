@@ -33,10 +33,9 @@
     warnings
 )]
 
-/// Color definitions: spot colors, mixed colors, CMYK, RGB.
+/// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
-/// File-format version information (XML and OMAP versions).
-pub mod format_info;
+mod format_info;
 /// Coordinate-reference-system and projection helpers.
 pub mod geo_referencing;
 mod notes;
@@ -150,6 +149,9 @@ pub enum Error {
     /// A map coordinate exceeds the file-format range.
     #[error("A provided map coordinate is outside the range for writing")]
     MapCoordOutOfBounds,
+    /// An Error when parsing a [Code] from an empty string
+    #[error("Tried to parse a Code from an empty string")]
+    EmptyCode,
     /// An error from the World Magnetic Model.
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
@@ -157,8 +159,15 @@ pub enum Error {
     /// A proj4 projection error.
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
-    ProjError(#[from] proj4rs::errors::Error),
-    /// An Error when parsing a `Code` from an empty string
-    #[error("Tried to parse a Code from an empty string")]
-    EmptyCode,
+    ProjError(#[from] proj_core::Error),
+    /// Could not parse the crs definition to a CrsDef object
+    #[cfg(feature = "geo_ref")]
+    #[error(transparent)]
+    ProjParseError(#[from] proj_wkt::ParseError),
+    /// A tolerance error when calculating the scale factor during geo referencing
+    #[cfg(feature = "geo_ref")]
+    #[error(
+        "Encountered a tolerence error when calculating the scale factor during geo referencing"
+    )]
+    ProjScaleToleranceError,
 }

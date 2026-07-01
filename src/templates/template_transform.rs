@@ -4,7 +4,10 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use crate::{Error, Result, utils::parse_attr_raw, utils::try_get_attr_raw};
+use crate::{
+    Error, Result,
+    utils::{from_file_coords, parse_attr_raw, to_file_coords, try_get_attr_raw},
+};
 
 /// A 3×3 matrix stored in row-major order.
 #[derive(Debug, Clone)]
@@ -12,7 +15,7 @@ pub struct Matrix3x3(pub [f64; 9]);
 
 /// The `<transformations>` block for a non-georeferenced template.
 #[derive(Debug, Clone)]
-pub struct Transformations {
+pub struct TemplateTransformations {
     /// Adjustment state.
     pub adjustment: AdjustmentState,
     /// The currently active transform (role="active").
@@ -41,12 +44,10 @@ pub enum AdjustmentState {
 }
 
 /// Parameters for a single `<transformation>` element.
-///
-/// Mirrors the C++ `TemplateTransform` struct.
 #[derive(Debug, Clone)]
 pub struct TemplateTransform {
-    /// Template position in 1/1000 mm.
-    pub template_pos: Coord<i32>,
+    /// Template position in mm of paper.
+    pub template_pos: Coord,
     /// Rotation in radians (positive = counter-clockwise).
     pub template_rotation: f64,
     /// Template scaling (< 1 shrinks).
@@ -81,7 +82,7 @@ impl PassPoint {
     }
 }
 
-impl Transformations {
+impl TemplateTransformations {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         bs: &BytesStart<'_>,
@@ -162,7 +163,7 @@ impl Transformations {
             }
         }
 
-        Ok(Transformations {
+        Ok(TemplateTransformations {
             adjustment,
             active_transform,
             other_transform,
@@ -177,10 +178,11 @@ impl Transformations {
 impl TemplateTransform {
     pub(crate) fn parse(bs: &BytesStart<'_>) -> Self {
         let mut t = Self::default();
+        let mut pos = Coord::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"x" => t.template_pos.x = parse_attr_raw(attr.value).unwrap_or(0),
-                b"y" => t.template_pos.y = parse_attr_raw(attr.value).unwrap_or(0),
+                b"x" => pos.x = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
+                b"y" => pos.y = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
                 b"rotation" => t.template_rotation = parse_attr_raw(attr.value).unwrap_or(0.),
                 b"scale_x" => t.template_scale.x = parse_attr_raw(attr.value).unwrap_or(1.),
                 b"scale_y" => t.template_scale.y = parse_attr_raw(attr.value).unwrap_or(1.),
@@ -188,6 +190,7 @@ impl TemplateTransform {
                 _ => {}
             }
         }
+        t.template_pos = from_file_coords(pos);
         t
     }
 
@@ -196,10 +199,11 @@ impl TemplateTransform {
         writer: &mut Writer<W>,
         role: &str,
     ) -> Result<()> {
+        let pos = to_file_coords(self.template_pos)?;
         let mut start = BytesStart::new("transformation").with_attributes([
             ("role", role),
-            ("x", self.template_pos.x.to_string().as_str()),
-            ("y", self.template_pos.y.to_string().as_str()),
+            ("x", pos.x.to_string().as_str()),
+            ("y", pos.y.to_string().as_str()),
             ("scale_x", self.template_scale.x.to_string().as_str()),
             ("scale_y", self.template_scale.y.to_string().as_str()),
             ("rotation", self.template_rotation.to_string().as_str()),

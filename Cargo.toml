@@ -1,6 +1,6 @@
 [package]
 name = "omap"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 authors = ["Øyvind Hjermstad <@yvind>"]
 description = "Interact with or write new Open Orienteering Mapper omap-files"
@@ -11,20 +11,20 @@ license = "MIT"
 keywords = ["oomapper", "orienteering", "map", "mapping", "gis"]
 
 [dependencies]
-geo-types = "0.7.16"
-thiserror = "2.0.17"
-quick-xml = "0.38.0"
+geo-types = "0.7"
+thiserror = "2"
+quick-xml = "0.41"
 linestring2bezier = "0.5.1"
 
-proj4rs = { version = "0.1.5", features = [
-    "crs-definitions",
+proj-wkt = { version = "0.8.0", optional = true }
+proj-core = { version = "0.8.0", features = [
     "geo-types",
 ], optional = true }
-chrono = { version = "0.4.39", optional = true }
+chrono = { version = "0.4", optional = true }
 world_magnetic_model = { version = "0.4.0", optional = true }
 
 [features]
-geo_ref = ["dep:proj4rs", "dep:world_magnetic_model", "dep:chrono"]
+geo_ref = ["dep:proj-core", "dep:proj-wkt", "dep:world_magnetic_model", "dep:chrono"]
 
 [package.metadata.docs.rs]
 all-features = true

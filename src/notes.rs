@@ -1,5 +1,5 @@
 use quick_xml::{
-    Reader, Writer,
+    Reader, Writer, XmlVersion,
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
@@ -12,12 +12,12 @@ pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Strin
     loop {
         match reader.read_event_into(&mut buf)? {
             Event::Text(bytes_text) => {
-                notes.push_str(&bytes_text.xml_content()?);
+                notes.push_str(&bytes_text.xml_content(XmlVersion::Explicit1_0)?);
             }
             Event::GeneralRef(bytes_ref) => {
                 notes.push_str(&quick_xml::escape::unescape(&format!(
                     "&{};",
-                    &bytes_ref.xml_content()?
+                    &bytes_ref.xml_content(XmlVersion::Explicit1_0)?
                 ))?);
             }
             _ => break,
