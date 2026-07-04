@@ -170,4 +170,12 @@ pub enum Error {
         "Encountered a tolerence error when calculating the scale factor during geo referencing"
     )]
     ProjScaleToleranceError,
+    /// Affine transforms are only available between changed geo referencing within the same projection
+    #[error(
+        "Affine transforms are only available between changed geo referencing within the same projection"
+    )]
+    CannotGetAffineTransformBetweenDifferentProjections,
+    /// Tried to call try into on non-compatible symbols
+    #[error("Tried to call try into on non-compatible symbols")]
+    SymbolConversionError,
 }

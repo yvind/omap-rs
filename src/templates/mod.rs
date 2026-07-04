@@ -10,6 +10,7 @@ use quick_xml::{
 
 use crate::{
     Error, NonNegativeF64, Result,
+    geo_referencing::AffineMapTransform,
     utils::{parse_attr_raw, try_get_attr_raw},
     view::TemplateVisibility,
 };
@@ -125,6 +126,13 @@ impl Templates {
     /// Whether there are no templates.
     pub fn is_empty(&self) -> bool {
         self.template_entries.is_empty()
+    }
+
+    /// Apply an affine map-coordinate transform to all non-georeferenced templates.
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        for entry in &mut self.template_entries {
+            entry.template.apply_affine(transform);
+        }
     }
 
     pub(crate) fn parse<R: std::io::BufRead>(

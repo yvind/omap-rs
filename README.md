@@ -16,6 +16,8 @@ The best practice is to set the map's geo referencing before adding any objects.
 
 `omap::geo_referencing::MapTransform` provides functions for going back and forth between mm-of-paper and projected coordinates given by map's georeferencing. And is obtained with calling `get_transform` on the map's `geo_referencing`-field.
 
+`MapTransform::affine_between` can be used to keep objects and non-georeferenced templates at the same projected positions after changing map reference point, scale, or rotation within the same CRS representation. It deliberately rejects transforms whose CRS fingerprints differ, for example different EPSG codes.
+This is a conservative lightweight guard; `omap-rs` does not normalize equivalent CRS definitions or transform coordinates between different projections.
 
 ## Dash-points and beziers
 `omap-rs` ignores dash points on line and area objects. However, any line/area-object that `omap-rs` do not edit will be written back exactly as it was read, i.e. dash points will be preserved. The same is true for beziers. All line/area-objects are converted from beziers to LineString/Polygon on reading from file, but any object that is not edited will be written back as they were read, preserving beziers.

@@ -8,6 +8,7 @@ use quick_xml::{
 
 use crate::{
     Error, Result,
+    geo_referencing::AffineMapTransform,
     symbols::{PointSymbol, Symbol, SymbolSet},
     utils::{from_file_coords, to_file_coords},
 };
@@ -43,6 +44,11 @@ impl PointObject {
     /// Get a mutable reference to the point geometry.
     pub fn get_geometry_mut(&mut self) -> &mut Point {
         &mut self.geometry
+    }
+
+    /// Apply an affine coordinate transform to the point position.
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        self.geometry.0 = transform.apply(self.geometry.0);
     }
 
     /// Consume this object and return its geometry.

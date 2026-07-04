@@ -5,6 +5,7 @@ use quick_xml::{Reader, Writer, events::BytesStart};
 use super::{AreaObject, LineObject, PointObject, TextObject};
 use crate::{
     Error, Result,
+    geo_referencing::AffineMapTransform,
     objects::{HorizontalAlign, VerticalAlign},
     symbols::{SymbolSet, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol},
     utils::parse_attr_raw,
@@ -96,6 +97,17 @@ impl MapObject {
             MapObject::Text(text_object) => text_object.write(writer, symbol_set)?,
         }
         Ok(())
+    }
+
+    /// Apply an affine coordinate transform to this object, preserving
+    /// Bézier control points for line and area objects.
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        match self {
+            MapObject::Point(o) => o.apply_affine(transform),
+            MapObject::Line(o) => o.apply_affine(transform),
+            MapObject::Area(o) => o.apply_affine(transform),
+            MapObject::Text(o) => o.apply_affine(transform),
+        }
     }
 }
 

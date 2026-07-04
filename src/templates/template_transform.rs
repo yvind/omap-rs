@@ -6,6 +6,7 @@ use quick_xml::{
 
 use crate::{
     Error, Result,
+    geo_referencing::AffineMapTransform,
     utils::{from_file_coords, parse_attr_raw, to_file_coords, try_get_attr_raw},
 };
 
@@ -77,12 +78,44 @@ pub struct PassPoint {
 
 impl PassPoint {
     pub fn error(&self) -> f64 {
+        if self.calculated_coord == Coord::zero() {
+            return -1.;
+        }
         let diff = self.calculated_coord - self.dest_coord;
         (diff.x.powi(2) + diff.y.powi(2)).sqrt()
     }
 }
 
 impl TemplateTransformations {
+    pub(crate) fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        self.active_transform.apply_affine(transform);
+        self.other_transform.apply_affine(transform);
+        for passpoint in &mut self.passpoints {
+            passpoint.apply_affine(transform);
+        }
+
+        let file_transform = Matrix3x3(transform.file_coord_matrix());
+        if let Some(inverse_file_transform) = file_transform.inverse_affine() {
+            self.map_to_template = self
+                .map_to_template
+                .as_ref()
+                .map(|matrix| matrix.multiply(&inverse_file_transform));
+            self.template_to_map = self
+                .template_to_map
+                .as_ref()
+                .map(|matrix| file_transform.multiply(matrix));
+            self.template_to_map_other = self
+                .template_to_map_other
+                .as_ref()
+                .map(|matrix| file_transform.multiply(matrix));
+        } else {
+            self.map_to_template = None;
+            self.template_to_map = None;
+            self.template_to_map_other = None;
+            self.adjustment = AdjustmentState::AdjustmentDirty;
+        }
+    }
+
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         bs: &BytesStart<'_>,
@@ -176,6 +209,13 @@ impl TemplateTransformations {
 }
 
 impl TemplateTransform {
+    pub(crate) fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        self.template_pos = transform.apply(self.template_pos);
+        self.template_rotation += transform.rotation_radians();
+        self.template_scale.x *= transform.scale_factor();
+        self.template_scale.y *= transform.scale_factor();
+    }
+
     pub(crate) fn parse(bs: &BytesStart<'_>) -> Self {
         let mut t = Self::default();
         let mut pos = Coord::default();
@@ -217,18 +257,26 @@ impl TemplateTransform {
 }
 
 impl PassPoint {
+    pub(crate) fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        self.src_coord = transform.apply(self.src_coord);
+        self.dest_coord = transform.apply(self.dest_coord);
+        if self.calculated_coord != Coord::zero() {
+            self.calculated_coord = transform.apply(self.calculated_coord);
+        }
+    }
+
     pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
-        let mut src = Coord::zero();
-        let mut dest = Coord::zero();
-        let mut calc = Coord::zero();
+        let mut src = None;
+        let mut dest = None;
+        let mut calc = None;
 
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) => match child.local_name().as_ref() {
-                    b"source" => src = parse_inner_coord(reader)?,
-                    b"destination" => dest = parse_inner_coord(reader)?,
-                    b"calculated" => calc = parse_inner_coord(reader)?,
+                    b"source" => src = parse_inner_coord(reader).ok(),
+                    b"destination" => dest = parse_inner_coord(reader).ok(),
+                    b"calculated" => calc = parse_inner_coord(reader).ok(),
                     _ => {}
                 },
                 Event::End(be) => {
@@ -245,11 +293,18 @@ impl PassPoint {
             }
         }
 
-        Ok(PassPoint {
-            src_coord: src,
-            dest_coord: dest,
-            calculated_coord: calc,
-        })
+        if let Some(src_coord) = src
+            && let Some(dest_coord) = dest
+            && let Some(calculated_coord) = calc
+        {
+            Ok(PassPoint {
+                src_coord,
+                dest_coord,
+                calculated_coord,
+            })
+        } else {
+            Err(Error::TemplateError)
+        }
     }
 
     pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
@@ -267,6 +322,43 @@ impl PassPoint {
 }
 
 impl Matrix3x3 {
+    fn multiply(&self, rhs: &Self) -> Self {
+        let mut values = [0.; 9];
+        for row in 0..3 {
+            for col in 0..3 {
+                values[row * 3 + col] = self.0[row * 3] * rhs.0[col]
+                    + self.0[row * 3 + 1] * rhs.0[3 + col]
+                    + self.0[row * 3 + 2] * rhs.0[6 + col];
+            }
+        }
+        Self(values)
+    }
+
+    fn inverse_affine(&self) -> Option<Self> {
+        let [a, b, tx, c, d, ty, _, _, _] = self.0;
+        let det = a * d - b * c;
+        if det == 0. {
+            return None;
+        }
+
+        let inv_a = d / det;
+        let inv_b = -b / det;
+        let inv_c = -c / det;
+        let inv_d = a / det;
+
+        Some(Self([
+            inv_a,
+            inv_b,
+            -(inv_a * tx + inv_b * ty),
+            inv_c,
+            inv_d,
+            -(inv_c * tx + inv_d * ty),
+            0.,
+            0.,
+            1.,
+        ]))
+    }
+
     pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
         let mut values = [0.; 9];
         let mut i = 0;
@@ -314,6 +406,7 @@ fn write_coord_wrapper<W: std::io::Write>(
     wrapper_name: &str,
     coord: &Coord,
 ) -> Result<()> {
+    let coord = to_file_coords(*coord)?;
     writer.write_event(Event::Start(BytesStart::new(wrapper_name)))?;
     writer.write_event(Event::Empty(BytesStart::new("coord").with_attributes([
         ("x", format!("{}", coord.x).as_str()),
@@ -323,17 +416,15 @@ fn write_coord_wrapper<W: std::io::Write>(
     Ok(())
 }
 
-fn parse_inner_coord<R: std::io::BufRead, T: std::str::FromStr + geo_types::CoordNum>(
-    reader: &mut Reader<R>,
-) -> Result<Coord<T>> {
-    let mut coord = Coord::zero();
+fn parse_inner_coord<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Coord> {
+    let mut coord = Coord::<i32>::zero();
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
             Event::Start(bs) if bs.local_name().as_ref() == b"coord" => {
                 coord = Coord {
-                    x: try_get_attr_raw(&bs, "x").unwrap_or(T::zero()),
-                    y: try_get_attr_raw(&bs, "y").unwrap_or(T::zero()),
+                    x: try_get_attr_raw(&bs, "x").unwrap_or(0),
+                    y: try_get_attr_raw(&bs, "y").unwrap_or(0),
                 };
             }
             Event::End(_) => break,
@@ -345,5 +436,5 @@ fn parse_inner_coord<R: std::io::BufRead, T: std::str::FromStr + geo_types::Coor
             _ => {}
         }
     }
-    Ok(coord)
+    Ok(from_file_coords(coord))
 }

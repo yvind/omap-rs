@@ -10,6 +10,7 @@ use quick_xml::{
 use super::{FileCoord, PARSE_BEZIER_ERROR};
 use crate::{
     Error, NonNegativeF64, Result,
+    geo_referencing::AffineMapTransform,
     symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
@@ -69,6 +70,52 @@ impl AreaObject {
     pub fn get_geometry_mut(&mut self) -> &mut Polygon {
         self.is_coords_touched = true;
         &mut self.geometry
+    }
+
+    /// Get the raw file coordinates in mm with their flags.
+    ///
+    /// These are the original control points (including Bézier handles) as read
+    /// from the file, converted from µm integers to mm floats. The flags encode
+    /// Bézier start (1), close/hole (2), dash point (4/16/32), etc.
+    ///
+    /// The returned vec is empty for objects not read from file data
+    pub fn get_raw_coords(&self) -> Vec<(Coord, u8)> {
+        self.raw_map_coords
+            .iter()
+            .map(|(c, flag)| (from_file_coords(*c), *flag))
+            .collect()
+    }
+
+    /// Apply an affine coordinate transform to both the geometry and the raw
+    /// control points, preserving Bézier structure without re-approximation.
+    ///
+    /// This does **not** mark the coordinates as touched, so the raw (affine transformed) control
+    /// points (with Bézier flags) will still be used on write.
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        // Transform the discretized geometry
+        self.geometry.exterior_mut(|ext| {
+            for coord in ext.0.iter_mut() {
+                *coord = transform.apply(*coord);
+            }
+        });
+        self.geometry.interiors_mut(|interiors| {
+            for interior in interiors.iter_mut() {
+                for coord in interior.0.iter_mut() {
+                    *coord = transform.apply(*coord);
+                }
+            }
+        });
+        // Transform the pattern rotation origin
+        self.pattern_rotation.coord = transform.apply(self.pattern_rotation.coord);
+        // Transform raw control points — flags stay unchanged
+        for (file_coord, _flag) in self.raw_map_coords.iter_mut() {
+            let map_coord = from_file_coords(*file_coord);
+            let transformed = transform.apply(map_coord);
+            if let Ok(fc) = to_file_coords(transformed) {
+                *file_coord = fc;
+            }
+        }
+        // Do NOT set is_coords_touched = true
     }
 
     /// Reverse the winding order of all rings.
@@ -323,6 +370,7 @@ impl AreaObject {
                                         .to_line_string(PARSE_BEZIER_ERROR)?
                                         .into_inner(),
                                 );
+                                bezier_buf.0.clear();
                                 next_handle = 0;
                             }
                             (false, 0) => {
@@ -334,6 +382,17 @@ impl AreaObject {
 
                         // check for close/hole flag (flag & 2)
                         if (parts.2 & 2) == 2 {
+                            // check the status of the bezier_buf (in case the end point is also a 1)
+                            if !bezier_buf.0.is_empty() {
+                                line.extend(
+                                    bezier_buf
+                                        .clone()
+                                        .to_line_string(PARSE_BEZIER_ERROR)?
+                                        .into_inner(),
+                                );
+                                next_handle = 0;
+                                bezier_buf.0.clear();
+                            }
                             linestrings.push(LineString::new(line));
                             line = Vec::new();
                         }

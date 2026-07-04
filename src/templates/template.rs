@@ -8,6 +8,7 @@ use quick_xml::{
 use super::template_transform::{AdjustmentState, TemplateTransformations};
 use crate::{
     Error, Result,
+    geo_referencing::AffineMapTransform,
     templates::template_transform::{PassPoint, TemplateTransform},
     utils::parse_attr_raw,
 };
@@ -133,6 +134,32 @@ impl Template {
         }
     }
 
+    /// Get the mutable common properties shared by all template types.
+    pub fn get_common_mut(&mut self) -> &mut TemplateCommon {
+        match self {
+            Template::Image(t) => &mut t.common,
+            Template::Map(t) => &mut t.common,
+            Template::Track(t) => &mut t.common,
+            Template::Gdal(t) => &mut t.common,
+            Template::Ogr(t) => &mut t.common,
+        }
+    }
+
+    /// Apply an affine map-coordinate transform to a non-georeferenced template.
+    ///
+    /// Georeferenced templates are left unchanged because their placement is
+    /// derived from CRS metadata. For non-georeferenced templates, map-space
+    /// transform parameters and passpoint map coordinates are transformed, and
+    /// the adjustment state is marked dirty.
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        if self.get_common().is_georeferenced {
+            return;
+        }
+        if let Some(transformations) = &mut self.get_common_mut().transformations {
+            transformations.apply_affine(transform);
+        }
+    }
+
     /// Returns the template type name as used in the XML format.
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -154,7 +181,7 @@ impl Template {
         let mut path = PathBuf::new();
         let mut relpath = PathBuf::new();
         let mut is_georeferenced = false;
-        let mut group = -1;
+        let mut group = None;
 
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
@@ -164,7 +191,7 @@ impl Template {
                 b"path" => path = parse_attr_raw(attr.value).unwrap_or(path),
                 b"relpath" => relpath = parse_attr_raw(attr.value).unwrap_or(relpath),
                 b"georef" => is_georeferenced = attr.as_bool().unwrap_or(false),
-                b"group" => group = parse_attr_raw(attr.value).unwrap_or(-1),
+                b"group" => group = parse_attr_raw(attr.value),
                 _ => {}
             }
         }
@@ -252,8 +279,8 @@ impl Template {
         if common.is_georeferenced {
             start.push_attribute(("georef", "true"));
         }
-        if common.group >= 0 {
-            start.push_attribute(("group", common.group.to_string().as_str()));
+        if let Some(group) = common.group {
+            start.push_attribute(("group", group.to_string().as_str()));
         }
 
         writer.write_event(Event::Start(start))?;
@@ -322,8 +349,8 @@ pub struct TemplateCommon {
     pub relpath: PathBuf,
     /// Whether the template is in georeferenced mode.
     pub is_georeferenced: bool,
-    /// Template group number (-1 = ungrouped).
-    pub group: i32,
+    /// Template group number (None = ungrouped).
+    pub group: Option<u8>,
     /// Transformation data for non-georeferenced templates.
     pub transformations: Option<TemplateTransformations>,
 }

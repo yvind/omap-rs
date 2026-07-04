@@ -14,7 +14,7 @@ use quick_xml::{
 use crate::{
     colors::ColorSet,
     format_info::{OmapVersion, XmlDeclaration},
-    geo_referencing::GeoRef,
+    geo_referencing::{AffineMapTransform, GeoRef, MapTransform},
     notes,
     parts::MapPart,
     parts::MapParts,
@@ -251,6 +251,31 @@ impl Omap {
         writer.get_mut().write_all(b"\n".as_slice())?;
         writer.write_event(Event::End(BytesEnd::new("map")))?;
 
+        Ok(())
+    }
+
+    /// Apply an [`AffineMapTransform`] to every object and non-georeferenced
+    /// template in the map.
+    ///
+    /// Use this after changing the georeferencing (within the same projection)
+    /// to keep objects and non-georeferenced templates at the same real-world
+    /// positions. Obtain the transform with
+    /// [`MapTransform::affine_between`].
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        for part in self.parts.0.iter_mut() {
+            for object in part.iter_all_objects_mut() {
+                object.apply_affine(transform);
+            }
+        }
+        self.templates.apply_affine(transform);
+    }
+
+    /// Compute the affine transform between two [`MapTransform`]s and apply it
+    /// to every object and non-georeferenced template. This is a convenience
+    /// wrapper around [`MapTransform::affine_between`] + [`Omap::apply_affine`].
+    pub fn apply_affine_between(&mut self, old: &MapTransform, new: &MapTransform) -> Result<()> {
+        let affine = MapTransform::affine_between(old, new)?;
+        self.apply_affine(&affine);
         Ok(())
     }
 }

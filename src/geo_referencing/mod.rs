@@ -2,7 +2,7 @@ mod geo_ref;
 mod map_transform;
 
 pub use geo_ref::GeoRef;
-pub use map_transform::MapTransform;
+pub use map_transform::{AffineMapTransform, MapTransform};
 
 use quick_xml::{
     Writer,
@@ -12,7 +12,7 @@ use quick_xml::{
 use crate::Result;
 
 /// The coordinate reference system type.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Hash, PartialEq)]
 pub enum CrsType {
     /// Local (non-georeferenced) coordinates.
     #[default]

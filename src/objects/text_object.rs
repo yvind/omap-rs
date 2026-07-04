@@ -1,7 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 
 use crate::{
-    Error, NonNegativeF64, Result, notes,
+    Error, NonNegativeF64, Result,
+    geo_referencing::AffineMapTransform,
+    notes,
     symbols::{Symbol, SymbolSet, TextSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
@@ -146,6 +148,14 @@ impl TextObject {
     /// Get a mutable reference to the text geometry.
     pub fn get_geometry_mut(&mut self) -> &mut TextGeometry {
         &mut self.geometry
+    }
+
+    /// Apply an affine coordinate transform to the text anchor (and box anchor).
+    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+        match &mut self.geometry {
+            TextGeometry::SingleAnchor(coord) => *coord = transform.apply(*coord),
+            TextGeometry::WrapBox(wrap_box) => wrap_box.anchor = transform.apply(wrap_box.anchor),
+        }
     }
 
     /// Consume this object and return its geometry.
