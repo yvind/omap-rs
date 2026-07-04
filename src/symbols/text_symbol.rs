@@ -275,6 +275,7 @@ impl TextSymbol {
                             distance: NonNegativeF64::from_file_value(d),
                         });
                     }
+                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src"),
                     b"tabs" => {
                         // Parse tab elements inside
                     }
@@ -287,13 +288,6 @@ impl TextSymbol {
                     // Could be tab content
                     if let Ok(v) = str::from_utf8(text.as_ref())?.parse() {
                         custom_tabs.push(NonNegativeF64::from_file_value(v));
-                    }
-                }
-                Event::Empty(e) => {
-                    if e.local_name().as_ref() == b"icon"
-                        && let Some(src) = try_get_attr_raw(&e, "src")
-                    {
-                        common.custom_icon = Some(src);
                     }
                 }
                 Event::End(e) => {

@@ -46,9 +46,7 @@ impl TryFrom<WeakSymbol> for WeakLinePathSymbol {
         match value {
             WeakSymbol::Line(ref_cell) => Ok(WeakLinePathSymbol::Line(ref_cell)),
             WeakSymbol::CombinedLine(ref_cell) => Ok(WeakLinePathSymbol::CombinedLine(ref_cell)),
-            _ => Err(Error::SymbolError(
-                "Cannot only convert weak line and combined line to WeakLinePathSymbol".to_string(),
-            )),
+            _ => Err(Error::SymbolConversionError),
         }
     }
 }
@@ -62,6 +60,15 @@ impl From<Weak<RefCell<LineSymbol>>> for WeakLinePathSymbol {
 impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakLinePathSymbol {
     fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
         WeakLinePathSymbol::CombinedLine(value)
+    }
+}
+
+impl From<WeakLinePathSymbol> for WeakSymbol {
+    fn from(value: WeakLinePathSymbol) -> Self {
+        match value {
+            WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak),
+            WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak),
+        }
     }
 }
 
@@ -84,6 +91,18 @@ impl WeakAreaPathSymbol {
     }
 }
 
+impl TryFrom<WeakSymbol> for WeakAreaPathSymbol {
+    type Error = Error;
+
+    fn try_from(value: WeakSymbol) -> Result<Self> {
+        match value {
+            WeakSymbol::Area(ref_cell) => Ok(WeakAreaPathSymbol::Area(ref_cell)),
+            WeakSymbol::CombinedArea(ref_cell) => Ok(WeakAreaPathSymbol::CombinedArea(ref_cell)),
+            _ => Err(Error::SymbolConversionError),
+        }
+    }
+}
+
 impl From<Weak<RefCell<AreaSymbol>>> for WeakAreaPathSymbol {
     fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
         WeakAreaPathSymbol::Area(value)
@@ -96,16 +115,11 @@ impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakAreaPathSymbol {
     }
 }
 
-impl TryFrom<WeakSymbol> for WeakAreaPathSymbol {
-    type Error = Error;
-
-    fn try_from(value: WeakSymbol) -> Result<Self> {
+impl From<WeakAreaPathSymbol> for WeakSymbol {
+    fn from(value: WeakAreaPathSymbol) -> Self {
         match value {
-            WeakSymbol::Area(ref_cell) => Ok(WeakAreaPathSymbol::Area(ref_cell)),
-            WeakSymbol::CombinedArea(ref_cell) => Ok(WeakAreaPathSymbol::CombinedArea(ref_cell)),
-            _ => Err(Error::SymbolError(
-                "Cannot only convert weak area and combined area to WeakAreaPathSymbol".to_string(),
-            )),
+            WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak),
+            WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak),
         }
     }
 }
@@ -128,29 +142,24 @@ pub enum AreaOrLineSymbol {
     Line(Box<LineSymbol>),
 }
 
-impl From<AreaSymbol> for AreaOrLineSymbol {
-    fn from(value: AreaSymbol) -> Self {
-        AreaOrLineSymbol::Area(Box::new(value))
-    }
+macro_rules! impl_from_area_or_line_symbol {
+    ($symbol_ty:ty, $variant:ident) => {
+        impl From<$symbol_ty> for AreaOrLineSymbol {
+            fn from(value: $symbol_ty) -> Self {
+                AreaOrLineSymbol::$variant(Box::new(value))
+            }
+        }
+
+        impl From<Box<$symbol_ty>> for AreaOrLineSymbol {
+            fn from(value: Box<$symbol_ty>) -> Self {
+                AreaOrLineSymbol::$variant(value)
+            }
+        }
+    };
 }
 
-impl From<Box<AreaSymbol>> for AreaOrLineSymbol {
-    fn from(value: Box<AreaSymbol>) -> Self {
-        AreaOrLineSymbol::Area(value)
-    }
-}
-
-impl From<LineSymbol> for AreaOrLineSymbol {
-    fn from(value: LineSymbol) -> Self {
-        AreaOrLineSymbol::Line(Box::new(value))
-    }
-}
-
-impl From<Box<LineSymbol>> for AreaOrLineSymbol {
-    fn from(value: Box<LineSymbol>) -> Self {
-        AreaOrLineSymbol::Line(value)
-    }
-}
+impl_from_area_or_line_symbol!(AreaSymbol, Area);
+impl_from_area_or_line_symbol!(LineSymbol, Line);
 
 /// A non-owning reference to a area or line symbol, used in public parts of area combined symbols
 #[derive(Debug, Clone)]
@@ -177,6 +186,59 @@ impl WeakPathSymbol {
     }
 }
 
+impl TryFrom<WeakSymbol> for WeakPathSymbol {
+    type Error = Error;
+
+    fn try_from(value: WeakSymbol) -> Result<Self> {
+        match value {
+            WeakSymbol::Line(ref_cell) => Ok(WeakPathSymbol::Line(ref_cell)),
+            WeakSymbol::Area(ref_cell) => Ok(WeakPathSymbol::Area(ref_cell)),
+            WeakSymbol::CombinedArea(ref_cell) => Ok(WeakPathSymbol::CombinedArea(ref_cell)),
+            WeakSymbol::CombinedLine(ref_cell) => Ok(WeakPathSymbol::CombinedLine(ref_cell)),
+            _ => Err(Error::SymbolConversionError),
+        }
+    }
+}
+
+impl TryFrom<WeakPathSymbol> for WeakAreaPathSymbol {
+    type Error = Error;
+
+    fn try_from(value: WeakPathSymbol) -> Result<Self> {
+        match value {
+            WeakPathSymbol::Area(ref_cell) => Ok(WeakAreaPathSymbol::Area(ref_cell)),
+            WeakPathSymbol::CombinedArea(ref_cell) => {
+                Ok(WeakAreaPathSymbol::CombinedArea(ref_cell))
+            }
+            _ => Err(Error::SymbolConversionError),
+        }
+    }
+}
+
+impl TryFrom<WeakPathSymbol> for WeakLinePathSymbol {
+    type Error = Error;
+
+    fn try_from(value: WeakPathSymbol) -> Result<Self> {
+        match value {
+            WeakPathSymbol::Line(ref_cell) => Ok(WeakLinePathSymbol::Line(ref_cell)),
+            WeakPathSymbol::CombinedLine(ref_cell) => {
+                Ok(WeakLinePathSymbol::CombinedLine(ref_cell))
+            }
+            _ => Err(Error::SymbolConversionError),
+        }
+    }
+}
+
+impl From<WeakPathSymbol> for WeakSymbol {
+    fn from(value: WeakPathSymbol) -> Self {
+        match value {
+            WeakPathSymbol::Area(weak) => WeakSymbol::Area(weak),
+            WeakPathSymbol::Line(weak) => WeakSymbol::Line(weak),
+            WeakPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak),
+            WeakPathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak),
+        }
+    }
+}
+
 impl From<WeakAreaPathSymbol> for WeakPathSymbol {
     fn from(value: WeakAreaPathSymbol) -> Self {
         match value {
@@ -195,42 +257,17 @@ impl From<WeakLinePathSymbol> for WeakPathSymbol {
     }
 }
 
-impl From<Weak<RefCell<AreaSymbol>>> for WeakPathSymbol {
-    fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
-        WeakPathSymbol::Area(value)
-    }
-}
-
-impl From<Weak<RefCell<LineSymbol>>> for WeakPathSymbol {
-    fn from(value: Weak<RefCell<LineSymbol>>) -> Self {
-        WeakPathSymbol::Line(value)
-    }
-}
-
-impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakPathSymbol {
-    fn from(value: Weak<RefCell<CombinedAreaSymbol>>) -> Self {
-        WeakPathSymbol::CombinedArea(value)
-    }
-}
-
-impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakPathSymbol {
-    fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
-        WeakPathSymbol::CombinedLine(value)
-    }
-}
-
-impl TryFrom<WeakSymbol> for WeakPathSymbol {
-    type Error = Error;
-
-    fn try_from(value: WeakSymbol) -> Result<Self> {
-        match value {
-            WeakSymbol::Line(ref_cell) => Ok(WeakPathSymbol::Line(ref_cell)),
-            WeakSymbol::Area(ref_cell) => Ok(WeakPathSymbol::Area(ref_cell)),
-            WeakSymbol::CombinedArea(ref_cell) => Ok(WeakPathSymbol::CombinedArea(ref_cell)),
-            WeakSymbol::CombinedLine(ref_cell) => Ok(WeakPathSymbol::CombinedLine(ref_cell)),
-            _ => Err(Error::SymbolError(
-                "Cannot convert Text or Line weak symbol to WeakPathSymbol".to_string(),
-            )),
+macro_rules! impl_from_weak_path_symbol {
+    ($symbol_ty:ty, $variant:ident) => {
+        impl From<Weak<RefCell<$symbol_ty>>> for WeakPathSymbol {
+            fn from(value: Weak<RefCell<$symbol_ty>>) -> Self {
+                WeakPathSymbol::$variant(value)
+            }
         }
-    }
+    };
 }
+
+impl_from_weak_path_symbol!(AreaSymbol, Area);
+impl_from_weak_path_symbol!(CombinedAreaSymbol, CombinedArea);
+impl_from_weak_path_symbol!(LineSymbol, Line);
+impl_from_weak_path_symbol!(CombinedLineSymbol, CombinedLine);

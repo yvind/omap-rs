@@ -357,15 +357,11 @@ impl AreaSymbol {
                     b"pattern" => {
                         patterns.push(FillPattern::parse(&e, reader, color_set)?);
                     }
+                    b"icon" => {
+                        common.custom_icon = try_get_attr_raw(&e, "src");
+                    }
                     _ => {}
                 },
-                Event::Empty(e) => {
-                    if e.local_name().as_ref() == b"icon"
-                        && let Some(src) = try_get_attr_raw(&e, "src")
-                    {
-                        common.custom_icon = Some(src);
-                    }
-                }
                 Event::End(e) => {
                     if e.local_name().as_ref() == b"symbol" {
                         break;

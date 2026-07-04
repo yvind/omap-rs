@@ -77,41 +77,45 @@ impl PartialEq for WeakSymbol {
     }
 }
 
-impl From<Weak<RefCell<AreaSymbol>>> for WeakSymbol {
-    fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
-        WeakSymbol::Area(value)
-    }
+macro_rules! impl_from_weak_symbol {
+    ($symbol_ty:ty, $variant:ident) => {
+        impl From<Weak<RefCell<$symbol_ty>>> for WeakSymbol {
+            fn from(value: Weak<RefCell<$symbol_ty>>) -> Self {
+                WeakSymbol::$variant(value)
+            }
+        }
+    };
 }
 
-impl From<Weak<RefCell<LineSymbol>>> for WeakSymbol {
-    fn from(value: Weak<RefCell<LineSymbol>>) -> Self {
-        WeakSymbol::Line(value)
-    }
+impl_from_weak_symbol!(AreaSymbol, Area);
+impl_from_weak_symbol!(LineSymbol, Line);
+impl_from_weak_symbol!(PointSymbol, Point);
+impl_from_weak_symbol!(TextSymbol, Text);
+impl_from_weak_symbol!(CombinedAreaSymbol, CombinedArea);
+impl_from_weak_symbol!(CombinedLineSymbol, CombinedLine);
+
+macro_rules! impl_try_from_weak_symbol {
+    ($symbol_ty:ty, $variant:ident) => {
+        impl TryFrom<WeakSymbol> for Weak<RefCell<$symbol_ty>> {
+            type Error = Error;
+
+            fn try_from(value: WeakSymbol) -> std::result::Result<Self, Self::Error> {
+                if let WeakSymbol::$variant(weak) = value {
+                    Ok(weak)
+                } else {
+                    Err(Error::SymbolConversionError)
+                }
+            }
+        }
+    };
 }
 
-impl From<Weak<RefCell<PointSymbol>>> for WeakSymbol {
-    fn from(value: Weak<RefCell<PointSymbol>>) -> Self {
-        WeakSymbol::Point(value)
-    }
-}
-
-impl From<Weak<RefCell<TextSymbol>>> for WeakSymbol {
-    fn from(value: Weak<RefCell<TextSymbol>>) -> Self {
-        WeakSymbol::Text(value)
-    }
-}
-
-impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakSymbol {
-    fn from(value: Weak<RefCell<CombinedAreaSymbol>>) -> Self {
-        WeakSymbol::CombinedArea(value)
-    }
-}
-
-impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakSymbol {
-    fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
-        WeakSymbol::CombinedLine(value)
-    }
-}
+impl_try_from_weak_symbol!(AreaSymbol, Area);
+impl_try_from_weak_symbol!(LineSymbol, Line);
+impl_try_from_weak_symbol!(PointSymbol, Point);
+impl_try_from_weak_symbol!(TextSymbol, Text);
+impl_try_from_weak_symbol!(CombinedAreaSymbol, CombinedArea);
+impl_try_from_weak_symbol!(CombinedLineSymbol, CombinedLine);
 
 /// An owning reference to a symbol of any type.
 #[derive(Debug, Clone)]
@@ -160,41 +164,22 @@ impl PartialEq for Symbol {
     }
 }
 
-impl From<LineSymbol> for Symbol {
-    fn from(value: LineSymbol) -> Self {
-        Symbol::Line(Rc::new(RefCell::new(value)))
-    }
+macro_rules! impl_from_symbol {
+    ($symbol_ty:ty, $variant:ident) => {
+        impl From<$symbol_ty> for Symbol {
+            fn from(value: $symbol_ty) -> Self {
+                Symbol::$variant(Rc::new(RefCell::new(value)))
+            }
+        }
+    };
 }
 
-impl From<AreaSymbol> for Symbol {
-    fn from(value: AreaSymbol) -> Self {
-        Symbol::Area(Rc::new(RefCell::new(value)))
-    }
-}
-
-impl From<TextSymbol> for Symbol {
-    fn from(value: TextSymbol) -> Self {
-        Symbol::Text(Rc::new(RefCell::new(value)))
-    }
-}
-
-impl From<PointSymbol> for Symbol {
-    fn from(value: PointSymbol) -> Self {
-        Symbol::Point(Rc::new(RefCell::new(value)))
-    }
-}
-
-impl From<CombinedLineSymbol> for Symbol {
-    fn from(value: CombinedLineSymbol) -> Self {
-        Symbol::CombinedLine(Rc::new(RefCell::new(value)))
-    }
-}
-
-impl From<CombinedAreaSymbol> for Symbol {
-    fn from(value: CombinedAreaSymbol) -> Self {
-        Symbol::CombinedArea(Rc::new(RefCell::new(value)))
-    }
-}
+impl_from_symbol!(AreaSymbol, Area);
+impl_from_symbol!(LineSymbol, Line);
+impl_from_symbol!(PointSymbol, Point);
+impl_from_symbol!(TextSymbol, Text);
+impl_from_symbol!(CombinedAreaSymbol, CombinedArea);
+impl_from_symbol!(CombinedLineSymbol, CombinedLine);
 
 macro_rules! impl_symbol_getter {
     ($method:ident -> $ret_type:ty, |$s:ident| $expr:expr) => {

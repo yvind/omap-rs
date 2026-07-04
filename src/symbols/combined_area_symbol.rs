@@ -298,23 +298,9 @@ impl CombinedAreaSymbol {
                             // Don't push to parts here - will be resolved by symbol_set after all symbols are loaded
                         }
                     }
+                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src"),
                     _ => {}
                 },
-                Event::Empty(e) => {
-                    if e.local_name().as_ref() == b"icon" {
-                        if let Some(src) = try_get_attr_raw::<String>(&e, "src") {
-                            common.custom_icon = Some(src);
-                        }
-                    } else if e.local_name().as_ref() == b"part" {
-                        let is_private = try_get_attr_raw(&e, "private").unwrap_or(false);
-                        if !is_private {
-                            let symbol_index = try_get_attr_raw::<i32>(&e, "symbol");
-                            if let Some(symbol_index) = symbol_index.filter(|&id| id >= 0) {
-                                public_component_ids.push(symbol_index as usize);
-                            }
-                        }
-                    }
-                }
                 Event::End(e) => {
                     if e.local_name().as_ref() == b"symbol" {
                         break;
