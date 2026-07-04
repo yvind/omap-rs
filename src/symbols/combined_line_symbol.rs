@@ -79,9 +79,7 @@ impl CombinedLineSymbol {
             match self.contains_cycle() {
                 Ok(true) => {
                     let _ = self.parts.pop();
-                    Err(Error::SymbolError(
-                        "Adding this symbol would lead to a cyclic symbol defintion".to_string(),
-                    ))
+                    Err(Error::CyclicSymbolDefinition)
                 }
                 Ok(false) => Ok(()),
                 Err(e) => {
@@ -192,9 +190,7 @@ impl CombinedLineSymbol {
                 if !visited.insert(ptr) {
                     return Ok(true); // Already visited — cycle detected
                 }
-                let borrowed = cl.try_borrow().map_err(|_| {
-                    Error::SymbolError("Cannot borrow symbol during cycle check".to_string())
-                })?;
+                let borrowed = cl.try_borrow().map_err(|_| Error::SymbolCycleBorrow)?;
                 if borrowed.contains_cycle_with_visited(visited)? {
                     return Ok(true);
                 }

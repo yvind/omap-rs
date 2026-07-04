@@ -9,7 +9,7 @@ use quick_xml::{
 };
 
 use crate::{
-    Error, NonNegativeF64, Result,
+    Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     utils::{parse_attr_raw, try_get_attr_raw},
     view::TemplateVisibility,
@@ -139,7 +139,7 @@ impl Templates {
         reader: &mut Reader<R>,
         event: &BytesStart<'_>,
     ) -> Result<Self> {
-        let first_front_template = try_get_attr_raw(event, "first_front_template").unwrap_or(0);
+        let first_front_template = try_get_attr_raw(event, "first_front_template")?.unwrap_or(0);
 
         let mut templates = Vec::new();
         let mut defaults = TemplateDefaults::default();
@@ -158,9 +158,7 @@ impl Templates {
                 },
                 Event::End(be) if be.local_name().as_ref() == b"templates" => break,
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in templates".into(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::Templates));
                 }
                 _ => {}
             }

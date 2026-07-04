@@ -7,7 +7,7 @@ use quick_xml::{
 
 use super::{Symbol, WeakSymbol};
 use crate::{
-    Code, Error, Result,
+    Code, Error, OmapSection, Result,
     colors::ColorSet,
     symbols::{
         AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol,
@@ -167,8 +167,11 @@ impl SymbolSet {
         element: &BytesStart<'_>,
         colors: &ColorSet,
     ) -> Result<SymbolSet> {
-        let symbol_set_name = try_get_attr(element, "id").unwrap_or("Custom".to_string());
-        let count = try_get_attr_raw(element, "count").unwrap_or(1);
+        let symbol_set_name = try_get_attr(element, "id")?.unwrap_or("Custom".to_string());
+        let count = try_get_attr_raw(element, "count")
+            .ok()
+            .flatten()
+            .unwrap_or(1);
 
         let mut symbols = vec![None; count];
         let mut components = vec![Vec::new(); count];
@@ -181,15 +184,10 @@ impl SymbolSet {
                         let (symbol_id, symbol, combined_components) =
                             Symbol::parse(reader, &bytes_start, colors)?;
                         if symbol_id >= symbols.len() {
-                            return Err(Error::ParseOmapFileError(
-                                "Found a symbol with an id greater than the number of symbols"
-                                    .to_string(),
-                            ));
+                            return Err(Error::SymbolIdOutOfRange(symbol_id));
                         }
                         if symbols[symbol_id].is_some() {
-                            return Err(Error::ParseOmapFileError(format!(
-                                "Found multiple symbols with id={symbol_id}"
-                            )));
+                            return Err(Error::DuplicateSymbolId(symbol_id));
                         }
                         components[symbol_id] = combined_components;
                         symbols[symbol_id] = Some(symbol);
@@ -201,17 +199,13 @@ impl SymbolSet {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in symbols parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::Symbols));
                 }
                 _ => (),
             }
         }
         if symbols.iter().any(|s| s.is_none()) {
-            return Err(Error::ParseOmapFileError(
-                "The symbol count and number of found symbols do not match".to_string(),
-            ));
+            return Err(Error::SymbolCountMismatch);
         }
         let mut symbol_set = SymbolSet {
             symbols: symbols.into_iter().collect::<Option<Vec<_>>>().unwrap(),
@@ -301,12 +295,9 @@ impl SymbolSet {
                 Symbol::CombinedArea(ref_cell) => {
                     let mut symb = ref_cell.try_borrow_mut()?;
                     for &id in component_ids {
-                        let weak_component =
-                            symbol_set
-                                .get_weak_symbol_by_id(id)
-                                .ok_or(Error::SymbolError(format!(
-                                    "Symbol set index {id} out of range"
-                                )))?;
+                        let weak_component = symbol_set
+                            .get_weak_symbol_by_id(id)
+                            .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
                         match weak_component {
                             WeakSymbol::Line(weak) => symb.add_component(
                                 PublicOrPrivateSymbol::Public(WeakPathSymbol::Line(weak)),
@@ -320,24 +311,16 @@ impl SymbolSet {
                             WeakSymbol::CombinedLine(weak) => symb.add_component(
                                 PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(weak)),
                             )?,
-                            e => {
-                                return Err(Error::SymbolError(format!(
-                                    "A combined symbol contains a point or text symbol {:?}",
-                                    e
-                                )));
-                            }
+                            _ => return Err(Error::CombinedSymbolContainsPointOrText),
                         }
                     }
                 }
                 Symbol::CombinedLine(ref_cell) => {
                     let mut symb = ref_cell.try_borrow_mut()?;
                     for &id in component_ids {
-                        let weak_component =
-                            symbol_set
-                                .get_weak_symbol_by_id(id)
-                                .ok_or(Error::SymbolError(format!(
-                                    "Symbol set index {id} out of range"
-                                )))?;
+                        let weak_component = symbol_set
+                            .get_weak_symbol_by_id(id)
+                            .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
                         match weak_component {
                             WeakSymbol::Line(weak) => symb.add_component(
                                 PublicOrPrivateSymbol::Public(WeakLinePathSymbol::Line(weak)),
@@ -347,19 +330,12 @@ impl SymbolSet {
                                     WeakLinePathSymbol::CombinedLine(weak),
                                 ))?
                             }
-                            e => {
-                                return Err(Error::SymbolError(format!(
-                                    "A combined line symbol contains a non-line symbol {:?}",
-                                    e
-                                )));
-                            }
+                            _ => return Err(Error::CombinedLineSymbolContainsNonLine),
                         }
                     }
                 }
                 _ if !component_ids.is_empty() => {
-                    return Err(Error::ParseOmapFileError(
-                        "Found components in a non-combined symbol".to_string(),
-                    ));
+                    return Err(Error::ComponentsInNonCombinedSymbol);
                 }
                 _ => {}
             }

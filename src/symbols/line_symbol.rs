@@ -7,7 +7,7 @@ use quick_xml::{
 
 use super::{PointSymbol, SymbolCommon};
 use crate::{
-    Code, Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
@@ -199,7 +199,7 @@ impl FromStr for CapStyle {
             "1" => Ok(CapStyle::Round),
             "2" => Ok(CapStyle::Square),
             "3" => Ok(CapStyle::Pointed),
-            _ => Err(Error::SymbolError(format!("Unknown CapStyle {s}"))),
+            _ => Err(Error::UnknownCapStyle),
         }
     }
 }
@@ -224,7 +224,7 @@ impl FromStr for JoinStyle {
             "0" => Ok(JoinStyle::Bevel),
             "1" => Ok(JoinStyle::Miter),
             "2" => Ok(JoinStyle::Round),
-            _ => Err(Error::SymbolError(format!("Unknown JoinStyle {s}"))),
+            _ => Err(Error::UnknownJoinStyle),
         }
     }
 }
@@ -250,9 +250,7 @@ impl FromStr for MidSymbolPlacement {
             "0" => Ok(MidSymbolPlacement::CenterOfDash),
             "1" => Ok(MidSymbolPlacement::CenterOfDashGroup),
             "2" => Ok(MidSymbolPlacement::CenterOfGap),
-            _ => Err(Error::SymbolError(format!(
-                "Unknown MidSymbolPlacement {s}"
-            ))),
+            _ => Err(Error::UnknownMidSymbolPlacement),
         }
     }
 }
@@ -289,20 +287,20 @@ pub struct LineSymbolBorder {
 
 impl LineSymbolBorder {
     fn parse(element: &BytesStart<'_>, color_set: &ColorSet) -> Result<Self> {
-        let color_index = try_get_attr_raw(element, "color").unwrap_or(-1);
+        let color_index = try_get_attr_raw(element, "color")?.unwrap_or(-1);
         let color = SymbolColor::from_index(color_index, color_set);
         let width =
-            NonNegativeF64::from_file_value(try_get_attr_raw(element, "width").unwrap_or(0));
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "width")?.unwrap_or(0));
         let shift =
-            NonNegativeF64::from_file_value(try_get_attr_raw(element, "shift").unwrap_or(0));
-        let is_dashed = try_get_attr_raw(element, "dashed").unwrap_or(false);
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "shift")?.unwrap_or(0));
+        let is_dashed = try_get_attr_raw(element, "dashed")?.unwrap_or(false);
         let dashed = if is_dashed {
             Some(BorderDash {
                 dash_length: NonNegativeF64::from_file_value(
-                    try_get_attr_raw(element, "dash_length").unwrap_or(0),
+                    try_get_attr_raw(element, "dash_length")?.unwrap_or(0),
                 ),
                 break_length: NonNegativeF64::from_file_value(
-                    try_get_attr_raw(element, "break_length").unwrap_or(0),
+                    try_get_attr_raw(element, "break_length")?.unwrap_or(0),
                 ),
             })
         } else {
@@ -456,49 +454,49 @@ impl LineSymbol {
                         }
                     }
                     b"line_symbol" => {
-                        let color_index = try_get_attr_raw(&e, "color").unwrap_or(-1);
+                        let color_index = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(color_index, color_set);
                         line_width = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "line_width").unwrap_or(0),
+                            try_get_attr_raw(&e, "line_width")?.unwrap_or(0),
                         );
                         minimum_length = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "minimum_length").unwrap_or(0),
+                            try_get_attr_raw(&e, "minimum_length")?.unwrap_or(0),
                         );
-                        join_style = try_get_attr_raw(&e, "join_style").unwrap_or_default();
-                        cap_style = try_get_attr_raw(&e, "cap_style").unwrap_or_default();
+                        join_style = try_get_attr_raw(&e, "join_style")?.unwrap_or_default();
+                        cap_style = try_get_attr_raw(&e, "cap_style")?.unwrap_or_default();
                         start_offset = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "start_offset").unwrap_or(0),
+                            try_get_attr_raw(&e, "start_offset")?.unwrap_or(0),
                         );
                         end_offset = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "end_offset").unwrap_or(0),
+                            try_get_attr_raw(&e, "end_offset")?.unwrap_or(0),
                         );
-                        dashed = try_get_attr_raw(&e, "dashed").unwrap_or(false);
-                        segment_length = try_get_attr_raw(&e, "segment_length").unwrap_or(4000);
-                        end_length = try_get_attr_raw(&e, "end_length").unwrap_or(0);
-                        dash_length = try_get_attr_raw(&e, "dash_length").unwrap_or(4000);
-                        break_length = try_get_attr_raw(&e, "break_length").unwrap_or(1000);
-                        dashes_in_group = try_get_attr_raw(&e, "dashes_in_group").unwrap_or(1);
+                        dashed = try_get_attr_raw(&e, "dashed")?.unwrap_or(false);
+                        segment_length = try_get_attr_raw(&e, "segment_length")?.unwrap_or(4000);
+                        end_length = try_get_attr_raw(&e, "end_length")?.unwrap_or(0);
+                        dash_length = try_get_attr_raw(&e, "dash_length")?.unwrap_or(4000);
+                        break_length = try_get_attr_raw(&e, "break_length")?.unwrap_or(1000);
+                        dashes_in_group = try_get_attr_raw(&e, "dashes_in_group")?.unwrap_or(1);
                         in_group_break_length =
-                            try_get_attr_raw(&e, "in_group_break_length").unwrap_or(500);
+                            try_get_attr_raw(&e, "in_group_break_length")?.unwrap_or(500);
                         half_outer_dashes =
-                            try_get_attr_raw(&e, "half_outer_dashes").unwrap_or(false);
+                            try_get_attr_raw(&e, "half_outer_dashes")?.unwrap_or(false);
                         show_at_least_one_symbol =
-                            try_get_attr_raw(&e, "show_at_least_one_symbol").unwrap_or(false);
+                            try_get_attr_raw(&e, "show_at_least_one_symbol")?.unwrap_or(false);
                         minimum_mid_symbol_count =
-                            try_get_attr_raw(&e, "minimum_mid_symbol_count").unwrap_or(0);
+                            try_get_attr_raw(&e, "minimum_mid_symbol_count")?.unwrap_or(0);
                         minimum_mid_symbol_count_when_closed =
-                            try_get_attr_raw(&e, "minimum_mid_symbol_count_when_closed")
+                            try_get_attr_raw(&e, "minimum_mid_symbol_count_when_closed")?
                                 .unwrap_or(0);
                         mid_symbols_per_spot =
-                            try_get_attr_raw(&e, "mid_symbols_per_spot").unwrap_or(1);
+                            try_get_attr_raw(&e, "mid_symbols_per_spot")?.unwrap_or(1);
                         mid_symbol_distance =
-                            try_get_attr_raw(&e, "mid_symbol_distance").unwrap_or(0);
+                            try_get_attr_raw(&e, "mid_symbol_distance")?.unwrap_or(0);
                         mid_symbol_placement =
-                            try_get_attr_raw(&e, "mid_symbol_placement").unwrap_or_default();
+                            try_get_attr_raw(&e, "mid_symbol_placement")?.unwrap_or_default();
                         suppress_dash_symbol_at_ends =
-                            try_get_attr_raw(&e, "suppress_dash_symbol_at_ends").unwrap_or(false);
+                            try_get_attr_raw(&e, "suppress_dash_symbol_at_ends")?.unwrap_or(false);
                         scale_dash_symbol =
-                            try_get_attr_raw(&e, "scale_dash_symbol").unwrap_or(true);
+                            try_get_attr_raw(&e, "scale_dash_symbol")?.unwrap_or(true);
                     }
                     b"start_symbol" => {
                         start_symbol = Self::parse_sub_point_symbol(reader, color_set)?;
@@ -515,7 +513,7 @@ impl LineSymbol {
                     b"borders" => {
                         border = Self::parse_borders(reader, &e, color_set)?;
                     }
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src"),
+                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
                 Event::End(e) => {
@@ -524,9 +522,7 @@ impl LineSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in LineSymbol parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::LineSymbol));
                 }
                 _ => {}
             }
@@ -620,9 +616,7 @@ impl LineSymbol {
                     _ => (),
                 },
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF parsing sub point symbol".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::PointSymbol));
                 }
                 _ => {}
             }
@@ -644,7 +638,7 @@ impl LineSymbol {
         element: &BytesStart<'_>,
         color_set: &ColorSet,
     ) -> Result<Option<BorderStyle>> {
-        let borders_different = try_get_attr_raw(element, "borders_different").unwrap_or(false);
+        let borders_different = try_get_attr_raw(element, "borders_different")?.unwrap_or(false);
         let mut left = None;
         let mut right = None;
         let mut buf = Vec::new();
@@ -666,9 +660,7 @@ impl LineSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF parsing borders".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::LineSymbol));
                 }
                 _ => {}
             }

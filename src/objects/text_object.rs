@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 
 use crate::{
-    Error, NonNegativeF64, Result,
+    CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     notes,
     symbols::{Symbol, SymbolSet, TextSymbol},
@@ -262,14 +262,14 @@ impl TextObject {
                         b"tags" => tags = super::parse_tags(reader)?,
                         b"size" => {
                             // Override box size from <size> element (takes precedence)
-                            let w = try_get_attr_raw(&bytes_start, "width").unwrap_or(0);
-                            let h = try_get_attr_raw(&bytes_start, "height").unwrap_or(0);
+                            let w = try_get_attr_raw(&bytes_start, "width")?.unwrap_or(0);
+                            let h = try_get_attr_raw(&bytes_start, "height")?.unwrap_or(0);
                             if let TextGeometry::WrapBox(wb) = &mut text_geo {
                                 wb.width = NonNegativeF64::from_file_value(w);
                                 wb.height = NonNegativeF64::from_file_value(h);
                             }
                         }
-                        b"coords" => match try_get_attr_raw::<u8>(&bytes_start, "count") {
+                        b"coords" => match try_get_attr_raw::<u8>(&bytes_start, "count")? {
                             Some(1) => text_geo = TextGeometry::SingleAnchor(Coord::default()),
                             Some(2) => text_geo = TextGeometry::WrapBox(WrapBox::default()),
                             _ => return Err(Error::ObjectError),
@@ -292,11 +292,11 @@ impl TextObject {
 
                         let x: i32 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No x value".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::X))?
                             .parse()?;
                         let y: i32 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No y value".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::Y))?
                             .parse()?;
 
                         let coord = from_file_coords(Coord { x, y });
@@ -330,15 +330,11 @@ impl TextObject {
                             }
                         };
                     } else {
-                        return Err(Error::ParseOmapFileError(
-                            "Could not parse text object coords".to_string(),
-                        ));
+                        return Err(Error::MissingTextObjectCoordinates);
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in TextObject parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::TextObject));
                 }
                 _ => (),
             }

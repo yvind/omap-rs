@@ -153,18 +153,20 @@ impl Omap {
                         if let Some(colors) = &colors {
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
                         } else {
-                            return Err(Error::ParseOmapFileError(
-                                "Encountered Symbols before Colors".to_string(),
-                            ));
+                            return Err(Error::SectionOutOfOrder {
+                                section: crate::OmapSection::Symbols,
+                                required_before: crate::OmapSection::Colors,
+                            });
                         }
                     }
                     b"parts" => {
                         if let Some(symbols) = &symbols {
                             parts = Some(MapParts::parse(&mut reader, symbols)?);
                         } else {
-                            return Err(Error::ParseOmapFileError(
-                                "Encountered Map parts before Symbols".to_string(),
-                            ));
+                            return Err(Error::SectionOutOfOrder {
+                                section: crate::OmapSection::Parts,
+                                required_before: crate::OmapSection::Symbols,
+                            });
                         }
                     }
                     b"templates" => {
@@ -183,11 +185,12 @@ impl Omap {
 
         Ok(Omap {
             notes,
-            geo_referencing: georef
-                .ok_or(Error::ParseOmapFileError("Georeferencing".to_string()))?,
-            colors: colors.ok_or(Error::ParseOmapFileError("Colors".to_string()))?,
-            symbols: symbols.ok_or(Error::ParseOmapFileError("Symbols".to_string()))?,
-            parts: parts.ok_or(Error::ParseOmapFileError("Parts".to_string()))?,
+            geo_referencing: georef.ok_or(Error::MissingRequiredSection(
+                crate::OmapSection::Georeferencing,
+            ))?,
+            colors: colors.ok_or(Error::MissingRequiredSection(crate::OmapSection::Colors))?,
+            symbols: symbols.ok_or(Error::MissingRequiredSection(crate::OmapSection::Symbols))?,
+            parts: parts.ok_or(Error::MissingRequiredSection(crate::OmapSection::Parts))?,
             templates,
             view,
         })

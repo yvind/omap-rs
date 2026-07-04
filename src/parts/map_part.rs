@@ -10,7 +10,7 @@ use crate::symbols::{
     TextSymbol, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol,
 };
 use crate::utils::try_get_attr;
-use crate::{Error, Result};
+use crate::{Error, OmapSection, Result};
 
 /// A map part (layer) containing objects grouped by symbol.
 #[derive(Debug, Clone)]
@@ -151,7 +151,10 @@ impl MapPart {
         element: &BytesStart<'_>,
         symbols: &SymbolSet,
     ) -> Result<MapPart> {
-        let name = try_get_attr(element, "name").unwrap_or(String::new());
+        let name = try_get_attr(element, "name")
+            .ok()
+            .flatten()
+            .unwrap_or(String::new());
 
         let mut objects: HashMap<SymbolPointer, Vec<MapObject>> = HashMap::new();
 
@@ -176,9 +179,7 @@ impl MapPart {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in parsing MapPart".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::MapPart));
                 }
                 _ => (),
             }

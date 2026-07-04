@@ -5,7 +5,7 @@ use quick_xml::{
 };
 
 use crate::{
-    Error, Result,
+    Error, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     utils::{from_file_coords, parse_attr_raw, to_file_coords, try_get_attr_raw},
 };
@@ -188,9 +188,7 @@ impl TemplateTransformations {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in transformations".into(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::TemplateTransformations));
                 }
                 _ => {}
             }
@@ -285,9 +283,7 @@ impl PassPoint {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in passpoint".into(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::PassPoint));
                 }
                 _ => {}
             }
@@ -366,12 +362,12 @@ impl Matrix3x3 {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) if child.local_name().as_ref() == b"element" => {
-                    values[i] = try_get_attr_raw(&child, "value").unwrap_or(0.);
+                    values[i] = try_get_attr_raw(&child, "value")?.unwrap_or(0.);
                     i += 1;
                 }
                 Event::End(be) if be.local_name().as_ref() == b"matrix" => break,
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError("Unexpected EOF in matrix".into()));
+                    return Err(Error::UnexpectedEof(OmapSection::Matrix));
                 }
                 _ => {}
             }
@@ -423,15 +419,13 @@ fn parse_inner_coord<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Coor
         match reader.read_event_into(&mut buf)? {
             Event::Start(bs) if bs.local_name().as_ref() == b"coord" => {
                 coord = Coord {
-                    x: try_get_attr_raw(&bs, "x").unwrap_or(0),
-                    y: try_get_attr_raw(&bs, "y").unwrap_or(0),
+                    x: try_get_attr_raw(&bs, "x")?.unwrap_or(0),
+                    y: try_get_attr_raw(&bs, "y")?.unwrap_or(0),
                 };
             }
             Event::End(_) => break,
             Event::Eof => {
-                return Err(Error::ParseOmapFileError(
-                    "Unexpected EOF in coord wrapper".into(),
-                ));
+                return Err(Error::UnexpectedEof(OmapSection::CoordinateWrapper));
             }
             _ => {}
         }

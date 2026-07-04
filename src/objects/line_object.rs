@@ -9,7 +9,7 @@ use quick_xml::{
 
 use super::{FileCoord, PARSE_BEZIER_ERROR};
 use crate::{
-    Error, NonNegativeF64, Result,
+    CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     symbols::{Symbol, SymbolSet, WeakLinePathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
@@ -320,7 +320,10 @@ impl LineObject {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
                     b"coords" => {
-                        let num_coords = try_get_attr_raw(&bytes_start, "count").unwrap_or(0);
+                        let num_coords = try_get_attr_raw(&bytes_start, "count")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(0);
                         line.reserve(num_coords);
                         raw_map_coords.reserve(num_coords);
                     }
@@ -345,11 +348,11 @@ impl LineObject {
 
                         parts.0 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No x value in split".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::X))?
                             .parse()?;
                         parts.1 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No y value in split".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::Y))?
                             .parse()?;
                         if let Some(e) = split.next() {
                             parts.2 = e.parse()?;
@@ -420,9 +423,7 @@ impl LineObject {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in LineObject parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::LineObject));
                 }
                 _ => (),
             }

@@ -7,7 +7,7 @@ use quick_xml::{
 
 use super::{PointSymbol, SymbolCommon};
 use crate::{
-    Code, Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
     utils::{parse_attr, try_get_attr_raw},
 };
@@ -60,7 +60,7 @@ impl FromStr for ClippingOption {
             "1" => Ok(ClippingOption::NoClippingIfCompletelyInside),
             "2" => Ok(ClippingOption::NoClippingIfCenterInside),
             "3" => Ok(ClippingOption::NoClippingIfPartiallyInside),
-            _ => Err(Error::SymbolError(format!("Unknown ClippingOption {s}"))),
+            _ => Err(Error::UnknownClippingOption),
         }
     }
 }
@@ -71,25 +71,26 @@ impl FillPattern {
         reader: &mut Reader<R>,
         color_set: &ColorSet,
     ) -> Result<FillPattern> {
-        let pattern_type = try_get_attr_raw(element, "type").unwrap_or(0);
-        let angle = try_get_attr_raw(element, "angle").unwrap_or(0.0);
-        let clip_options = try_get_attr_raw(element, "no_clipping").unwrap_or_default();
-        let rotatable = try_get_attr_raw(element, "rotatable").unwrap_or(false);
-        let line_spacing =
-            NonNegativeF64::from_file_value(try_get_attr_raw(element, "line_spacing").unwrap_or(0));
+        let pattern_type = try_get_attr_raw(element, "type")?.unwrap_or(0);
+        let angle = try_get_attr_raw(element, "angle")?.unwrap_or(0.0);
+        let clip_options = try_get_attr_raw(element, "no_clipping")?.unwrap_or_default();
+        let rotatable = try_get_attr_raw(element, "rotatable")?.unwrap_or(false);
+        let line_spacing = NonNegativeF64::from_file_value(
+            try_get_attr_raw(element, "line_spacing")?.unwrap_or(0),
+        );
         let line_offset =
-            NonNegativeF64::from_file_value(try_get_attr_raw(element, "line_offset").unwrap_or(0));
+            NonNegativeF64::from_file_value(try_get_attr_raw(element, "line_offset")?.unwrap_or(0));
         let offset_along_line = NonNegativeF64::from_file_value(
-            try_get_attr_raw(element, "offset_along_line").unwrap_or(0),
+            try_get_attr_raw(element, "offset_along_line")?.unwrap_or(0),
         );
 
         match pattern_type {
             1 => {
                 // LinePattern
-                let ci = try_get_attr_raw(element, "color").unwrap_or(-1);
+                let ci = try_get_attr_raw(element, "color")?.unwrap_or(-1);
                 let line_color = SymbolColor::from_index(ci, color_set);
                 let line_width = NonNegativeF64::from_file_value(
-                    try_get_attr_raw(element, "line_width").unwrap_or(0),
+                    try_get_attr_raw(element, "line_width")?.unwrap_or(0),
                 );
                 // Skip to end of pattern element
                 let mut buf = Vec::new();
@@ -101,9 +102,7 @@ impl FillPattern {
                             }
                         }
                         Event::Eof => {
-                            return Err(Error::ParseOmapFileError(
-                                "Unexpected EOF in FillPattern parsing".to_string(),
-                            ));
+                            return Err(Error::UnexpectedEof(OmapSection::FillPattern));
                         }
                         _ => {}
                     }
@@ -120,7 +119,7 @@ impl FillPattern {
             2 => {
                 // PointPattern
                 let point_distance = NonNegativeF64::from_file_value(
-                    try_get_attr_raw(element, "point_distance").unwrap_or(0),
+                    try_get_attr_raw(element, "point_distance")?.unwrap_or(0),
                 );
                 // Parse nested point symbol
                 let mut point = None;
@@ -153,16 +152,12 @@ impl FillPattern {
                             }
                         }
                         Event::Eof => {
-                            return Err(Error::ParseOmapFileError(
-                                "Unexpected EOF in FillPattern point parsing".to_string(),
-                            ));
+                            return Err(Error::UnexpectedEof(OmapSection::FillPatternPoint));
                         }
                         _ => {}
                     }
                 }
-                let point = point.ok_or_else(|| {
-                    Error::ParseOmapFileError("Missing point symbol in PointPattern".to_string())
-                })?;
+                let point = point.ok_or(Error::MissingPointPatternSymbol)?;
                 Ok(FillPattern::PointPattern {
                     clip_options,
                     angle,
@@ -174,9 +169,7 @@ impl FillPattern {
                     rotatable,
                 })
             }
-            _ => Err(Error::ParseOmapFileError(format!(
-                "Unknown fill pattern type {pattern_type}"
-            ))),
+            _ => Err(Error::UnknownFillPatternType(pattern_type)),
         }
     }
 
@@ -347,18 +340,18 @@ impl AreaSymbol {
                         }
                     }
                     b"area_symbol" => {
-                        let ci = try_get_attr_raw(&e, "inner_color").unwrap_or(-1);
+                        let ci = try_get_attr_raw(&e, "inner_color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
                         minimum_area = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "min_area").unwrap_or(0),
+                            try_get_attr_raw(&e, "min_area")?.unwrap_or(0),
                         );
-                        is_rotatable = try_get_attr_raw(&e, "rotatable").unwrap_or(false);
+                        is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(false);
                     }
                     b"pattern" => {
                         patterns.push(FillPattern::parse(&e, reader, color_set)?);
                     }
                     b"icon" => {
-                        common.custom_icon = try_get_attr_raw(&e, "src");
+                        common.custom_icon = try_get_attr_raw(&e, "src")?;
                     }
                     _ => {}
                 },
@@ -368,9 +361,7 @@ impl AreaSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in AreaSymbol parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::AreaSymbol));
                 }
                 _ => {}
             }

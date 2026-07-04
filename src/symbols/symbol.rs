@@ -294,9 +294,7 @@ impl Symbol {
         }
 
         if id == usize::MAX {
-            return Err(Error::ParseOmapFileError(
-                "Could not parse symbol".to_string(),
-            ));
+            return Err(Error::MissingSymbolId);
         }
 
         // We must record the component IDs for combined symbols
@@ -324,9 +322,7 @@ impl Symbol {
                 Symbol::CombinedArea(Rc::new(RefCell::new(symbol)))
             }
             _ => {
-                return Err(Error::ParseOmapFileError(format!(
-                    "Could not parse symbol of type {symbol_type}"
-                )));
+                return Err(Error::UnknownSymbolType(symbol_type));
             }
         };
 

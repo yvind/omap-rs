@@ -4,7 +4,7 @@ use quick_xml::{
 };
 
 use super::MapPart;
-use crate::{Error, Result, symbols::SymbolSet};
+use crate::{Error, OmapSection, Result, symbols::SymbolSet};
 
 /// An ordered collection of map parts (layers).
 #[derive(Debug, Default, Clone)]
@@ -147,9 +147,7 @@ impl MapParts {
                 }
                 Event::End(_) => break,
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in parsing MapParts".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::Parts));
                 }
                 _ => (),
             }

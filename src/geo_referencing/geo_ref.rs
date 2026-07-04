@@ -9,7 +9,9 @@ use quick_xml::{
 };
 
 use super::CrsType;
-use crate::{Error, Result, geo_referencing::MapTransform, notes, utils::try_get_attr_raw};
+use crate::{
+    Error, OmapSection, Result, geo_referencing::MapTransform, notes, utils::try_get_attr_raw,
+};
 
 /// The georeferencing information of the map
 #[derive(Debug, Clone)]
@@ -158,15 +160,18 @@ impl GeoRef {
         reader: &mut Reader<R>,
         event: &BytesStart<'_>,
     ) -> Result<Self> {
-        let scale = try_get_attr_raw(event, "scale").ok_or(Error::ParseOmapFileError(
-            "Could not find the map scale".to_string(),
-        ))?;
-        let auxiliary_scale_factor =
-            try_get_attr_raw(event, "auxiliary_scale_factor").unwrap_or(1.);
-        let grid_scale_factor =
-            try_get_attr_raw(event, "grid_scale_factor").unwrap_or(1.) / auxiliary_scale_factor;
-        let declination_deg = try_get_attr_raw(event, "declination").unwrap_or(0.);
-        let convergence_deg = declination_deg - try_get_attr_raw(event, "grivation").unwrap_or(0.);
+        let scale = try_get_attr_raw(event, "scale")?.ok_or(Error::MissingMapScale)?;
+        let auxiliary_scale_factor = try_get_attr_raw(event, "auxiliary_scale_factor")
+            .ok()
+            .flatten()
+            .unwrap_or(1.);
+        let grid_scale_factor = try_get_attr_raw(event, "grid_scale_factor")
+            .ok()
+            .flatten()
+            .unwrap_or(1.)
+            / auxiliary_scale_factor;
+        let declination_deg = try_get_attr_raw(event, "declination")?.unwrap_or(0.);
+        let convergence_deg = declination_deg - try_get_attr_raw(event, "grivation")?.unwrap_or(0.);
 
         let mut crs_type = CrsType::Local;
         let mut map_ref_point = Coord::zero();
@@ -186,8 +191,8 @@ impl GeoRef {
                     b"ref_point" => {
                         // for some reason in mm and not µm, but y is flipped
                         map_ref_point = Coord {
-                            x: try_get_attr_raw(&bs, "x").unwrap_or(map_ref_point.x),
-                            y: try_get_attr_raw(&bs, "y")
+                            x: try_get_attr_raw(&bs, "x")?.unwrap_or(map_ref_point.x),
+                            y: try_get_attr_raw(&bs, "y")?
                                 .map(|y: f64| -y)
                                 .unwrap_or(map_ref_point.y),
                         }
@@ -200,9 +205,7 @@ impl GeoRef {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(String::from(
-                        "Unexpected EOF in Georeferencing",
-                    )));
+                    return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
                 }
                 _ => (),
             }
@@ -245,9 +248,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
                     Some('N') => 1_i8,
                     Some('S') => -1_i8,
                     _ => {
-                        return Err(Error::ParseOmapFileError(
-                            "Could not parse georeferencing".to_string(),
-                        ));
+                        return Err(Error::InvalidGeoreferencing);
                     }
                 };
                 CrsType::Utm(sign * i8::from_str(param_string.trim())?)
@@ -271,8 +272,8 @@ fn parse_projected_crs<R: std::io::BufRead>(
             Event::Start(bs) => {
                 if matches!(bs.local_name().as_ref(), b"ref_point") {
                     proj_ref_point = Coord {
-                        x: try_get_attr_raw(&bs, "x").unwrap_or(proj_ref_point.x),
-                        y: try_get_attr_raw(&bs, "y").unwrap_or(proj_ref_point.y),
+                        x: try_get_attr_raw(&bs, "x")?.unwrap_or(proj_ref_point.x),
+                        y: try_get_attr_raw(&bs, "y")?.unwrap_or(proj_ref_point.y),
                     }
                 }
             }
@@ -282,9 +283,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
                 }
             }
             Event::Eof => {
-                return Err(Error::ParseOmapFileError(
-                    "Unexpected EOF in georeferencing".to_string(),
-                ));
+                return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
             }
             _ => (),
         }
@@ -303,8 +302,8 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
             Event::Start(bs) => {
                 if matches!(bs.local_name().as_ref(), b"ref_point_deg") {
                     geo_ref_point = Coord {
-                        x: try_get_attr_raw(&bs, "lon").unwrap_or(geo_ref_point.x),
-                        y: try_get_attr_raw(&bs, "lat").unwrap_or(geo_ref_point.y),
+                        x: try_get_attr_raw(&bs, "lon")?.unwrap_or(geo_ref_point.x),
+                        y: try_get_attr_raw(&bs, "lat")?.unwrap_or(geo_ref_point.y),
                     }
                 }
             }
@@ -314,9 +313,7 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
                 }
             }
             Event::Eof => {
-                return Err(Error::ParseOmapFileError(
-                    "Unexpected EOF in georeferencing".to_string(),
-                ));
+                return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
             }
             _ => (),
         }
@@ -337,9 +334,7 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
                 }
             }
             Event::Eof => {
-                return Err(Error::ParseOmapFileError(
-                    "Unexpected EOF in georeferencing".to_string(),
-                ));
+                return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
             }
             _ => (),
         }

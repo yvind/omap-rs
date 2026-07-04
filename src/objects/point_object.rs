@@ -7,7 +7,7 @@ use quick_xml::{
 };
 
 use crate::{
-    Error, Result,
+    CoordinateComponent, Error, ObjectKind, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     symbols::{PointSymbol, Symbol, SymbolSet},
     utils::{from_file_coords, to_file_coords},
@@ -162,19 +162,17 @@ impl PointObject {
 
                         let x: i32 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No x value".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::X))?
                             .parse()?;
                         let y: i32 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No y value".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::Y))?
                             .parse()?;
                         point = Some(Point::from(from_file_coords(Coord { x, y })));
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in PointObject parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::PointObject));
                 }
                 _ => (),
             }
@@ -183,9 +181,7 @@ impl PointObject {
             tags,
             rotation,
             symbol,
-            geometry: point.ok_or(Error::ParseOmapFileError(
-                "Could not parse point object".to_string(),
-            ))?,
+            geometry: point.ok_or(Error::MissingObjectGeometry(ObjectKind::Point))?,
         })
     }
 }

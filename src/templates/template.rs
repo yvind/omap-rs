@@ -7,7 +7,7 @@ use quick_xml::{
 
 use super::template_transform::{AdjustmentState, TemplateTransformations};
 use crate::{
-    Error, Result,
+    Error, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     templates::template_transform::{PassPoint, TemplateTransform},
     utils::parse_attr_raw,
@@ -191,7 +191,7 @@ impl Template {
                 b"path" => path = parse_attr_raw(attr.value).unwrap_or(path),
                 b"relpath" => relpath = parse_attr_raw(attr.value).unwrap_or(relpath),
                 b"georef" => is_georeferenced = attr.as_bool().unwrap_or(false),
-                b"group" => group = parse_attr_raw(attr.value),
+                b"group" => group = parse_attr_raw(attr.value).ok(),
                 _ => {}
             }
         }
@@ -221,9 +221,7 @@ impl Template {
                 },
                 Event::End(be) if be.local_name().as_ref() == b"template" => break,
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in template".into(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::Template));
                 }
                 _ => {}
             }

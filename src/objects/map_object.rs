@@ -156,7 +156,7 @@ impl MapObject {
                     b"4" => object_type = Some(ObjectType::Text),
                     _ => (),
                 },
-                b"symbol" => symbol_id = parse_attr_raw::<i32>(attr.value),
+                b"symbol" => symbol_id = parse_attr_raw::<i32>(attr.value).ok(),
                 b"rotation" => rotation = parse_attr_raw(attr.value).unwrap_or(rotation),
                 b"h_align" => h_align = parse_attr_raw(attr.value).unwrap_or(h_align),
                 b"v_align" => v_align = parse_attr_raw(attr.value).unwrap_or(v_align),
@@ -165,9 +165,7 @@ impl MapObject {
         }
 
         let Some(mut object_type) = object_type else {
-            return Err(Error::ParseOmapFileError(
-                "Could not parse object type".to_string(),
-            ));
+            return Err(Error::MissingObjectType);
         };
 
         if is_line_element {
@@ -181,9 +179,7 @@ impl MapObject {
         {
             symbols
                 .get_weak_symbol_by_id(sid as usize)
-                .ok_or(Error::ParseOmapFileError(format!(
-                    "Unknown Symbol id: {sid} in Object parsing"
-                )))?
+                .ok_or(Error::UnknownObjectSymbolId(sid))?
         } else {
             match object_type {
                 ObjectType::Point => WeakSymbol::Point(Weak::new()),

@@ -143,7 +143,7 @@ impl From<Argb> for Rgb {
 impl Rgb {
     fn from_hexstring(s: &str) -> Result<Self> {
         let (_, s) = s.split_once('#').ok_or(Error::ColorError)?;
-        if s.len() < 6 {
+        if s.len() != 6 {
             return Err(Error::ColorError);
         }
         let mut pieces = s.as_bytes().chunks(2).map(|b| str::from_utf8(b));
@@ -282,7 +282,7 @@ impl Default for Argb {
 impl Argb {
     fn from_hexstring(s: &str) -> Result<Self> {
         let (_, s) = s.split_once('#').ok_or(Error::ColorError)?;
-        if s.len() < 8 {
+        if s.len() != 8 {
             return Err(Error::ColorError);
         }
         let mut pieces = s.as_bytes().chunks(2).map(|b| str::from_utf8(b));

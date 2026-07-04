@@ -8,7 +8,7 @@ use quick_xml::{
 
 use super::{AreaSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
-    Code, Error, Result,
+    Code, Error, OmapSection, Result,
     colors::ColorSet,
     symbols::{AreaOrLineSymbol, CombinedLineSymbol, WeakPathSymbol, WeakSymbol},
     utils::{parse_attr, try_get_attr_raw},
@@ -83,9 +83,7 @@ impl CombinedAreaSymbol {
             match self.contains_cycle() {
                 Ok(true) => {
                     let _ = self.parts.pop();
-                    Err(Error::SymbolError(
-                        "Adding this symbol would lead to a cyclic symbol defintion".to_string(),
-                    ))
+                    Err(Error::CyclicSymbolDefinition)
                 }
                 Ok(false) => Ok(()),
                 Err(e) => {
@@ -181,11 +179,7 @@ impl CombinedAreaSymbol {
                         if !visited_area.insert(ptr) {
                             return Ok(true); // Already visited — cycle detected
                         }
-                        let borrowed = ca.try_borrow().map_err(|_| {
-                            Error::SymbolError(
-                                "Cannot borrow symbol during cycle check".to_string(),
-                            )
-                        })?;
+                        let borrowed = ca.try_borrow().map_err(|_| Error::SymbolCycleBorrow)?;
                         if borrowed.contains_cycle_with_visited(visited_area, visited_line)? {
                             return Ok(true);
                         }
@@ -198,11 +192,7 @@ impl CombinedAreaSymbol {
                         if !visited_line.insert(ptr) {
                             return Ok(true); // Already visited — cycle detected
                         }
-                        let borrowed = cl.try_borrow().map_err(|_| {
-                            Error::SymbolError(
-                                "Cannot borrow symbol during cycle check".to_string(),
-                            )
-                        })?;
+                        let borrowed = cl.try_borrow().map_err(|_| Error::SymbolCycleBorrow)?;
                         if borrowed.contains_cycle_line_with_visited(visited_line)? {
                             return Ok(true);
                         }
@@ -283,13 +273,13 @@ impl CombinedAreaSymbol {
                         // num_parts attribute is informational, we parse dynamically
                     }
                     b"part" => {
-                        let is_private = try_get_attr_raw(&e, "private").unwrap_or(false);
+                        let is_private = try_get_attr_raw(&e, "private")?.unwrap_or(false);
                         if is_private {
                             // Parse the private sub-symbol
                             let sym = Self::parse_private_part(reader, color_set)?;
                             parts.push(PublicOrPrivateSymbol::Private(sym));
                         } else {
-                            let symbol_index = try_get_attr_raw::<i32>(&e, "symbol");
+                            let symbol_index = try_get_attr_raw::<i32>(&e, "symbol")?;
                             // Record the public component ID for later resolution.
                             // Mapper uses -1 for unknown / empty public parts; skip those.
                             if let Some(symbol_index) = symbol_index.filter(|&id| id >= 0) {
@@ -298,7 +288,7 @@ impl CombinedAreaSymbol {
                             // Don't push to parts here - will be resolved by symbol_set after all symbols are loaded
                         }
                     }
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src"),
+                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
                 Event::End(e) => {
@@ -307,9 +297,7 @@ impl CombinedAreaSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in CombinedAreaSymbol parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::CombinedAreaSymbol));
                 }
                 _ => {}
             }
@@ -327,7 +315,7 @@ impl CombinedAreaSymbol {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => {
                     if e.local_name().as_ref() == b"symbol" {
-                        let sym_type: u8 = try_get_attr_raw(&e, "type").unwrap_or(0);
+                        let sym_type: u8 = try_get_attr_raw(&e, "type")?.unwrap_or(0);
                         let mut sub_common = SymbolCommon::default();
                         for attr in e.attributes().filter_map(std::result::Result::ok) {
                             match attr.key.local_name().as_ref() {
@@ -355,22 +343,18 @@ impl CombinedAreaSymbol {
                                 return Ok(AreaOrLineSymbol::Area(Box::new(area)));
                             }
                             _ => {
-                                return Err(Error::ParseOmapFileError(format!(
-                                    "Unknown private part symbol type {sym_type}"
-                                )));
+                                return Err(Error::UnknownPrivatePartSymbolType(sym_type));
                             }
                         }
                     }
                 }
                 Event::End(e) => {
                     if e.local_name().as_ref() == b"part" {
-                        return Err(Error::ParseOmapFileError("Empty private part".to_string()));
+                        return Err(Error::EmptyPrivatePart);
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in private part parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::PrivatePart));
                 }
                 _ => {}
             }
@@ -387,9 +371,7 @@ impl CombinedAreaSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF skipping to end of part".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::SkippedPart));
                 }
                 _ => {}
             }

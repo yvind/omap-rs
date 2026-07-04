@@ -21,7 +21,7 @@ pub use map_object::MapObject;
 
 use crate::{notes, utils::try_get_attr};
 
-use super::{Error, Result};
+use super::{Error, OmapSection, Result};
 
 const PARSE_BEZIER_ERROR: f64 = 0.1;
 
@@ -35,7 +35,7 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
         match reader.read_event_into(&mut buf)? {
             Event::Start(bytes_start) => {
                 if matches!(bytes_start.local_name().as_ref(), b"t") {
-                    let key = try_get_attr(&bytes_start, "k").unwrap_or(String::new());
+                    let key = try_get_attr(&bytes_start, "k")?.unwrap_or(String::new());
                     let value = notes::parse(reader)?;
                     if !key.is_empty() && !value.is_empty() {
                         let _ = tags.insert(key, value);
@@ -48,9 +48,7 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
                 }
             }
             Event::Eof => {
-                return Err(Error::ParseOmapFileError(
-                    "Unexpected EOF when parsing Tags".to_string(),
-                ));
+                return Err(Error::UnexpectedEof(OmapSection::Tags));
             }
             _ => (),
         }

@@ -9,7 +9,7 @@ use quick_xml::{
 
 use super::{FileCoord, PARSE_BEZIER_ERROR};
 use crate::{
-    Error, NonNegativeF64, Result,
+    CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
@@ -271,19 +271,23 @@ impl AreaObject {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
                     b"coords" => {
-                        let num_coords: usize =
-                            try_get_attr_raw(&bytes_start, "count").unwrap_or(0);
+                        let num_coords: usize = try_get_attr_raw(&bytes_start, "count")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(0);
                         line.reserve(num_coords);
                         raw_map_coords.reserve(num_coords);
                     }
                     b"pattern" => {
-                        pr.rotation =
-                            try_get_attr_raw(&bytes_start, "rotation").unwrap_or(pr.rotation)
+                        pr.rotation = try_get_attr_raw(&bytes_start, "rotation")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(pr.rotation)
                     }
                     b"tags" => tags = super::parse_tags(reader)?,
                     b"coord" => {
-                        let x = try_get_attr_raw(&bytes_start, "x").unwrap_or(0);
-                        let y = try_get_attr_raw(&bytes_start, "y").unwrap_or(0);
+                        let x = try_get_attr_raw(&bytes_start, "x")?.unwrap_or(0);
+                        let y = try_get_attr_raw(&bytes_start, "y")?.unwrap_or(0);
                         pr.coord = from_file_coords(Coord { x, y });
                     }
                     _ => (),
@@ -306,11 +310,11 @@ impl AreaObject {
 
                         parts.0 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No x value in split".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::X))?
                             .parse()?;
                         parts.1 = split
                             .next()
-                            .ok_or(Error::InvalidCoordinate("No y value in split".to_string()))?
+                            .ok_or(Error::MissingCoordinateComponent(CoordinateComponent::Y))?
                             .parse()?;
                         if let Some(e) = split.next() {
                             parts.2 = e.parse()?;
@@ -399,9 +403,7 @@ impl AreaObject {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in AreaObject parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::AreaObject));
                 }
                 _ => (),
             }

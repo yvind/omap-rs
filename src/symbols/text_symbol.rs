@@ -6,7 +6,7 @@ use quick_xml::{
 
 use super::SymbolCommon;
 use crate::{
-    Code, Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
     utils::{self, try_get_attr_raw},
 };
@@ -211,39 +211,39 @@ impl TextSymbol {
                         }
                     }
                     b"text_symbol" => {
-                        icon_text = try_get_attr_raw(&e, "icon_text").unwrap_or_default();
-                        is_rotatable = try_get_attr_raw(&e, "rotatable").unwrap_or(false);
+                        icon_text = try_get_attr_raw(&e, "icon_text")?.unwrap_or_default();
+                        is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(false);
                     }
                     b"font" => {
-                        font_family =
-                            try_get_attr_raw(&e, "family").unwrap_or_else(|| String::from("Arial"));
-                        let fs = try_get_attr_raw(&e, "size").unwrap_or(4000);
+                        font_family = try_get_attr_raw(&e, "family")?
+                            .unwrap_or_else(|| String::from("Arial"));
+                        let fs = try_get_attr_raw(&e, "size")?.unwrap_or(4000);
                         font_size = NonNegativeF64::from_file_value(fs);
-                        bold = try_get_attr_raw(&e, "bold").unwrap_or(false);
-                        italic = try_get_attr_raw(&e, "italic").unwrap_or(false);
-                        underline = try_get_attr_raw(&e, "underline").unwrap_or(false);
+                        bold = try_get_attr_raw(&e, "bold")?.unwrap_or(false);
+                        italic = try_get_attr_raw(&e, "italic")?.unwrap_or(false);
+                        underline = try_get_attr_raw(&e, "underline")?.unwrap_or(false);
                     }
                     b"text" => {
-                        let ci = try_get_attr_raw(&e, "color").unwrap_or(-1);
+                        let ci = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
-                        let ls = try_get_attr_raw(&e, "line_spacing").unwrap_or(1.0);
+                        let ls = try_get_attr_raw(&e, "line_spacing")?.unwrap_or(1.0);
                         line_spacing = NonNegativeF64::clamped_from(ls);
                         paragraph_spacing = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "paragraph_spacing").unwrap_or(0),
+                            try_get_attr_raw(&e, "paragraph_spacing")?.unwrap_or(0),
                         )
                         .get();
                         character_spacing =
-                            try_get_attr_raw(&e, "character_spacing").unwrap_or(0.0);
-                        kerning = try_get_attr_raw(&e, "kerning").unwrap_or(false);
+                            try_get_attr_raw(&e, "character_spacing")?.unwrap_or(0.0);
+                        kerning = try_get_attr_raw(&e, "kerning")?.unwrap_or(false);
                     }
                     b"framing" => {
-                        let fc = try_get_attr_raw(&e, "color").unwrap_or(-1);
+                        let fc = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         let framing_color = SymbolColor::from_index(fc, color_set);
-                        let mode = try_get_attr_raw(&e, "mode").unwrap_or(0);
+                        let mode = try_get_attr_raw(&e, "mode")?.unwrap_or(0);
                         framing_mode = Some(match mode {
                             1 => {
                                 let half_width = NonNegativeF64::from_file_value(
-                                    try_get_attr_raw(&e, "line_half_width").unwrap_or(0),
+                                    try_get_attr_raw(&e, "line_half_width")?.unwrap_or(0),
                                 );
                                 FramingMode::LineFraming(LineFraming {
                                     color: framing_color,
@@ -251,8 +251,8 @@ impl TextSymbol {
                                 })
                             }
                             2 => {
-                                let sx = try_get_attr_raw(&e, "shadow_x_offset").unwrap_or(0);
-                                let sy = try_get_attr_raw(&e, "shadow_y_offset").unwrap_or(0);
+                                let sx = try_get_attr_raw(&e, "shadow_x_offset")?.unwrap_or(0);
+                                let sy = try_get_attr_raw(&e, "shadow_y_offset")?.unwrap_or(0);
                                 FramingMode::ShadowFraming(ShadowFraming {
                                     color: framing_color,
                                     shadow_offset: Coord {
@@ -265,17 +265,17 @@ impl TextSymbol {
                         });
                     }
                     b"line_below" => {
-                        let lc = try_get_attr_raw(&e, "color").unwrap_or(-1);
+                        let lc = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         let lb_color = SymbolColor::from_index(lc, color_set);
-                        let w = try_get_attr_raw(&e, "width").unwrap_or(0);
-                        let d = try_get_attr_raw(&e, "distance").unwrap_or(0);
+                        let w = try_get_attr_raw(&e, "width")?.unwrap_or(0);
+                        let d = try_get_attr_raw(&e, "distance")?.unwrap_or(0);
                         line_below = Some(LineBelow {
                             color: lb_color,
                             width: NonNegativeF64::from_file_value(w),
                             distance: NonNegativeF64::from_file_value(d),
                         });
                     }
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src"),
+                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     b"tabs" => {
                         // Parse tab elements inside
                     }
@@ -296,9 +296,7 @@ impl TextSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in TextSymbol parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::TextSymbol));
                 }
                 _ => {}
             }

@@ -7,7 +7,7 @@ use quick_xml::{
 
 use super::{AreaSymbol, LineSymbol};
 use crate::{
-    Code, Error, NonNegativeF64, Result,
+    Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
     objects::{AreaObject, LineObject, PointObject},
     symbols::{SymbolCommon, WeakAreaPathSymbol, WeakLinePathSymbol},
@@ -87,7 +87,7 @@ impl Element {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
                     b"symbol" => {
-                        let sym_type = try_get_attr_raw(&e, "type").unwrap_or(0_u8);
+                        let sym_type = try_get_attr_raw(&e, "type")?.unwrap_or(0_u8);
                         symbol_data = Some(match sym_type {
                             1 => ElementSymbolData::Point(Box::new(PointSymbol::parse(
                                 reader,
@@ -104,16 +104,12 @@ impl Element {
                                 color_set,
                                 Default::default(),
                             )?)),
-                            _ => {
-                                return Err(Error::ParseOmapFileError(format!(
-                                    "Unknown element symbol type {sym_type}"
-                                )));
-                            }
+                            _ => return Err(Error::UnknownElementSymbolType(sym_type)),
                         });
                     }
                     b"object" => {
                         // Parse the object based on what symbol we have
-                        let obj_type = try_get_attr_raw(&e, "type").unwrap_or(6_u8);
+                        let obj_type = try_get_attr_raw(&e, "type")?.unwrap_or(6_u8);
                         object_data = Some(match obj_type {
                             0 => ElementObjectData::Point(Box::new(PointObject::parse(
                                 reader,
@@ -135,22 +131,12 @@ impl Element {
                                         )?))
                                     }
                                     _ => {
-                                        return Err(Error::ParseOmapFileError(
-                                            "Symbol Object mismatch in element".to_string(),
-                                        ));
+                                        return Err(Error::ElementSymbolObjectMismatch);
                                     }
                                 },
-                                None => {
-                                    return Err(Error::ParseOmapFileError(
-                                        "Object before symbol in element".to_string(),
-                                    ));
-                                }
+                                None => return Err(Error::ElementObjectBeforeSymbol),
                             },
-                            _ => {
-                                return Err(Error::ParseOmapFileError(format!(
-                                    "Unknown element object type {obj_type}"
-                                )));
-                            }
+                            _ => return Err(Error::UnknownElementObjectType(obj_type)),
                         });
                     }
                     _ => {}
@@ -161,9 +147,7 @@ impl Element {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF parsing element".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::Element));
                 }
                 _ => {}
             }
@@ -194,15 +178,11 @@ impl Element {
                     });
                 }
                 _ => {
-                    return Err(Error::ParseOmapFileError(
-                        "Mismatch between object and symbol type in element".to_string(),
-                    ));
+                    return Err(Error::ElementSymbolObjectMismatch);
                 }
             }
         }
-        Err(Error::ParseOmapFileError(
-            "Either object or symbol data was not present in element".to_string(),
-        ))
+        Err(Error::MissingElementData)
     }
 }
 
@@ -315,24 +295,24 @@ impl PointSymbol {
                         }
                     }
                     b"point_symbol" => {
-                        is_rotatable = try_get_attr_raw(&e, "rotatable").unwrap_or(is_rotatable);
+                        is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(is_rotatable);
                         inner_radius = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "inner_radius").unwrap_or(0),
+                            try_get_attr_raw(&e, "inner_radius")?.unwrap_or(0),
                         );
                         inner_color = SymbolColor::from_index(
-                            try_get_attr_raw(&e, "inner_color").unwrap_or(-1),
+                            try_get_attr_raw(&e, "inner_color")?.unwrap_or(-1),
                             color_set,
                         );
                         outer_width = NonNegativeF64::from_file_value(
-                            try_get_attr_raw(&e, "outer_width").unwrap_or(0),
+                            try_get_attr_raw(&e, "outer_width")?.unwrap_or(0),
                         );
                         outer_color = SymbolColor::from_index(
-                            try_get_attr_raw(&e, "outer_color").unwrap_or(-1),
+                            try_get_attr_raw(&e, "outer_color")?.unwrap_or(-1),
                             color_set,
                         );
                     }
                     b"element" => elements.push(Element::parse_element(reader, color_set)?),
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src"),
+                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
                 Event::End(e) => {
@@ -341,9 +321,7 @@ impl PointSymbol {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in PointSymbol parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::PointSymbol));
                 }
                 _ => {}
             }

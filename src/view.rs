@@ -336,8 +336,14 @@ impl View {
         let mut view = Self::default();
         let mut buf = Vec::new();
 
-        view.area_hatching_enabled = try_get_attr_raw(bs, "area_hatching_enabled").unwrap_or(false);
-        view.baseline_view_enabled = try_get_attr_raw(bs, "baseline_view_enabled").unwrap_or(false);
+        view.area_hatching_enabled = try_get_attr_raw(bs, "area_hatching_enabled")
+            .ok()
+            .flatten()
+            .unwrap_or(false);
+        view.baseline_view_enabled = try_get_attr_raw(bs, "baseline_view_enabled")
+            .ok()
+            .flatten()
+            .unwrap_or(false);
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -361,12 +367,25 @@ impl View {
         bs: &BytesStart<'_>,
         templates: &mut Templates,
     ) -> Result<()> {
-        self.zoom = NonNegativeF64::clamped_from(try_get_attr_raw(bs, "zoom").unwrap_or(1.0));
-        self.rotation = try_get_attr_raw(bs, "rotation").unwrap_or(0.0);
-        self.view_centre.x =
-            utils::from_file_value(try_get_attr_raw(bs, "position_x").unwrap_or(0));
-        self.view_centre.y =
-            utils::from_file_value(try_get_attr_raw(bs, "position_y").unwrap_or(0));
+        self.zoom = NonNegativeF64::clamped_from(
+            try_get_attr_raw(bs, "zoom").ok().flatten().unwrap_or(1.0),
+        );
+        self.rotation = try_get_attr_raw(bs, "rotation")
+            .ok()
+            .flatten()
+            .unwrap_or(0.0);
+        self.view_centre.x = utils::from_file_value(
+            try_get_attr_raw(bs, "position_x")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
+        );
+        self.view_centre.y = utils::from_file_value(
+            try_get_attr_raw(bs, "position_y")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
+        );
 
         let mut buf = Vec::new();
         loop {
@@ -400,7 +419,7 @@ impl View {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bs) if bs.local_name().as_ref() == b"ref" => {
-                    if let Some(index) = try_get_attr_raw::<usize>(&bs, "template")
+                    if let Ok(Some(index)) = try_get_attr_raw::<usize>(&bs, "template")
                         && index < templates.len()
                     {
                         templates.template_entries[index].visibilty =

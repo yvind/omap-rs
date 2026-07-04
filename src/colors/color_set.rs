@@ -7,7 +7,7 @@ use quick_xml::{
 
 use super::{Color, ColorComponent, WeakColor, color::ColorParseReturn};
 use crate::utils::{UnitF64, try_get_attr_raw};
-use crate::{Error, Result};
+use crate::{Error, OmapSection, Result};
 
 /// The order of the [Color]s in the [Vec] is the order of priority
 /// Move the colors around to change priority, f.ex. using `color_set.0.swap(2, 5)`
@@ -105,7 +105,7 @@ impl ColorSet {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
     ) -> Result<ColorSet> {
-        let num_colors = try_get_attr_raw(element, "count").ok_or(Error::ColorError)?;
+        let num_colors = try_get_attr_raw(element, "count")?.ok_or(Error::ColorError)?;
         let mut colors_and_components = Vec::with_capacity(num_colors);
 
         let mut buf = Vec::new();
@@ -122,9 +122,7 @@ impl ColorSet {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::ParseOmapFileError(
-                        "Unexpected EOF in color set parsing".to_string(),
-                    ));
+                    return Err(Error::UnexpectedEof(OmapSection::ColorSet));
                 }
                 _ => (),
             }

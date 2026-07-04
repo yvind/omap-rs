@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::{Cmyk, CmykMode, ColorSet, Rgb, RgbMode};
-use crate::{Error, NonNegativeF64, Result};
+use crate::{Error, NonNegativeF64, OmapSection, Result};
 use crate::{
     notes,
     utils::{UnitF64, parse_attr, parse_attr_raw, try_get_attr_raw},
@@ -528,7 +528,7 @@ impl Color {
         for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"name" => {
-                    if let Some(n) = parse_attr::<String>(attr, element.decoder()) {
+                    if let Ok(n) = parse_attr::<String>(attr, element.decoder()) {
                         name.push_str(&n);
                     }
                 }
@@ -584,32 +584,37 @@ impl Color {
                     }
                     b"rgb" => {
                         if let Some(mode) = bytes_start
-                            .try_get_attribute("method")
-                            .ok()
-                            .flatten()
-                            .and_then(|s| match s.value.as_ref() {
-                                b"custom" => {
-                                    let r = UnitF64::clamped_from(
-                                        try_get_attr_raw(&bytes_start, "r").unwrap_or(0.),
-                                    );
-                                    let g = UnitF64::clamped_from(
-                                        try_get_attr_raw(&bytes_start, "g").unwrap_or(0.),
-                                    );
-                                    let b = UnitF64::clamped_from(
-                                        try_get_attr_raw(&bytes_start, "b").unwrap_or(0.),
-                                    );
-                                    Some(RgbMode::Rgb(Rgb { r, g, b }))
+                            .try_get_attribute("method")?
+                            .map(|s| -> Result<Option<RgbMode>> {
+                                match s.value.as_ref() {
+                                    b"custom" => {
+                                        let r = UnitF64::clamped_from(
+                                            try_get_attr_raw(&bytes_start, "r")?.unwrap_or(0.),
+                                        );
+                                        let g = UnitF64::clamped_from(
+                                            try_get_attr_raw(&bytes_start, "g")?.unwrap_or(0.),
+                                        );
+                                        let b = UnitF64::clamped_from(
+                                            try_get_attr_raw(&bytes_start, "b")?.unwrap_or(0.),
+                                        );
+                                        Ok(Some(RgbMode::Rgb(Rgb { r, g, b })))
+                                    }
+                                    b"spotcolor" => Ok(Some(RgbMode::FromSpotColors)),
+                                    b"cmyk" => Ok(Some(RgbMode::FromCmyk)),
+                                    _ => Ok(None),
                                 }
-                                b"spotcolor" => Some(RgbMode::FromSpotColors),
-                                b"cmyk" => Some(RgbMode::FromCmyk),
-                                _ => None,
                             })
+                            .transpose()?
+                            .flatten()
                         {
                             rgb_mode = mode;
                         }
                     }
                     b"spotcolors" => {
-                        knockout = try_get_attr_raw(&bytes_start, "knockout").unwrap_or(false);
+                        knockout = try_get_attr_raw(&bytes_start, "knockout")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(false);
 
                         loop {
                             match reader.read_event_into(&mut buf)? {
@@ -620,9 +625,13 @@ impl Color {
                                             is_spotcolor = true;
                                             spot_angle =
                                                 try_get_attr_raw(&bytes_start, "screen_angle")
+                                                    .ok()
+                                                    .flatten()
                                                     .unwrap_or(0.);
                                             spot_frequency =
                                                 try_get_attr_raw(&bytes_start, "screen_frequency")
+                                                    .ok()
+                                                    .flatten()
                                                     .unwrap_or(0.);
                                             spotcolor_name = notes::parse(reader)?;
                                         }
@@ -630,11 +639,11 @@ impl Color {
                                         // we need to be carefull as the components that are refereneced may not be defined yet
                                         // so we cannot complete the color components untill all colors have been read.
                                         b"component" => {
-                                            let factor = try_get_attr_raw(&bytes_start, "factor")
+                                            let factor = try_get_attr_raw(&bytes_start, "factor")?
                                                 .unwrap_or(0.);
 
                                             let spotcolor_id =
-                                                try_get_attr_raw(&bytes_start, "spotcolor")
+                                                try_get_attr_raw(&bytes_start, "spotcolor")?
                                                     .unwrap_or(-1);
                                             spotcolor_components.push((spotcolor_id, factor));
                                         }
@@ -647,7 +656,7 @@ impl Color {
                                     }
                                 }
                                 Event::Eof => {
-                                    return Err(Error::ParseOmapFileError("Early EOF".to_string()));
+                                    return Err(Error::UnexpectedEof(OmapSection::Color));
                                 }
                                 _ => (),
                             }
@@ -660,15 +669,13 @@ impl Color {
                         break;
                     }
                 }
-                Event::Eof => return Err(Error::ParseOmapFileError("Early EOF".to_string())),
+                Event::Eof => return Err(Error::UnexpectedEof(OmapSection::Color)),
                 _ => (),
             }
         }
 
         if id == usize::MAX {
-            return Err(Error::ParseOmapFileError(
-                "Could not parse color".to_string(),
-            ));
+            return Err(Error::MissingColorId);
         }
 
         if is_spotcolor {

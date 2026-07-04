@@ -59,35 +59,41 @@ impl std::fmt::Display for Code {
 
 // parse helpers
 /// Do not use this for fields with user text as it will not unescape xml-codes
-pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Option<T> {
-    std::str::from_utf8(value.as_ref())
-        .ok()
-        .and_then(|s| T::from_str(s).ok())
+pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Result<T> {
+    let e = match T::from_str(std::str::from_utf8(value.as_ref())?) {
+        Ok(it) => it,
+        Err(_err) => return Err(Error::FromStrError),
+    };
+    Ok(e)
 }
 
 /// Do not use this for fields with user text as it will not unescape xml-codes
-pub(crate) fn try_get_attr_raw<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Option<T> {
-    bytes
-        .try_get_attribute(attr)
-        .ok()
-        .flatten()
-        .and_then(|a| parse_attr_raw(a.value))
+pub(crate) fn try_get_attr_raw<T: FromStr>(
+    bytes: &BytesStart<'_>,
+    attr: &str,
+) -> Result<Option<T>> {
+    let a = bytes
+        .try_get_attribute(attr)?
+        .map(|a| parse_attr_raw(a.value));
+    a.transpose()
 }
 
 /// This escapes any xml-codes, use for user-strings
-pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>, decoder: Decoder) -> Option<T> {
-    attr.decoded_and_normalized_value(XmlVersion::Explicit1_0, decoder)
-        .ok()
-        .and_then(|s| T::from_str(&s).ok())
+pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>, decoder: Decoder) -> Result<T> {
+    let e = match T::from_str(&attr.decoded_and_normalized_value(XmlVersion::Explicit1_0, decoder)?)
+    {
+        Ok(it) => it,
+        Err(_err) => return Err(Error::FromStrError),
+    };
+    Ok(e)
 }
 
 /// This escapes any xml-codes, use for user-strings
-pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Option<T> {
-    bytes
-        .try_get_attribute(attr)
-        .ok()
-        .flatten()
-        .and_then(|a| parse_attr(a, bytes.decoder()))
+pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Result<Option<T>> {
+    let a = bytes
+        .try_get_attribute(attr)?
+        .map(|a| parse_attr(a, bytes.decoder()));
+    a.transpose()
 }
 
 /// A f64, but only allowed to be in the unit interval 0.0..=1.0
