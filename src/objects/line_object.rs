@@ -412,6 +412,7 @@ impl LineObject {
                                         .to_line_string(PARSE_BEZIER_ERROR)?
                                         .into_inner(),
                                 );
+                                bezier_buf.0.clear();
                                 next_handle = 0;
                             }
                             (false, 0) => {
