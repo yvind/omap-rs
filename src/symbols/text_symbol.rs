@@ -12,7 +12,6 @@ use crate::{
 };
 
 /// The framing mode for a text symbol.
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Default)]
 pub enum FramingMode {
     /// No framing.
@@ -28,9 +27,9 @@ impl FramingMode {
     /// Get the numeric identifier for this framing mode.
     pub fn get_id(&self) -> u8 {
         match self {
-            FramingMode::NoFraming => 0,
-            FramingMode::LineFraming(_) => 1,
-            FramingMode::ShadowFraming(_) => 2,
+            Self::NoFraming => 0,
+            Self::LineFraming(_) => 1,
+            Self::ShadowFraming(_) => 2,
         }
     }
 }
@@ -38,22 +37,29 @@ impl FramingMode {
 /// Line-based framing (halo) around text characters.
 #[derive(Debug, Clone)]
 pub struct LineFraming {
+    /// Color of the framing line.
     pub color: SymbolColor,
+    /// Half-width of the framing line.
     pub framing_line_half_width: NonNegativeF64,
 }
 
 /// Shadow framing behind text characters.
 #[derive(Debug, Clone)]
 pub struct ShadowFraming {
+    /// Color of the shadow.
     pub color: SymbolColor,
+    /// Offset of the shadow from the text.
     pub shadow_offset: Coord<f64>,
 }
 
 /// A line drawn below the text (underline).
 #[derive(Debug, Clone)]
 pub struct LineBelow {
+    /// Color of the line.
     pub color: SymbolColor,
+    /// Width of the line.
     pub width: NonNegativeF64,
+    /// Distance between the text and the line.
     pub distance: NonNegativeF64,
 }
 
@@ -100,13 +106,13 @@ pub struct TextSymbol {
 
 impl TextSymbol {
     /// Create a new text symbol with the given code, name, and font family.
-    pub fn new(code: Code, name: impl Into<String>) -> TextSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> Self {
         let common = SymbolCommon {
             code,
             name: name.into(),
             ..Default::default()
         };
-        TextSymbol {
+        Self {
             common,
             font_family: String::from("Arial"),
             icon_text: String::new(),
@@ -179,11 +185,15 @@ impl TextSymbol {
         self
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "text-symbol parsing maps a large file-format record"
+    )]
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
-    ) -> Result<TextSymbol> {
+    ) -> Result<Self> {
         let mut common = attributes;
         let mut icon_text = String::new();
         let mut is_rotatable = false;
@@ -302,9 +312,8 @@ impl TextSymbol {
             }
         }
 
-        Ok(TextSymbol {
+        Ok(Self {
             common,
-            is_rotatable,
             font_family,
             icon_text,
             color,
@@ -315,6 +324,7 @@ impl TextSymbol {
             font_size,
             paragraph_spacing,
             framing_mode,
+            is_rotatable,
             bold,
             italic,
             underline,
@@ -322,6 +332,10 @@ impl TextSymbol {
         })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "text-symbol serialization maps a large file-format record"
+    )]
     pub(super) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,

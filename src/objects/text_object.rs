@@ -26,16 +26,16 @@ impl TextGeometry {
     /// Get a shared reference to the anchor coordinate.
     pub fn get_anchor_coord(&self) -> &Coord {
         match self {
-            TextGeometry::SingleAnchor(coord) => coord,
-            TextGeometry::WrapBox(wrap_box) => &wrap_box.anchor,
+            Self::SingleAnchor(coord) => coord,
+            Self::WrapBox(wrap_box) => &wrap_box.anchor,
         }
     }
 
     /// Get a mutable reference to the anchor coordinate.
     pub fn get_anchor_coord_mut(&mut self) -> &mut Coord {
         match self {
-            TextGeometry::SingleAnchor(coord) => coord,
-            TextGeometry::WrapBox(wrap_box) => &mut wrap_box.anchor,
+            Self::SingleAnchor(coord) => coord,
+            Self::WrapBox(wrap_box) => &mut wrap_box.anchor,
         }
     }
 }
@@ -68,9 +68,9 @@ impl FromStr for HorizontalAlign {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "0" => Ok(HorizontalAlign::Left),
-            "1" => Ok(HorizontalAlign::HCenter),
-            "2" => Ok(HorizontalAlign::Right),
+            "0" => Ok(Self::Left),
+            "1" => Ok(Self::HCenter),
+            "2" => Ok(Self::Right),
             _ => Err(Error::ObjectError),
         }
     }
@@ -95,10 +95,10 @@ impl FromStr for VerticalAlign {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "0" => Ok(VerticalAlign::Baseline),
-            "1" => Ok(VerticalAlign::Top),
-            "2" => Ok(VerticalAlign::VCenter),
-            "3" => Ok(VerticalAlign::Bottom),
+            "0" => Ok(Self::Baseline),
+            "1" => Ok(Self::Top),
+            "2" => Ok(Self::VCenter),
+            "3" => Ok(Self::Bottom),
             _ => Err(Error::ObjectError),
         }
     }
@@ -129,7 +129,7 @@ impl TextObject {
         geometry: TextGeometry,
         text: String,
     ) -> Self {
-        TextObject {
+        Self {
             tags: HashMap::new(),
             symbol: symbol.into(),
             geometry,
@@ -250,7 +250,7 @@ impl TextObject {
         h_align: HorizontalAlign,
         v_align: VerticalAlign,
         rotation: f64,
-    ) -> Result<TextObject> {
+    ) -> Result<Self> {
         let mut text_geo = TextGeometry::SingleAnchor(Coord::default());
         let mut tags = HashMap::new();
         let mut text = String::new();
@@ -328,7 +328,7 @@ impl TextObject {
                                     wrap_box.height = h;
                                 }
                             }
-                        };
+                        }
                     } else {
                         return Err(Error::MissingTextObjectCoordinates);
                     }
@@ -339,7 +339,7 @@ impl TextObject {
                 _ => (),
             }
         }
-        Ok(TextObject {
+        Ok(Self {
             tags,
             symbol,
             geometry: text_geo,

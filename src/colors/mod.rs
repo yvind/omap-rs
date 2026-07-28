@@ -28,8 +28,13 @@ pub struct Cmyk {
 
 impl Cmyk {
     /// Create a new Cmyk value. Range of 0..=1
-    pub fn new(c: f64, m: f64, y: f64, k: f64) -> Result<Cmyk> {
-        Ok(Cmyk {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotInUnitInterval`] if any component is outside
+    /// `[0, 1]`.
+    pub fn new(c: f64, m: f64, y: f64, k: f64) -> Result<Self> {
+        Ok(Self {
             c: c.try_into()?,
             m: m.try_into()?,
             y: y.try_into()?,
@@ -58,14 +63,24 @@ impl From<Rgb> for Cmyk {
 
         let k = 1.0 - r.max(g).max(b);
         if (1.0 - k) < 0.001 {
-            return Cmyk::new(0.0, 0.0, 0.0, 1.0).unwrap();
+            return Self {
+                c: UnitF64::zero(),
+                m: UnitF64::zero(),
+                y: UnitF64::zero(),
+                k: UnitF64::one(),
+            };
         }
 
         let c = (1.0 - r - k) / (1.0 - k);
         let m = (1.0 - g - k) / (1.0 - k);
         let y = (1.0 - b - k) / (1.0 - k);
 
-        Cmyk::new(c, m, y, k).unwrap()
+        Self {
+            c: UnitF64::clamped_from(c),
+            m: UnitF64::clamped_from(m),
+            y: UnitF64::clamped_from(y),
+            k: UnitF64::clamped_from(k),
+        }
     }
 }
 
@@ -84,9 +99,9 @@ pub enum CmykMode {
 impl CmykMode {
     fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
         let string = match self {
-            CmykMode::FromSpotColors => "spotcolor",
-            CmykMode::FromRgb => "rgb",
-            CmykMode::Cmyk(_) => "custom",
+            Self::FromSpotColors => "spotcolor",
+            Self::FromRgb => "rgb",
+            Self::Cmyk(_) => "custom",
         };
         writer.write_event(Event::Empty(
             BytesStart::new("cmyk").with_attributes([("method", string)]),
@@ -110,7 +125,7 @@ impl FromStr for Rgb {
     type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Rgb::from_hexstring(s)
+        Self::from_hexstring(s)
     }
 }
 
@@ -118,11 +133,7 @@ impl std::fmt::Display for Rgb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn to_hex(value: UnitF64, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let value = (value.get() * 255.).round() as u32;
-
-            let first = char::from_digit(value / 16, 16).unwrap();
-            let last = char::from_digit(value % 16, 16).unwrap();
-
-            write!(f, "{first}{last}")
+            write!(f, "{value:02x}")
         }
         to_hex(self.r, f)?;
         to_hex(self.g, f)?;
@@ -132,7 +143,7 @@ impl std::fmt::Display for Rgb {
 
 impl From<Argb> for Rgb {
     fn from(value: Argb) -> Self {
-        Rgb {
+        Self {
             r: value.r,
             g: value.g,
             b: value.b,
@@ -147,11 +158,11 @@ impl Rgb {
             return Err(Error::ColorError);
         }
         let mut pieces = s.as_bytes().chunks(2).map(|b| str::from_utf8(b));
-        let r = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
-        let g = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
-        let b = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
+        let r = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
+        let g = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
+        let b = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
 
-        Ok(Rgb {
+        Ok(Self {
             r: UnitF64::clamped_from(r as f64 / 255.),
             g: UnitF64::clamped_from(g as f64 / 255.),
             b: UnitF64::clamped_from(b as f64 / 255.),
@@ -165,7 +176,7 @@ impl From<Cmyk> for Rgb {
         let g = (1.0 - value.m.get()) * (1.0 - value.k.get());
         let b = (1.0 - value.y.get()) * (1.0 - value.k.get());
 
-        Rgb {
+        Self {
             r: UnitF64::clamped_from(r),
             g: UnitF64::clamped_from(g),
             b: UnitF64::clamped_from(b),
@@ -199,9 +210,9 @@ impl RgbMode {
     fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
         let bs = BytesStart::new("rgb");
         let bs = match self {
-            RgbMode::FromSpotColors => bs.with_attributes([("method", "spotcolor")]),
-            RgbMode::FromCmyk => bs.with_attributes([("method", "cmyk")]),
-            RgbMode::Rgb(rgb) => bs.with_attributes([
+            Self::FromSpotColors => bs.with_attributes([("method", "spotcolor")]),
+            Self::FromCmyk => bs.with_attributes([("method", "cmyk")]),
+            Self::Rgb(rgb) => bs.with_attributes([
                 ("method", "custom"),
                 ("r", format!("{:.3}", rgb.r.get()).as_str()),
                 ("g", format!("{:.3}", rgb.g.get()).as_str()),
@@ -234,7 +245,7 @@ impl FromStr for Argb {
         if split.len() < 8 {
             Ok(Rgb::from_hexstring(s)?.into())
         } else {
-            Argb::from_hexstring(s)
+            Self::from_hexstring(s)
         }
     }
 }
@@ -243,11 +254,7 @@ impl std::fmt::Display for Argb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn to_hex(value: UnitF64, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let value = (value.get() * 255.).round() as u32;
-
-            let first = char::from_digit(value / 16, 16).unwrap();
-            let last = char::from_digit(value % 16, 16).unwrap();
-
-            write!(f, "{first}{last}")
+            write!(f, "{value:02x}")
         }
 
         to_hex(self.a, f)?;
@@ -259,7 +266,7 @@ impl std::fmt::Display for Argb {
 
 impl From<Rgb> for Argb {
     fn from(value: Rgb) -> Self {
-        Argb {
+        Self {
             a: UnitF64::one(),
             r: value.r,
             g: value.g,
@@ -286,12 +293,12 @@ impl Argb {
             return Err(Error::ColorError);
         }
         let mut pieces = s.as_bytes().chunks(2).map(|b| str::from_utf8(b));
-        let a = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
-        let r = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
-        let g = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
-        let b = u8::from_str_radix(pieces.next().unwrap()?, 16)?;
+        let a = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
+        let r = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
+        let g = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
+        let b = u8::from_str_radix(pieces.next().ok_or(Error::ColorError)??, 16)?;
 
-        Ok(Argb {
+        Ok(Self {
             a: UnitF64::clamped_from(a as f64 / 255.),
             r: UnitF64::clamped_from(r as f64 / 255.),
             g: UnitF64::clamped_from(g as f64 / 255.),

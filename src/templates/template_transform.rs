@@ -71,18 +71,24 @@ impl Default for TemplateTransform {
 /// A pass-point relating source (template) coords to destination (map) coords.
 #[derive(Debug, Clone)]
 pub struct PassPoint {
+    /// Coordinate in the source template.
     pub src_coord: Coord,
+    /// Corresponding coordinate on the map.
     pub dest_coord: Coord,
+    /// Coordinate calculated by the current transformation.
     pub calculated_coord: Coord,
 }
 
 impl PassPoint {
+    /// Return the distance between the calculated and destination coordinates.
+    ///
+    /// Returns `-1.0` when no calculated coordinate is available.
     pub fn error(&self) -> f64 {
         if self.calculated_coord == Coord::zero() {
             return -1.;
         }
         let diff = self.calculated_coord - self.dest_coord;
-        (diff.x.powi(2) + diff.y.powi(2)).sqrt()
+        diff.x.hypot(diff.y)
     }
 }
 
@@ -194,7 +200,7 @@ impl TemplateTransformations {
             }
         }
 
-        Ok(TemplateTransformations {
+        Ok(Self {
             adjustment,
             active_transform,
             other_transform,
@@ -293,7 +299,7 @@ impl PassPoint {
             && let Some(dest_coord) = dest
             && let Some(calculated_coord) = calc
         {
-            Ok(PassPoint {
+            Ok(Self {
                 src_coord,
                 dest_coord,
                 calculated_coord,
@@ -373,7 +379,7 @@ impl Matrix3x3 {
             }
         }
 
-        Ok(Matrix3x3(values))
+        Ok(Self(values))
     }
 
     pub(crate) fn write<W: std::io::Write>(
@@ -388,8 +394,7 @@ impl Matrix3x3 {
         ])))?;
         for val in self.0 {
             writer.write_event(Event::Empty(
-                BytesStart::new("element")
-                    .with_attributes([("value", format!("{}", val).as_str())]),
+                BytesStart::new("element").with_attributes([("value", format!("{val}").as_str())]),
             ))?;
         }
         writer.write_event(Event::End(BytesEnd::new("matrix")))?;

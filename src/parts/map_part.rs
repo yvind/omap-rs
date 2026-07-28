@@ -22,8 +22,8 @@ pub struct MapPart {
 
 impl MapPart {
     /// Create a new empty map part with the given name.
-    pub fn new(name: impl Into<String>) -> MapPart {
-        MapPart {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
             name: name.into(),
             objects: HashMap::new(),
         }
@@ -43,12 +43,12 @@ enum SymbolPointer {
 impl From<&WeakSymbol> for SymbolPointer {
     fn from(value: &WeakSymbol) -> Self {
         match value {
-            WeakSymbol::Line(weak) => SymbolPointer::Line(weak.as_ptr()),
-            WeakSymbol::Area(weak) => SymbolPointer::Area(weak.as_ptr()),
-            WeakSymbol::Point(weak) => SymbolPointer::Point(weak.as_ptr()),
-            WeakSymbol::Text(weak) => SymbolPointer::Text(weak.as_ptr()),
-            WeakSymbol::CombinedArea(weak) => SymbolPointer::CombinedArea(weak.as_ptr()),
-            WeakSymbol::CombinedLine(weak) => SymbolPointer::CombinedLine(weak.as_ptr()),
+            WeakSymbol::Line(weak) => Self::Line(weak.as_ptr()),
+            WeakSymbol::Area(weak) => Self::Area(weak.as_ptr()),
+            WeakSymbol::Point(weak) => Self::Point(weak.as_ptr()),
+            WeakSymbol::Text(weak) => Self::Text(weak.as_ptr()),
+            WeakSymbol::CombinedArea(weak) => Self::CombinedArea(weak.as_ptr()),
+            WeakSymbol::CombinedLine(weak) => Self::CombinedLine(weak.as_ptr()),
         }
     }
 }
@@ -150,7 +150,7 @@ impl MapPart {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         symbols: &SymbolSet,
-    ) -> Result<MapPart> {
+    ) -> Result<Self> {
         let name = try_get_attr(element, "name")
             .ok()
             .flatten()
@@ -185,7 +185,7 @@ impl MapPart {
             }
         }
 
-        Ok(MapPart { name, objects })
+        Ok(Self { name, objects })
     }
 
     pub(super) fn write<W: std::io::Write>(

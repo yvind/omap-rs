@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use geo_types::Coord;
 #[cfg(feature = "geo_ref")]
@@ -53,7 +53,7 @@ impl GeoRef {
 
     /// Create a new local georeferencing with the given map scale.
     pub fn new(scale: u32) -> Self {
-        GeoRef {
+        Self {
             scale_denominator: scale,
             grid_scale_factor: 1.,
             auxiliary_scale_factor: 1.,
@@ -185,7 +185,7 @@ impl GeoRef {
             match event {
                 Event::Start(bs) => match bs.local_name().as_ref() {
                     b"projected_crs" => {
-                        (crs_type, projected_ref_point) = parse_projected_crs(reader, &bs)?
+                        (crs_type, projected_ref_point) = parse_projected_crs(reader, &bs)?;
                     }
                     b"geographic_crs" => geographic_ref_point_deg = parse_geographic_crs(reader)?,
                     b"ref_point" => {
@@ -211,7 +211,7 @@ impl GeoRef {
             }
         }
 
-        Ok(GeoRef {
+        Ok(Self {
             scale_denominator: scale,
             grid_scale_factor,
             auxiliary_scale_factor,
@@ -347,6 +347,11 @@ impl GeoRef {
     ///
     /// Computes declination, convergence and scale factors automatically.
     /// Requires the `geo_ref` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the CRS cannot be parsed or transformed, the
+    /// reference point is invalid, or magnetic-model data cannot be computed.
     pub fn initialize(
         projected_ref_point: Coord,
         crs: CrsType,
@@ -355,12 +360,16 @@ impl GeoRef {
     ) -> Result<Self> {
         let local_crs = match &crs {
             CrsType::Local => {
-                let mut gr = GeoRef::new(scale);
+                let mut gr = Self::new(scale);
                 gr.projected_ref_point = projected_ref_point;
                 return Ok(gr);
             }
             CrsType::Epsg(e) => proj_wkt::parse_crs(e.to_string().as_str())?,
-            c => proj_wkt::parse_crs(c.get_proj_string().unwrap().as_str())?,
+            c => proj_wkt::parse_crs(
+                c.get_proj_string()
+                    .ok_or(Error::InvalidGeoreferencing)?
+                    .as_str(),
+            )?,
         };
         let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
 
@@ -377,7 +386,7 @@ impl GeoRef {
         let (convergence_deg, grid_scale_factor) =
             Self::get_convergence_and_grid_scale_factor(&local_crs, geographic_ref_point_deg)?;
 
-        Ok(GeoRef {
+        Ok(Self {
             scale_denominator: scale,
             grid_scale_factor,
             auxiliary_scale_factor,
@@ -450,7 +459,7 @@ impl GeoRef {
 
     #[cfg(feature = "geo_ref")]
     fn get_declination(geo_ref_point: Coord, meters_above_sea_level: f64) -> Result<f64> {
-        use chrono::Datelike;
+        use chrono::Datelike as _;
         use world_magnetic_model::{
             GeomagneticField,
             time::Date,
@@ -464,12 +473,15 @@ impl GeoRef {
         let year = date.year();
         let day = date.ordinal() as u16;
 
+        let model_date = Date::from_ordinal_date(year, day)
+            .or_else(|_| Date::from_ordinal_date(2026, 180))
+            .map_err(|_invalid_date| Error::InvalidGeoreferencing)?;
+
         let field = GeomagneticField::new(
             Length::new::<meter>(meters_above_sea_level as f32),
             Angle::new::<degree>(geo_ref_point.y as f32),
             Angle::new::<degree>(geo_ref_point.x as f32),
-            Date::from_ordinal_date(year, day)
-                .unwrap_or(Date::from_ordinal_date(2026, 180).unwrap()),
+            model_date,
         )?;
         let dec = field.declination().get::<degree>();
 

@@ -69,15 +69,21 @@ impl CombinedAreaSymbol {
     /// Fails if adding this component will create a cycle in the symbol component definitions
     ///
     /// The cycle detection relies on run time borrow checking, meaning that if any of the sub-symbols refcells
-    /// are already being borrowed (through any of the .(try_)borrow(), .(try_)borrow_mut() functions) it fails and the component will not be added
+    /// are already being borrowed (through any of the .(try_)`borrow()`, .(try_)`borrow_mut()` functions) it fails and the component will not be added
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the component would introduce a cycle or a child
+    /// symbol cannot be borrowed during cycle detection.
     pub fn add_component(
         &mut self,
         new_component: PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>,
     ) -> Result<()> {
         if matches!(
             new_component,
-            PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(_))
-                | PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedArea(_))
+            PublicOrPrivateSymbol::Public(
+                WeakPathSymbol::CombinedLine(_) | WeakPathSymbol::CombinedArea(_)
+            )
         ) {
             self.parts.push(new_component);
             match self.contains_cycle() {
@@ -98,13 +104,13 @@ impl CombinedAreaSymbol {
     }
 
     /// Create a new empty combined area symbol with the given code and name.
-    pub fn new(code: Code, name: impl Into<String>) -> CombinedAreaSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> Self {
         let common = SymbolCommon {
             code,
             name: name.into(),
             ..Default::default()
         };
-        CombinedAreaSymbol {
+        Self {
             common,
             parts: Vec::new(),
         }
@@ -128,9 +134,13 @@ impl CombinedAreaSymbol {
 
     /// Get the minimum area (in paper dimensions mm²) among all area sub-symbols.
     /// The check fails if any child combined area symbols cannot be borrowed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a child area symbol cannot be borrowed.
     pub fn minimum_area(&self) -> Result<f64> {
         let mut min = f64::MAX;
-        for s in self.parts.iter() {
+        for s in &self.parts {
             match s {
                 PublicOrPrivateSymbol::Public(p) => {
                     if let WeakPathSymbol::Area(weak) = p
@@ -168,7 +178,7 @@ impl CombinedAreaSymbol {
 
     fn contains_cycle_with_visited(
         &self,
-        visited_area: &mut HashSet<*const RefCell<CombinedAreaSymbol>>,
+        visited_area: &mut HashSet<*const RefCell<Self>>,
         visited_line: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
     ) -> Result<bool> {
         for part in &self.parts {
@@ -179,7 +189,9 @@ impl CombinedAreaSymbol {
                         if !visited_area.insert(ptr) {
                             return Ok(true); // Already visited — cycle detected
                         }
-                        let borrowed = ca.try_borrow().map_err(|_| Error::SymbolCycleBorrow)?;
+                        let borrowed = ca
+                            .try_borrow()
+                            .map_err(|_borrow_error| Error::SymbolCycleBorrow)?;
                         if borrowed.contains_cycle_with_visited(visited_area, visited_line)? {
                             return Ok(true);
                         }
@@ -192,7 +204,9 @@ impl CombinedAreaSymbol {
                         if !visited_line.insert(ptr) {
                             return Ok(true); // Already visited — cycle detected
                         }
-                        let borrowed = cl.try_borrow().map_err(|_| Error::SymbolCycleBorrow)?;
+                        let borrowed = cl
+                            .try_borrow()
+                            .map_err(|_borrow_error| Error::SymbolCycleBorrow)?;
                         if borrowed.contains_cycle_line_with_visited(visited_line)? {
                             return Ok(true);
                         }
@@ -209,6 +223,10 @@ impl CombinedAreaSymbol {
     // but it should not as the components are private and the addition of components are shielded
     /// Check if the symbol references the other symbol
     /// The check fails if any sub-symbol cannot be borrowed (is mutably borrowed somewhere else)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a referenced combined symbol cannot be borrowed.
     pub fn contains_symbol(&self, other_symbol: &WeakSymbol) -> Result<bool> {
         match other_symbol {
             WeakSymbol::Point(_) | WeakSymbol::Text(_) => return Ok(false),
@@ -255,7 +273,7 @@ impl CombinedAreaSymbol {
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
-    ) -> Result<(CombinedAreaSymbol, Vec<usize>)> {
+    ) -> Result<(Self, Vec<usize>)> {
         let mut common = attributes;
         let mut parts: Vec<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> = Vec::new();
         let mut public_component_ids: Vec<usize> = Vec::new();
@@ -303,7 +321,7 @@ impl CombinedAreaSymbol {
             }
         }
 
-        Ok((CombinedAreaSymbol { common, parts }, public_component_ids))
+        Ok((Self { common, parts }, public_component_ids))
     }
 
     fn parse_private_part<R: std::io::BufRead>(

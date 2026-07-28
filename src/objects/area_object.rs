@@ -45,7 +45,7 @@ pub struct AreaObject {
 impl AreaObject {
     /// Create a new area object with the given symbol and geometry.
     pub fn new(symbol: impl Into<WeakAreaPathSymbol>, geometry: Polygon) -> Self {
-        AreaObject {
+        Self {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
             symbol: symbol.into(),
@@ -94,13 +94,13 @@ impl AreaObject {
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
         // Transform the discretized geometry
         self.geometry.exterior_mut(|ext| {
-            for coord in ext.0.iter_mut() {
+            for coord in &mut ext.0 {
                 *coord = transform.apply(*coord);
             }
         });
         self.geometry.interiors_mut(|interiors| {
             for interior in interiors.iter_mut() {
-                for coord in interior.0.iter_mut() {
+                for coord in &mut interior.0 {
                     *coord = transform.apply(*coord);
                 }
             }
@@ -108,7 +108,7 @@ impl AreaObject {
         // Transform the pattern rotation origin
         self.pattern_rotation.coord = transform.apply(self.pattern_rotation.coord);
         // Transform raw control points — flags stay unchanged
-        for (file_coord, _flag) in self.raw_map_coords.iter_mut() {
+        for (file_coord, _flag) in &mut self.raw_map_coords {
             let map_coord = from_file_coords(*file_coord);
             let transformed = transform.apply(map_coord);
             if let Ok(fc) = to_file_coords(transformed) {
@@ -127,9 +127,9 @@ impl AreaObject {
         self.raw_map_coords = reverse_raw_polygon_coords(&self.raw_map_coords);
     }
 
-    /// Create an AreaObject for use as a PointSymbol element (no map symbol needed)
+    /// Create an `AreaObject` for use as a `PointSymbol` element (no map symbol needed)
     pub fn new_element(geometry: Polygon) -> Self {
-        AreaObject {
+        Self {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
             symbol: WeakAreaPathSymbol::Area(std::rc::Weak::new()),
@@ -212,7 +212,7 @@ impl AreaObject {
         Ok(())
     }
 
-    /// Write coords from the geometry, as bezier if self.write_as_bezier
+    /// Write coords from the geometry, as bezier if `self.write_as_bezier`
     fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let mut all_coords: Vec<FileCoord> = Vec::new();
 
@@ -256,10 +256,14 @@ impl AreaObject {
     }
 
     /// Parse an area object. The reader should be positioned right after the `<object>` start event. Reads through `</object>`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "area-object parsing follows the nested OMAP XML structure"
+    )]
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: WeakAreaPathSymbol,
-    ) -> Result<AreaObject> {
+    ) -> Result<Self> {
         let mut tags = HashMap::new();
         let mut pr = PatternRotation::default();
         let mut linestrings = Vec::new();
@@ -282,7 +286,7 @@ impl AreaObject {
                         pr.rotation = try_get_attr_raw(&bytes_start, "rotation")
                             .ok()
                             .flatten()
-                            .unwrap_or(pr.rotation)
+                            .unwrap_or(pr.rotation);
                     }
                     b"tags" => tags = super::parse_tags(reader)?,
                     b"coord" => {
@@ -418,7 +422,7 @@ impl AreaObject {
         } else {
             linestrings.remove(0)
         };
-        Ok(AreaObject {
+        Ok(Self {
             tags,
             pattern_rotation: pr,
             symbol,

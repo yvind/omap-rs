@@ -9,14 +9,17 @@ mod text_symbol;
 
 use std::{cell::RefCell, rc::Weak};
 
-pub use area_symbol::AreaSymbol;
+pub use area_symbol::{AreaSymbol, ClippingOption, FillPattern};
 pub use combined_area_symbol::CombinedAreaSymbol;
 pub use combined_line_symbol::CombinedLineSymbol;
-pub use line_symbol::LineSymbol;
-pub use point_symbol::PointSymbol;
+pub use line_symbol::{
+    BorderDash, BorderStyle, CapStyle, DashStyle, DashSymbol, GroupDashes, JoinStyle, LineSymbol,
+    LineSymbolBorder, MidSymbol, MidSymbolPlacement,
+};
+pub use point_symbol::{Element, PointSymbol};
 pub use symbol::{Symbol, SymbolCommon, WeakSymbol};
 pub use symbol_set::SymbolSet;
-pub use text_symbol::TextSymbol;
+pub use text_symbol::{FramingMode, LineBelow, LineFraming, ShadowFraming, TextSymbol};
 
 use crate::{Error, Result};
 
@@ -33,8 +36,8 @@ impl WeakLinePathSymbol {
     /// Attempt to upgrade the weak reference to a strong [`Symbol`].
     pub fn upgrade(&self) -> Option<Symbol> {
         match self {
-            WeakLinePathSymbol::Line(weak) => weak.upgrade().map(Symbol::Line),
-            WeakLinePathSymbol::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
+            Self::Line(weak) => weak.upgrade().map(Symbol::Line),
+            Self::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
         }
     }
 }
@@ -44,8 +47,8 @@ impl TryFrom<WeakSymbol> for WeakLinePathSymbol {
 
     fn try_from(value: WeakSymbol) -> Result<Self> {
         match value {
-            WeakSymbol::Line(ref_cell) => Ok(WeakLinePathSymbol::Line(ref_cell)),
-            WeakSymbol::CombinedLine(ref_cell) => Ok(WeakLinePathSymbol::CombinedLine(ref_cell)),
+            WeakSymbol::Line(ref_cell) => Ok(Self::Line(ref_cell)),
+            WeakSymbol::CombinedLine(ref_cell) => Ok(Self::CombinedLine(ref_cell)),
             _ => Err(Error::SymbolConversionError),
         }
     }
@@ -53,21 +56,21 @@ impl TryFrom<WeakSymbol> for WeakLinePathSymbol {
 
 impl From<Weak<RefCell<LineSymbol>>> for WeakLinePathSymbol {
     fn from(value: Weak<RefCell<LineSymbol>>) -> Self {
-        WeakLinePathSymbol::Line(value)
+        Self::Line(value)
     }
 }
 
 impl From<Weak<RefCell<CombinedLineSymbol>>> for WeakLinePathSymbol {
     fn from(value: Weak<RefCell<CombinedLineSymbol>>) -> Self {
-        WeakLinePathSymbol::CombinedLine(value)
+        Self::CombinedLine(value)
     }
 }
 
 impl From<WeakLinePathSymbol> for WeakSymbol {
     fn from(value: WeakLinePathSymbol) -> Self {
         match value {
-            WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak),
-            WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak),
+            WeakLinePathSymbol::Line(weak) => Self::Line(weak),
+            WeakLinePathSymbol::CombinedLine(weak) => Self::CombinedLine(weak),
         }
     }
 }
@@ -85,8 +88,8 @@ impl WeakAreaPathSymbol {
     /// Attempt to upgrade the weak reference to a strong [`Symbol`].
     pub fn upgrade(&self) -> Option<Symbol> {
         match self {
-            WeakAreaPathSymbol::Area(weak) => weak.upgrade().map(Symbol::Area),
-            WeakAreaPathSymbol::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
+            Self::Area(weak) => weak.upgrade().map(Symbol::Area),
+            Self::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
         }
     }
 }
@@ -96,8 +99,8 @@ impl TryFrom<WeakSymbol> for WeakAreaPathSymbol {
 
     fn try_from(value: WeakSymbol) -> Result<Self> {
         match value {
-            WeakSymbol::Area(ref_cell) => Ok(WeakAreaPathSymbol::Area(ref_cell)),
-            WeakSymbol::CombinedArea(ref_cell) => Ok(WeakAreaPathSymbol::CombinedArea(ref_cell)),
+            WeakSymbol::Area(ref_cell) => Ok(Self::Area(ref_cell)),
+            WeakSymbol::CombinedArea(ref_cell) => Ok(Self::CombinedArea(ref_cell)),
             _ => Err(Error::SymbolConversionError),
         }
     }
@@ -105,21 +108,21 @@ impl TryFrom<WeakSymbol> for WeakAreaPathSymbol {
 
 impl From<Weak<RefCell<AreaSymbol>>> for WeakAreaPathSymbol {
     fn from(value: Weak<RefCell<AreaSymbol>>) -> Self {
-        WeakAreaPathSymbol::Area(value)
+        Self::Area(value)
     }
 }
 
 impl From<Weak<RefCell<CombinedAreaSymbol>>> for WeakAreaPathSymbol {
     fn from(value: Weak<RefCell<CombinedAreaSymbol>>) -> Self {
-        WeakAreaPathSymbol::CombinedArea(value)
+        Self::CombinedArea(value)
     }
 }
 
 impl From<WeakAreaPathSymbol> for WeakSymbol {
     fn from(value: WeakAreaPathSymbol) -> Self {
         match value {
-            WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak),
-            WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak),
+            WeakAreaPathSymbol::Area(weak) => Self::Area(weak),
+            WeakAreaPathSymbol::CombinedArea(weak) => Self::CombinedArea(weak),
         }
     }
 }
@@ -178,10 +181,10 @@ impl WeakPathSymbol {
     /// Attempt to upgrade the weak reference to a strong [`Symbol`].
     pub fn upgrade(&self) -> Option<Symbol> {
         match self {
-            WeakPathSymbol::Area(weak) => weak.upgrade().map(Symbol::Area),
-            WeakPathSymbol::Line(weak) => weak.upgrade().map(Symbol::Line),
-            WeakPathSymbol::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
-            WeakPathSymbol::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
+            Self::Area(weak) => weak.upgrade().map(Symbol::Area),
+            Self::Line(weak) => weak.upgrade().map(Symbol::Line),
+            Self::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
+            Self::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
         }
     }
 }
@@ -191,10 +194,10 @@ impl TryFrom<WeakSymbol> for WeakPathSymbol {
 
     fn try_from(value: WeakSymbol) -> Result<Self> {
         match value {
-            WeakSymbol::Line(ref_cell) => Ok(WeakPathSymbol::Line(ref_cell)),
-            WeakSymbol::Area(ref_cell) => Ok(WeakPathSymbol::Area(ref_cell)),
-            WeakSymbol::CombinedArea(ref_cell) => Ok(WeakPathSymbol::CombinedArea(ref_cell)),
-            WeakSymbol::CombinedLine(ref_cell) => Ok(WeakPathSymbol::CombinedLine(ref_cell)),
+            WeakSymbol::Line(ref_cell) => Ok(Self::Line(ref_cell)),
+            WeakSymbol::Area(ref_cell) => Ok(Self::Area(ref_cell)),
+            WeakSymbol::CombinedArea(ref_cell) => Ok(Self::CombinedArea(ref_cell)),
+            WeakSymbol::CombinedLine(ref_cell) => Ok(Self::CombinedLine(ref_cell)),
             _ => Err(Error::SymbolConversionError),
         }
     }
@@ -205,10 +208,8 @@ impl TryFrom<WeakPathSymbol> for WeakAreaPathSymbol {
 
     fn try_from(value: WeakPathSymbol) -> Result<Self> {
         match value {
-            WeakPathSymbol::Area(ref_cell) => Ok(WeakAreaPathSymbol::Area(ref_cell)),
-            WeakPathSymbol::CombinedArea(ref_cell) => {
-                Ok(WeakAreaPathSymbol::CombinedArea(ref_cell))
-            }
+            WeakPathSymbol::Area(ref_cell) => Ok(Self::Area(ref_cell)),
+            WeakPathSymbol::CombinedArea(ref_cell) => Ok(Self::CombinedArea(ref_cell)),
             _ => Err(Error::SymbolConversionError),
         }
     }
@@ -219,10 +220,8 @@ impl TryFrom<WeakPathSymbol> for WeakLinePathSymbol {
 
     fn try_from(value: WeakPathSymbol) -> Result<Self> {
         match value {
-            WeakPathSymbol::Line(ref_cell) => Ok(WeakLinePathSymbol::Line(ref_cell)),
-            WeakPathSymbol::CombinedLine(ref_cell) => {
-                Ok(WeakLinePathSymbol::CombinedLine(ref_cell))
-            }
+            WeakPathSymbol::Line(ref_cell) => Ok(Self::Line(ref_cell)),
+            WeakPathSymbol::CombinedLine(ref_cell) => Ok(Self::CombinedLine(ref_cell)),
             _ => Err(Error::SymbolConversionError),
         }
     }
@@ -231,10 +230,10 @@ impl TryFrom<WeakPathSymbol> for WeakLinePathSymbol {
 impl From<WeakPathSymbol> for WeakSymbol {
     fn from(value: WeakPathSymbol) -> Self {
         match value {
-            WeakPathSymbol::Area(weak) => WeakSymbol::Area(weak),
-            WeakPathSymbol::Line(weak) => WeakSymbol::Line(weak),
-            WeakPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak),
-            WeakPathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak),
+            WeakPathSymbol::Area(weak) => Self::Area(weak),
+            WeakPathSymbol::Line(weak) => Self::Line(weak),
+            WeakPathSymbol::CombinedArea(weak) => Self::CombinedArea(weak),
+            WeakPathSymbol::CombinedLine(weak) => Self::CombinedLine(weak),
         }
     }
 }
@@ -242,8 +241,8 @@ impl From<WeakPathSymbol> for WeakSymbol {
 impl From<WeakAreaPathSymbol> for WeakPathSymbol {
     fn from(value: WeakAreaPathSymbol) -> Self {
         match value {
-            WeakAreaPathSymbol::Area(weak) => WeakPathSymbol::Area(weak),
-            WeakAreaPathSymbol::CombinedArea(weak) => WeakPathSymbol::CombinedArea(weak),
+            WeakAreaPathSymbol::Area(weak) => Self::Area(weak),
+            WeakAreaPathSymbol::CombinedArea(weak) => Self::CombinedArea(weak),
         }
     }
 }
@@ -251,8 +250,8 @@ impl From<WeakAreaPathSymbol> for WeakPathSymbol {
 impl From<WeakLinePathSymbol> for WeakPathSymbol {
     fn from(value: WeakLinePathSymbol) -> Self {
         match value {
-            WeakLinePathSymbol::Line(weak) => WeakPathSymbol::Line(weak),
-            WeakLinePathSymbol::CombinedLine(weak) => WeakPathSymbol::CombinedLine(weak),
+            WeakLinePathSymbol::Line(weak) => Self::Line(weak),
+            WeakLinePathSymbol::CombinedLine(weak) => Self::CombinedLine(weak),
         }
     }
 }

@@ -34,7 +34,7 @@ pub struct LineObject {
 impl LineObject {
     /// Create a new line object with the given symbol and geometry.
     pub fn new(symbol: impl Into<WeakLinePathSymbol>, geometry: LineString) -> Self {
-        LineObject {
+        Self {
             tags: HashMap::new(),
             symbol: symbol.into(),
             write_as_bezier: None,
@@ -60,9 +60,9 @@ impl LineObject {
         self.geometry
     }
 
-    /// Create a LineObject for use as a PointSymbol element (no map symbol needed)
+    /// Create a `LineObject` for use as a `PointSymbol` element (no map symbol needed)
     pub fn new_element(geometry: LineString) -> Self {
-        LineObject {
+        Self {
             tags: HashMap::new(),
             symbol: WeakLinePathSymbol::Line(std::rc::Weak::new()),
             write_as_bezier: None,
@@ -93,11 +93,11 @@ impl LineObject {
     /// points (with Bézier flags) will still be used on write.
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
         // Transform the discretized geometry
-        for coord in self.geometry.0.iter_mut() {
+        for coord in &mut self.geometry.0 {
             *coord = transform.apply(*coord);
         }
         // Transform raw control points — flags stay unchanged
-        for (file_coord, _flag) in self.raw_map_coords.iter_mut() {
+        for (file_coord, _flag) in &mut self.raw_map_coords {
             let map_coord = from_file_coords(*file_coord);
             let transformed = transform.apply(map_coord);
             if let Ok(fc) = to_file_coords(transformed) {
@@ -187,7 +187,11 @@ impl LineObject {
         Ok(())
     }
 
-    /// Write coords from the geometry, as bezier if self.write_as_bezier
+    /// Write coords from the geometry, as bezier if `self.write_as_bezier`
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Bézier serialization handles each segment combination explicitly"
+    )]
     fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let content = if let Some(bezier_error) = self.write_as_bezier
             && bezier_error.get() > PARSE_BEZIER_ERROR
@@ -307,10 +311,14 @@ impl LineObject {
     }
 
     /// Parse a line object. The reader should be positioned right after the `<object>` start event. Reads through `</object>`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "line-object parsing follows the nested OMAP XML structure"
+    )]
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: WeakLinePathSymbol,
-    ) -> Result<LineObject> {
+    ) -> Result<Self> {
         let mut tags = HashMap::new();
         let mut line = Vec::new();
         let mut raw_map_coords = Vec::new();
@@ -429,7 +437,7 @@ impl LineObject {
                 _ => (),
             }
         }
-        Ok(LineObject {
+        Ok(Self {
             tags,
             symbol,
             write_as_bezier: None,

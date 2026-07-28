@@ -22,8 +22,8 @@ pub struct Code {
 
 impl Code {
     /// Construct a new Code
-    pub fn new(major: u16, minor: u16, patch: u16) -> Code {
-        Code {
+    pub fn new(major: u16, minor: u16, patch: u16) -> Self {
+        Self {
             major,
             minor,
             patch,
@@ -35,7 +35,7 @@ impl FromStr for Code {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self> {
         let mut parts = value.split('.').take(3);
-        Ok(Code {
+        Ok(Self {
             major: parts.next().ok_or(Error::EmptyCode)?.parse()?,
             minor: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
             patch: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
@@ -106,7 +106,7 @@ impl UnitF64 {
         self.0
     }
 
-    /// Get UnitF64 from a f64, clamp values outside of the unit interval and map NaN to 0.
+    /// Get `UnitF64` from a f64, clamp values outside of the unit interval and map NaN to 0.
     pub fn clamped_from(value: f64) -> Self {
         if value.is_nan() {
             Self(0.)
@@ -117,16 +117,16 @@ impl UnitF64 {
 
     /// Get the unit value
     pub fn one() -> Self {
-        UnitF64(1.)
+        Self(1.)
     }
 
     /// Get the zero value
     pub fn zero() -> Self {
-        UnitF64(0.)
+        Self(0.)
     }
 }
 
-/// Tries to create a UnitF64 from a f64, but succeeds only for values in the unit interval
+/// Tries to create a `UnitF64` from a f64, but succeeds only for values in the unit interval
 impl TryFrom<f64> for UnitF64 {
     type Error = Error;
 
@@ -149,7 +149,7 @@ impl NonNegativeF64 {
         self.0
     }
 
-    /// Get NonNegativeF64 from a f64, clamp negative values to 0. and map NaN to 0.
+    /// Get `NonNegativeF64` from a f64, clamp negative values to 0. and map NaN to 0.
     pub fn clamped_from(value: f64) -> Self {
         if value.is_nan() {
             Self(0.)
@@ -160,12 +160,12 @@ impl NonNegativeF64 {
 
     /// Get the unit value
     pub fn one() -> Self {
-        NonNegativeF64(1.)
+        Self(1.)
     }
 
     /// Get the zero value
     pub fn zero() -> Self {
-        NonNegativeF64(0.)
+        Self(0.)
     }
 
     /// The files uses 1/1000 mm as the unit
@@ -175,11 +175,11 @@ impl NonNegativeF64 {
 
     /// Create from file value (1/1000 mm integer) to mm
     pub(crate) fn from_file_value(value: u32) -> Self {
-        NonNegativeF64(from_file_value(value as i32))
+        Self(from_file_value(value as i32))
     }
 }
 
-/// Tries to create a NonNegativeF64 from a f64, but succeeds only for non-negative values
+/// Tries to create a `NonNegativeF64` from a f64, but succeeds only for non-negative values
 impl TryFrom<f64> for NonNegativeF64 {
     type Error = Error;
 

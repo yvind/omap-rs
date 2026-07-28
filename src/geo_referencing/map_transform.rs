@@ -1,4 +1,4 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use geo_types::{Coord, LineString, Point, Polygon};
 
@@ -96,7 +96,7 @@ impl MapTransform {
         Polygon::new(map_ext, map_ints)
     }
 
-    /// Convert a [LineString] in projected (CRS) coordinates to map coordinates.
+    /// Convert a [`LineString`] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_linestring(&self, proj_linestring: LineString) -> LineString {
         proj_linestring
             .into_inner()
@@ -134,7 +134,7 @@ impl MapTransform {
         Polygon::new(map_ext, map_ints)
     }
 
-    /// Convert a [LineString] in map coordinates to projected (CRS) coordinates.
+    /// Convert a [`LineString`] in map coordinates to projected (CRS) coordinates.
     pub fn to_projected_linestring(&self, map_linestring: LineString) -> LineString {
         map_linestring
             .into_inner()
@@ -177,10 +177,13 @@ impl MapTransform {
     /// may be rejected, because `omap-rs` does not act as a projection library.
     ///
     /// The returned [`AffineMapTransform`] can be applied to every object via [`crate::Omap::apply_affine`].
-    pub fn affine_between(
-        old: &MapTransform,
-        new: &MapTransform,
-    ) -> crate::Result<AffineMapTransform> {
+    ///
+    /// # Errors
+    ///
+    /// Returns
+    /// [`crate::Error::CannotGetAffineTransformBetweenDifferentProjections`]
+    /// if the transforms have different CRS fingerprints.
+    pub fn affine_between(old: &Self, new: &Self) -> crate::Result<AffineMapTransform> {
         if old.crs_hash != new.crs_hash {
             return Err(crate::Error::CannotGetAffineTransformBetweenDifferentProjections);
         }
@@ -248,7 +251,9 @@ mod tests {
         let old = transform_for_crs(CrsType::Epsg(25832));
         let new = transform_for_crs(CrsType::Epsg(25833));
 
-        let err = MapTransform::affine_between(&old, &new).unwrap_err();
+        let Err(err) = MapTransform::affine_between(&old, &new) else {
+            panic!("different EPSG codes must not produce an affine transform");
+        };
 
         assert!(matches!(
             err,

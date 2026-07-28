@@ -34,8 +34,8 @@ impl TemplateVisibility {
             match attr.key.local_name().as_ref() {
                 b"opacity" => {
                     tv.opacity = UnitF64::clamped_from(
-                        parse_attr_raw(attr.value).unwrap_or(tv.opacity.get()),
-                    )
+                        parse_attr_raw(attr.value).unwrap_or_else(|_| tv.opacity.get()),
+                    );
                 }
                 b"visible" => tv.visible = attr.as_bool().unwrap_or(tv.visible),
                 _ => (),
@@ -64,22 +64,22 @@ impl FromStr for GridDisplay {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "0" => Ok(GridDisplay::Hidden),
-            "1" => Ok(GridDisplay::AllLines),
-            "2" => Ok(GridDisplay::HorizontalLines),
-            "3" => Ok(GridDisplay::VerticalLines),
+            "0" => Ok(Self::Hidden),
+            "1" => Ok(Self::AllLines),
+            "2" => Ok(Self::HorizontalLines),
+            "3" => Ok(Self::VerticalLines),
             _ => Err(Error::ViewError),
         }
     }
 }
 
 impl From<u8> for GridDisplay {
-    fn from(value: u8) -> GridDisplay {
+    fn from(value: u8) -> Self {
         match value {
-            1 => GridDisplay::AllLines,
-            2 => GridDisplay::HorizontalLines,
-            3 => GridDisplay::VerticalLines,
-            _ => GridDisplay::Hidden,
+            1 => Self::AllLines,
+            2 => Self::HorizontalLines,
+            3 => Self::VerticalLines,
+            _ => Self::Hidden,
         }
     }
 }
@@ -87,10 +87,10 @@ impl From<u8> for GridDisplay {
 impl AsRef<str> for GridDisplay {
     fn as_ref(&self) -> &str {
         match self {
-            GridDisplay::Hidden => "0",
-            GridDisplay::AllLines => "1",
-            GridDisplay::HorizontalLines => "2",
-            GridDisplay::VerticalLines => "3",
+            Self::Hidden => "0",
+            Self::AllLines => "1",
+            Self::HorizontalLines => "2",
+            Self::VerticalLines => "3",
         }
     }
 }
@@ -112,20 +112,20 @@ impl FromStr for GridAlignment {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "0" => Ok(GridAlignment::MagneticNorth),
-            "1" => Ok(GridAlignment::GridNorth),
-            "2" => Ok(GridAlignment::TrueNorth),
+            "0" => Ok(Self::MagneticNorth),
+            "1" => Ok(Self::GridNorth),
+            "2" => Ok(Self::TrueNorth),
             _ => Err(Error::ViewError),
         }
     }
 }
 
 impl From<u8> for GridAlignment {
-    fn from(value: u8) -> GridAlignment {
+    fn from(value: u8) -> Self {
         match value {
-            1 => GridAlignment::GridNorth,
-            2 => GridAlignment::TrueNorth,
-            _ => GridAlignment::MagneticNorth,
+            1 => Self::GridNorth,
+            2 => Self::TrueNorth,
+            _ => Self::MagneticNorth,
         }
     }
 }
@@ -157,20 +157,20 @@ impl FromStr for GridUnit {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "0" => Ok(GridUnit::MetersOnGround),
-            "1" => Ok(GridUnit::MillimetresOnMap),
-            "2" => Ok(GridUnit::PixelsOnScreen),
+            "0" => Ok(Self::MetersOnGround),
+            "1" => Ok(Self::MillimetresOnMap),
+            "2" => Ok(Self::PixelsOnScreen),
             _ => Err(Error::ViewError),
         }
     }
 }
 
 impl From<u8> for GridUnit {
-    fn from(value: u8) -> GridUnit {
+    fn from(value: u8) -> Self {
         match value {
-            1 => GridUnit::MillimetresOnMap,
-            2 => GridUnit::PixelsOnScreen,
-            _ => GridUnit::MetersOnGround,
+            1 => Self::MillimetresOnMap,
+            2 => Self::PixelsOnScreen,
+            _ => Self::MetersOnGround,
         }
     }
 }
@@ -178,9 +178,9 @@ impl From<u8> for GridUnit {
 impl AsRef<str> for GridUnit {
     fn as_ref(&self) -> &str {
         match self {
-            GridUnit::MetersOnGround => "0",
-            GridUnit::MillimetresOnMap => "1",
-            GridUnit::PixelsOnScreen => "2",
+            Self::MetersOnGround => "0",
+            Self::MillimetresOnMap => "1",
+            Self::PixelsOnScreen => "2",
         }
     }
 }
@@ -243,14 +243,14 @@ impl Grid {
                 b"unit" => g.unit = parse_attr_raw(attr.value).unwrap_or(g.unit),
                 b"additional_rotation" => {
                     g.additional_rotation =
-                        parse_attr_raw(attr.value).unwrap_or(g.additional_rotation)
+                        parse_attr_raw(attr.value).unwrap_or(g.additional_rotation);
                 }
                 b"h_spacing" => g.h_spacing = parse_attr_raw(attr.value).unwrap_or(g.h_spacing),
                 b"v_spacing" => g.v_spacing = parse_attr_raw(attr.value).unwrap_or(g.v_spacing),
                 b"h_offset" => g.h_offset = parse_attr_raw(attr.value).unwrap_or(g.h_offset),
                 b"v_offset" => g.v_offset = parse_attr_raw(attr.value).unwrap_or(g.v_offset),
                 b"snapping_enabled" => {
-                    g.snapping_enabled = attr.as_bool().unwrap_or(g.snapping_enabled)
+                    g.snapping_enabled = attr.as_bool().unwrap_or(g.snapping_enabled);
                 }
                 _ => (),
             }
@@ -396,7 +396,7 @@ impl View {
                     }
                     b"templates" => {
                         if !templates.is_empty() {
-                            self.parse_template_visibilities(reader, templates)?;
+                            Self::parse_template_visibilities(reader, templates)?;
                         }
                     }
                     _ => {}
@@ -411,7 +411,6 @@ impl View {
     }
 
     fn parse_template_visibilities<R: std::io::BufRead>(
-        &mut self,
         reader: &mut Reader<R>,
         templates: &mut Templates,
     ) -> Result<()> {

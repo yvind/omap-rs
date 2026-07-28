@@ -66,7 +66,12 @@ impl CombinedLineSymbol {
     /// Fails if adding this component will create a cycle in the symbol component definitions
     ///
     /// The cycle detection relies on run time borrow checking, meaning that if any of the sub-symbols refcells
-    /// are already being borrowed (through any of the .(try_)borrow(), .(try_)borrow_mut() functions) it fails
+    /// are already being borrowed (through any of the .(try_)`borrow()`, .(try_)`borrow_mut()` functions) it fails
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the component would introduce a cycle or a child
+    /// symbol cannot be borrowed during cycle detection.
     pub fn add_component(
         &mut self,
         new_component: PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>,
@@ -94,13 +99,13 @@ impl CombinedLineSymbol {
     }
 
     /// Create a new empty combined line symbol with the given code and name.
-    pub fn new(code: Code, name: impl Into<String>) -> CombinedLineSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> Self {
         let common = SymbolCommon {
             code,
             name: name.into(),
             ..Default::default()
         };
-        CombinedLineSymbol {
+        Self {
             common,
             parts: Vec::new(),
         }
@@ -125,9 +130,13 @@ impl CombinedLineSymbol {
     /// Get the minimum length (in paper dimensions mm) among all line sub-symbols.
     /// The check fails if any child combined line symbols cannot be borrowed
     /// This will recurse forever if any cycles exist
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a child line symbol cannot be borrowed.
     pub fn minimum_length(&self) -> Result<f64> {
         let mut min = f64::MAX;
-        for s in self.parts.iter() {
+        for s in &self.parts {
             match s {
                 PublicOrPrivateSymbol::Public(weak) => {
                     if let Some(line) = weak.upgrade() {
@@ -170,17 +179,17 @@ impl CombinedLineSymbol {
         self.contains_cycle_with_visited(&mut visited)
     }
 
-    /// Check for cycles using a pre-existing visited set (called from CombinedAreaSymbol).
+    /// Check for cycles using a pre-existing visited set (called from `CombinedAreaSymbol`).
     pub(super) fn contains_cycle_line_with_visited(
         &self,
-        visited: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
+        visited: &mut HashSet<*const RefCell<Self>>,
     ) -> Result<bool> {
         self.contains_cycle_with_visited(visited)
     }
 
     fn contains_cycle_with_visited(
         &self,
-        visited: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
+        visited: &mut HashSet<*const RefCell<Self>>,
     ) -> Result<bool> {
         for part in &self.parts {
             if let PublicOrPrivateSymbol::Public(WeakLinePathSymbol::CombinedLine(weak)) = part
@@ -190,7 +199,9 @@ impl CombinedLineSymbol {
                 if !visited.insert(ptr) {
                     return Ok(true); // Already visited — cycle detected
                 }
-                let borrowed = cl.try_borrow().map_err(|_| Error::SymbolCycleBorrow)?;
+                let borrowed = cl
+                    .try_borrow()
+                    .map_err(|_borrow_error| Error::SymbolCycleBorrow)?;
                 if borrowed.contains_cycle_with_visited(visited)? {
                     return Ok(true);
                 }
@@ -204,6 +215,10 @@ impl CombinedLineSymbol {
     // but it should not as the components are private and the addition of components are shielded
     /// Check if the symbol references the other symbol.
     /// The check fails if any sub-symbol cannot be borrowed (is mutably borrowed somewhere else)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a referenced combined symbol cannot be borrowed.
     pub fn contains_symbol(&self, other_symbol: &WeakSymbol) -> Result<bool> {
         match other_symbol {
             WeakSymbol::Point(_)

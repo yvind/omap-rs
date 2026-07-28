@@ -17,22 +17,36 @@ use crate::{
 pub enum FillPattern {
     /// A pattern of parallel lines.
     LinePattern {
+        /// Rotation angle of the pattern.
         angle: f64,
+        /// Spacing between adjacent pattern lines.
         line_spacing: NonNegativeF64,
+        /// Perpendicular offset of the pattern lines.
         line_offset: NonNegativeF64,
+        /// Color of the pattern lines.
         line_color: SymbolColor,
+        /// Width of the pattern lines.
         line_width: NonNegativeF64,
+        /// Whether the pattern may be rotated with an object.
         rotatable: bool, // stored as flag 16 with the clip options
     },
     /// A pattern of regularly spaced points.
     PointPattern {
+        /// How point elements are clipped at the area boundary.
         clip_options: ClippingOption,
+        /// Rotation angle of the pattern.
         angle: f64,
+        /// Spacing between rows of point elements.
         line_spacing: NonNegativeF64,
+        /// Perpendicular offset of the point rows.
         line_offset: NonNegativeF64,
+        /// Offset of the first point along each row.
         offset_along_line: NonNegativeF64,
+        /// Spacing between point elements within a row.
         point_distance: NonNegativeF64,
+        /// Point symbol repeated by the pattern.
         point: PointSymbol,
+        /// Whether the pattern may be rotated with an object.
         rotatable: bool, // stored as flag 16 with the clip options
     },
 }
@@ -56,10 +70,10 @@ impl FromStr for ClippingOption {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "0" => Ok(ClippingOption::ClipElementsAtBoundary),
-            "1" => Ok(ClippingOption::NoClippingIfCompletelyInside),
-            "2" => Ok(ClippingOption::NoClippingIfCenterInside),
-            "3" => Ok(ClippingOption::NoClippingIfPartiallyInside),
+            "0" => Ok(Self::ClipElementsAtBoundary),
+            "1" => Ok(Self::NoClippingIfCompletelyInside),
+            "2" => Ok(Self::NoClippingIfCenterInside),
+            "3" => Ok(Self::NoClippingIfPartiallyInside),
             _ => Err(Error::UnknownClippingOption),
         }
     }
@@ -70,7 +84,7 @@ impl FillPattern {
         element: &BytesStart<'_>,
         reader: &mut Reader<R>,
         color_set: &ColorSet,
-    ) -> Result<FillPattern> {
+    ) -> Result<Self> {
         let pattern_type = try_get_attr_raw(element, "type")?.unwrap_or(0);
         let angle = try_get_attr_raw(element, "angle")?.unwrap_or(0.0);
         let clip_options = try_get_attr_raw(element, "no_clipping")?.unwrap_or_default();
@@ -107,7 +121,7 @@ impl FillPattern {
                         _ => {}
                     }
                 }
-                Ok(FillPattern::LinePattern {
+                Ok(Self::LinePattern {
                     angle,
                     line_spacing,
                     line_offset,
@@ -158,7 +172,7 @@ impl FillPattern {
                     }
                 }
                 let point = point.ok_or(Error::MissingPointPatternSymbol)?;
-                Ok(FillPattern::PointPattern {
+                Ok(Self::PointPattern {
                     clip_options,
                     angle,
                     line_spacing,
@@ -175,7 +189,7 @@ impl FillPattern {
 
     fn write<W: std::io::Write>(&self, writer: &mut Writer<W>, color_set: &ColorSet) -> Result<()> {
         match self {
-            FillPattern::LinePattern {
+            Self::LinePattern {
                 angle,
                 line_spacing,
                 line_offset,
@@ -207,7 +221,7 @@ impl FillPattern {
                 ));
                 writer.write_event(Event::Empty(bs))?;
             }
-            FillPattern::PointPattern {
+            Self::PointPattern {
                 clip_options,
                 angle,
                 line_spacing,
@@ -274,13 +288,13 @@ impl AreaSymbol {
     }
 
     /// Create a new empty area symbol with the given code and name.
-    pub fn new(code: Code, name: impl Into<String>) -> AreaSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> Self {
         let common = SymbolCommon {
             code,
             name: name.into(),
             ..Default::default()
         };
-        AreaSymbol {
+        Self {
             common,
             is_rotatable: true,
             color: SymbolColor::NoColor,
@@ -323,7 +337,7 @@ impl AreaSymbol {
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
-    ) -> Result<AreaSymbol> {
+    ) -> Result<Self> {
         let mut common = attributes;
         let mut color = SymbolColor::NoColor;
         let mut minimum_area = NonNegativeF64::default();
@@ -367,7 +381,7 @@ impl AreaSymbol {
             }
         }
 
-        Ok(AreaSymbol {
+        Ok(Self {
             common,
             is_rotatable,
             color,

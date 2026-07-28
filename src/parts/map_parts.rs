@@ -27,7 +27,7 @@ impl MapParts {
     }
 
     /// Merge all map parts into a single part
-    /// If new_name is some, then the new name is applied, else the name of the first map part is kept
+    /// If `new_name` is some, then the new name is applied, else the name of the first map part is kept
     pub fn merge_all_parts(&mut self, new_name: Option<String>) {
         while let Some(part) = self.0.pop() {
             if let Some(first) = self.0.first_mut() {
@@ -48,6 +48,11 @@ impl MapParts {
     /// Merge two of the map parts.
     /// The second part is merged into the first part. The name of the first part is kept
     /// The order of parts is also kept
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MapPartMergeError`] if either index is out of bounds or
+    /// both indices identify the same part.
     pub fn merge_two_parts(&mut self, mut part_1_index: usize, part_2_index: usize) -> Result<()> {
         if part_1_index >= self.len() || part_2_index >= self.len() || part_1_index == part_2_index
         {
@@ -110,6 +115,33 @@ impl MapParts {
     }
 }
 
+impl IntoIterator for MapParts {
+    type Item = MapPart;
+    type IntoIter = std::vec::IntoIter<MapPart>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a MapParts {
+    type Item = &'a MapPart;
+    type IntoIter = std::slice::Iter<'a, MapPart>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut MapParts {
+    type Item = &'a mut MapPart;
+    type IntoIter = std::slice::IterMut<'a, MapPart>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 impl MapParts {
     pub(crate) fn write<W: std::io::Write>(
         self,
@@ -153,6 +185,6 @@ impl MapParts {
             }
         }
 
-        Ok(MapParts(parts))
+        Ok(Self(parts))
     }
 }

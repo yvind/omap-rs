@@ -1,37 +1,7 @@
-//! A Rust library for reading and writing OpenOrienteering Mapper (`.omap`) files.
+//! A Rust library for reading and writing `OpenOrienteering` Mapper (`.omap`) files.
 //!
 //! All map coordinates are given in millimetres on paper, relative to the
 //! reference point, with the positive y-axis pointing towards magnetic north.
-
-#![deny(
-    elided_lifetimes_in_paths,
-    explicit_outlives_requirements,
-    keyword_idents,
-    macro_use_extern_crate,
-    meta_variable_misuse,
-    missing_abi,
-    missing_debug_implementations,
-    missing_docs,
-    non_ascii_idents,
-    noop_method_call,
-    rust_2021_incompatible_closure_captures,
-    rust_2021_incompatible_or_patterns,
-    rust_2021_prefixes_incompatible_syntax,
-    rust_2024_prelude_collisions,
-    single_use_lifetimes,
-    trivial_casts,
-    trivial_numeric_casts,
-    unreachable_pub,
-    unsafe_code,
-    unsafe_op_in_unsafe_fn,
-    unused_crate_dependencies,
-    unused_extern_crates,
-    unused_import_braces,
-    unused_lifetimes,
-    unused_qualifications,
-    unused_results,
-    warnings
-)]
 
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
@@ -362,7 +332,7 @@ pub enum Error {
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
     ProjError(#[from] proj_core::Error),
-    /// Could not parse the crs definition to a CrsDef object
+    /// Could not parse the crs definition to a `CrsDef` object
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]
     ProjParseError(#[from] proj_wkt::ParseError),

@@ -49,16 +49,16 @@ pub enum WeakSymbol {
 }
 
 impl WeakSymbol {
-    /// Attempts to upgrade the WeakSymbol to a Symbol, delaying dropping of the inner value if successful.
+    /// Attempts to upgrade the `WeakSymbol` to a Symbol, delaying dropping of the inner value if successful.
     /// Returns None if the inner value has since been dropped.
     pub fn upgrade(&self) -> Option<Symbol> {
         match self {
-            WeakSymbol::Line(weak) => weak.upgrade().map(Symbol::Line),
-            WeakSymbol::Area(weak) => weak.upgrade().map(Symbol::Area),
-            WeakSymbol::Point(weak) => weak.upgrade().map(Symbol::Point),
-            WeakSymbol::Text(weak) => weak.upgrade().map(Symbol::Text),
-            WeakSymbol::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
-            WeakSymbol::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
+            Self::Line(weak) => weak.upgrade().map(Symbol::Line),
+            Self::Area(weak) => weak.upgrade().map(Symbol::Area),
+            Self::Point(weak) => weak.upgrade().map(Symbol::Point),
+            Self::Text(weak) => weak.upgrade().map(Symbol::Text),
+            Self::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
+            Self::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
         }
     }
 }
@@ -128,7 +128,7 @@ pub enum Symbol {
     Point(Rc<RefCell<PointSymbol>>),
     /// A text symbol.
     Text(Rc<RefCell<TextSymbol>>),
-    /// Combined symbols can be either CombinedArea or CombinedLine
+    /// Combined symbols can be either `CombinedArea` or `CombinedLine`
     /// The difference is what object geometry to relate with the symbol
     /// Mapper does not discern between any line and area objects
     CombinedArea(Rc<RefCell<CombinedAreaSymbol>>),
@@ -137,15 +137,15 @@ pub enum Symbol {
 }
 
 impl Symbol {
-    /// Creates a new WeakSymbol pointer to this Symbol allocation
+    /// Creates a new `WeakSymbol` pointer to this Symbol allocation
     pub fn downgrade(&self) -> WeakSymbol {
         match self {
-            Symbol::Line(rc) => WeakSymbol::Line(Rc::downgrade(rc)),
-            Symbol::Area(rc) => WeakSymbol::Area(Rc::downgrade(rc)),
-            Symbol::Point(rc) => WeakSymbol::Point(Rc::downgrade(rc)),
-            Symbol::Text(rc) => WeakSymbol::Text(Rc::downgrade(rc)),
-            Symbol::CombinedArea(rc) => WeakSymbol::CombinedArea(Rc::downgrade(rc)),
-            Symbol::CombinedLine(rc) => WeakSymbol::CombinedLine(Rc::downgrade(rc)),
+            Self::Line(rc) => WeakSymbol::Line(Rc::downgrade(rc)),
+            Self::Area(rc) => WeakSymbol::Area(Rc::downgrade(rc)),
+            Self::Point(rc) => WeakSymbol::Point(Rc::downgrade(rc)),
+            Self::Text(rc) => WeakSymbol::Text(Rc::downgrade(rc)),
+            Self::CombinedArea(rc) => WeakSymbol::CombinedArea(Rc::downgrade(rc)),
+            Self::CombinedLine(rc) => WeakSymbol::CombinedLine(Rc::downgrade(rc)),
         }
     }
 }
@@ -183,7 +183,12 @@ impl_from_symbol!(CombinedLineSymbol, CombinedLine);
 
 macro_rules! impl_symbol_getter {
     ($method:ident -> $ret_type:ty, |$s:ident| $expr:expr) => {
-        /// Only fails if the symbol's ref_cell cannot be borrowed, i.e. the symbol's ref_cell is mutably borrowed somewhere else
+        /// Access a common symbol property.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the symbol's `RefCell` is currently mutably
+        /// borrowed.
         pub fn $method(&self) -> Result<$ret_type> {
             match self {
                 Symbol::Line(rc) => {
@@ -216,7 +221,11 @@ macro_rules! impl_symbol_getter {
 }
 macro_rules! impl_symbol_setter {
     ($method:ident($param:ident: $param_type:ty), |$s:ident| $expr:expr) => {
-        /// Only fails if the symbol's ref_cell cannot be mutably borrowed, i.e. the symbol's ref_cell is borrowed somewhere else
+        /// Update a common symbol property.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the symbol's `RefCell` is already borrowed.
         pub fn $method(&self, $param: $param_type) -> Result<()> {
             match self {
                 Symbol::Line(rc) => {
@@ -269,7 +278,7 @@ impl Symbol {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         color_set: &ColorSet,
-    ) -> Result<(usize, Symbol, Vec<usize>)> {
+    ) -> Result<(usize, Self, Vec<usize>)> {
         let mut id = usize::MAX;
         let mut symbol_type = u8::MAX;
         let mut common = SymbolCommon::default();
@@ -301,16 +310,16 @@ impl Symbol {
         // and parse them after all symbols have been parsed
         let mut public_component_ids = Vec::new();
         let symbol = match symbol_type {
-            1 => Symbol::Point(Rc::new(RefCell::new(PointSymbol::parse(
+            1 => Self::Point(Rc::new(RefCell::new(PointSymbol::parse(
                 reader, color_set, common,
             )?))),
-            2 => Symbol::Line(Rc::new(RefCell::new(LineSymbol::parse(
+            2 => Self::Line(Rc::new(RefCell::new(LineSymbol::parse(
                 reader, color_set, common,
             )?))),
-            4 => Symbol::Area(Rc::new(RefCell::new(AreaSymbol::parse(
+            4 => Self::Area(Rc::new(RefCell::new(AreaSymbol::parse(
                 reader, color_set, common,
             )?))),
-            8 => Symbol::Text(Rc::new(RefCell::new(TextSymbol::parse(
+            8 => Self::Text(Rc::new(RefCell::new(TextSymbol::parse(
                 reader, color_set, common,
             )?))),
             16 => {
@@ -319,7 +328,7 @@ impl Symbol {
                 let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
                 public_component_ids.extend(component_ids);
 
-                Symbol::CombinedArea(Rc::new(RefCell::new(symbol)))
+                Self::CombinedArea(Rc::new(RefCell::new(symbol)))
             }
             _ => {
                 return Err(Error::UnknownSymbolType(symbol_type));
@@ -338,16 +347,12 @@ impl Symbol {
     ) -> Result<()> {
         match self {
             // Line, area and point can be sub-symbols which do not have an index
-            Symbol::Line(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
-            Symbol::Area(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
-            Symbol::Point(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
-            Symbol::Text(rc) => rc.try_borrow()?.write(writer, color_set, index),
-            Symbol::CombinedArea(rc) => {
-                rc.try_borrow()?.write(writer, symbol_set, color_set, index)
-            }
-            Symbol::CombinedLine(rc) => {
-                rc.try_borrow()?.write(writer, symbol_set, color_set, index)
-            }
+            Self::Line(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
+            Self::Area(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
+            Self::Point(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
+            Self::Text(rc) => rc.try_borrow()?.write(writer, color_set, index),
+            Self::CombinedArea(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
+            Self::CombinedLine(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
         }?;
         Ok(())
     }

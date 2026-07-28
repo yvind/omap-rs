@@ -1,3 +1,16 @@
+#![expect(
+    clippy::print_stdout,
+    reason = "the example intentionally displays the map data it reads"
+)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "the example input is expected to contain nonempty objects and known symbols"
+)]
+#![expect(
+    clippy::expect_used,
+    reason = "the example input is expected to give the named symbol its documented type"
+)]
+
 use std::{cell::RefCell, rc::Weak};
 
 use geo_types::{Coord, LineString};
@@ -61,7 +74,6 @@ fn main() -> Result<(), Error> {
             }
         }
         mean_pos = mean_pos / num_coords as f64;
-        dbg!(mean_pos);
 
         // now transform that into projected coords
         let mean_proj_pos = old_transform.to_projected(mean_pos);
@@ -114,8 +126,7 @@ fn main() -> Result<(), Error> {
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: -60., y: -50. }, Coord { x: 60., y: -50. }]),
     );
-    ls.tags
-        .insert("Some Key".to_string(), "My value".to_string());
+    ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts.0[0].add_object(ls);
 
@@ -129,7 +140,7 @@ fn main() -> Result<(), Error> {
         Weak::<RefCell<TextSymbol>>::try_from(weak_symbol)
             .expect("The symbol type of Contour value is not Text"),
         TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
-        "This is the middle of the map".to_string(),
+        "This is the middle of the map".to_owned(),
     );
     map.parts.0[0].add_object(ts);
 

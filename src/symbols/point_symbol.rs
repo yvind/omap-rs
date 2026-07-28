@@ -58,15 +58,15 @@ impl Element {
     fn write<W: std::io::Write>(&self, writer: &mut Writer<W>, color_set: &ColorSet) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("element")))?;
         match self {
-            Element::Point { symbol, object } => {
+            Self::Point { symbol, object } => {
                 symbol.write(writer, color_set, None)?;
                 object.write_as_element(writer, symbol.is_rotatable)?;
             }
-            Element::Line { symbol, object } => {
+            Self::Line { symbol, object } => {
                 symbol.write(writer, color_set, None)?;
                 object.write_as_element(writer)?;
             }
-            Element::Area { symbol, object } => {
+            Self::Area { symbol, object } => {
                 symbol.write(writer, color_set, None)?;
                 object.write_as_element(writer)?;
             }
@@ -75,11 +75,15 @@ impl Element {
         Ok(())
     }
 
-    /// Parse a single element inside point_symbol
+    /// Parse a single element inside `point_symbol`
+    #[expect(
+        clippy::too_many_lines,
+        reason = "point-element parsing validates paired symbol and object records"
+    )]
     fn parse_element<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
-    ) -> Result<Element> {
+    ) -> Result<Self> {
         let mut symbol_data = None;
         let mut object_data = None;
         let mut buf = Vec::new();
@@ -130,7 +134,7 @@ impl Element {
                                             WeakAreaPathSymbol::Area(Weak::new()),
                                         )?))
                                     }
-                                    _ => {
+                                    ElementSymbolData::Point(_) => {
                                         return Err(Error::ElementSymbolObjectMismatch);
                                     }
                                 },
@@ -160,19 +164,19 @@ impl Element {
                     ElementSymbolData::Point(point_symbol),
                     ElementObjectData::Point(point_object),
                 ) => {
-                    return Ok(Element::Point {
+                    return Ok(Self::Point {
                         symbol: point_symbol,
                         object: point_object,
                     });
                 }
                 (ElementSymbolData::Line(line_symbol), ElementObjectData::Line(line_object)) => {
-                    return Ok(Element::Line {
+                    return Ok(Self::Line {
                         symbol: line_symbol,
                         object: line_object,
                     });
                 }
                 (ElementSymbolData::Area(area_symbol), ElementObjectData::Area(area_object)) => {
-                    return Ok(Element::Area {
+                    return Ok(Self::Area {
                         symbol: area_symbol,
                         object: area_object,
                     });
@@ -209,13 +213,13 @@ pub struct PointSymbol {
 
 impl PointSymbol {
     /// Create a new empty point symbol with the given code and name.
-    pub fn new(code: Code, name: impl Into<String>) -> PointSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> Self {
         let common = SymbolCommon {
             code,
             name: name.into(),
             ..Default::default()
         };
-        PointSymbol {
+        Self {
             common,
             is_rotatable: true,
             elements: Vec::new(),
@@ -277,7 +281,7 @@ impl PointSymbol {
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         mut common: SymbolCommon,
-    ) -> Result<PointSymbol> {
+    ) -> Result<Self> {
         let mut is_rotatable = false;
         let mut inner_radius = NonNegativeF64::default();
         let mut inner_color = SymbolColor::NoColor;
@@ -346,8 +350,6 @@ impl PointSymbol {
                 }
                 Element::Area { symbol: _, object } => {
                     if object.get_geometry().exterior().0.is_empty() {
-                        dbg!("Dropping");
-                        dbg!(&object);
                         drop_elements.push(i);
                     }
                 }
@@ -357,7 +359,7 @@ impl PointSymbol {
             let _ = elements.swap_remove(i);
         }
 
-        Ok(PointSymbol {
+        Ok(Self {
             common,
             is_rotatable,
             elements,

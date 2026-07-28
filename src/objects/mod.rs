@@ -12,10 +12,10 @@ use quick_xml::{
 };
 use std::collections::HashMap;
 
-pub use area_object::AreaObject;
+pub use area_object::{AreaObject, PatternRotation};
 pub use line_object::LineObject;
 pub use point_object::PointObject;
-pub use text_object::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign};
+pub use text_object::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign, WrapBox};
 
 pub use map_object::MapObject;
 

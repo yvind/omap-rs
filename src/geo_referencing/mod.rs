@@ -12,7 +12,7 @@ use quick_xml::{
 use crate::Result;
 
 /// The coordinate reference system type.
-#[derive(Debug, Clone, Default, Hash, PartialEq)]
+#[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub enum CrsType {
     /// Local (non-georeferenced) coordinates.
     #[default]
@@ -31,8 +31,8 @@ impl CrsType {
     /// Get the EPSG code, if this CRS is defined by one (or contains one in a PROJ string).
     pub fn get_epsg_code(&self) -> Option<u16> {
         match self {
-            CrsType::Epsg(c) => Some(*c),
-            CrsType::Proj4(string) => {
+            Self::Epsg(c) => Some(*c),
+            Self::Proj4(string) => {
                 if let Some(index) = string.find("+init=epsg:") {
                     let mut code = 0;
                     for char in string.chars().skip(index + 11) {
@@ -58,19 +58,18 @@ impl CrsType {
     /// Get the PROJ.4 string for this CRS, if available.
     pub fn get_proj_string(&self) -> Option<String> {
         match self {
-            CrsType::Local => None,
-            CrsType::Epsg(code) => Some(format!("+init=epsg:{}", code)),
-            CrsType::Proj4(proj_string) => Some(proj_string.clone()),
-            CrsType::GaussKrueger(code) => {
+            Self::Local => None,
+            Self::Epsg(code) => Some(format!("+init=epsg:{code}")),
+            Self::Proj4(proj_string) => Some(proj_string.clone()),
+            Self::GaussKrueger(code) => {
                 let lon = 3 * (*code as u16);
                 let x = 500_000 + (*code as u32 * 1_000_000);
 
                 Some(format!(
-                    "+proj=tmerc +lat_0=0 +lon_0={} +k=1.000000 +x_0={} +y_0=0 +ellps=bessel +datum=potsdam +units=m +no_defs",
-                    lon, x
+                    "+proj=tmerc +lat_0=0 +lon_0={lon} +k=1.000000 +x_0={x} +y_0=0 +ellps=bessel +datum=potsdam +units=m +no_defs"
                 ))
             }
-            CrsType::Utm(code) => {
+            Self::Utm(code) => {
                 if *code < 0 {
                     Some(format!(
                         "+proj=utm +datum=WGS84 +zone={} +south",
@@ -85,15 +84,15 @@ impl CrsType {
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
         let (id, proj_str, parameter) = match self {
-            CrsType::Local => {
+            Self::Local => {
                 writer.write_event(Event::Start(
                     BytesStart::new("projected_crs").with_attributes([("id", "Local")]),
                 ))?;
                 return Ok(());
             }
-            CrsType::Epsg(code) => ("EPSG", format!("+init=epsg:{code}"), format!("{code}")),
-            CrsType::Proj4(proj_string) => ("PROJ.4", proj_string.clone(), proj_string),
-            CrsType::GaussKrueger(code) => {
+            Self::Epsg(code) => ("EPSG", format!("+init=epsg:{code}"), format!("{code}")),
+            Self::Proj4(proj_string) => ("PROJ.4", proj_string.clone(), proj_string),
+            Self::GaussKrueger(code) => {
                 let lon = 3 * (code as u16);
                 let x = 500_000 + (code as u32 * 1_000_000);
                 (
@@ -104,7 +103,7 @@ impl CrsType {
                     format!("{code}"),
                 )
             }
-            CrsType::Utm(code) => {
+            Self::Utm(code) => {
                 let (proj_str, param_str) = if code < 0 {
                     // south
                     (

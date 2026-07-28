@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Write};
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Write as _};
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
@@ -51,7 +51,12 @@ pub struct Omap {
 }
 
 impl Omap {
-    /// Create a new georeferenced 1:15_000 map with a complete ISOM symbolset and color order
+    /// Create a new georeferenced `1:15_000` map with a complete ISOM symbolset and color order
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if georeferencing cannot be initialized or the
+    /// embedded default map cannot be parsed.
     #[cfg(feature = "geo_ref")]
     pub fn default_15_000_geo_referenced(
         projected_ref_point: Coord,
@@ -64,7 +69,12 @@ impl Omap {
         Ok(omap)
     }
 
-    /// Create a new georeferenced 1:10_000 map with a complete ISOM symbolset and color order
+    /// Create a new georeferenced `1:10_000` map with a complete ISOM symbolset and color order
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if georeferencing cannot be initialized or the
+    /// embedded default map cannot be parsed.
     #[cfg(feature = "geo_ref")]
     pub fn default_10_000_geo_referenced(
         projected_ref_point: Coord,
@@ -77,7 +87,12 @@ impl Omap {
         Ok(omap)
     }
 
-    /// Create a new georeferenced 1:4_000 map with a complete ISSprOM symbolset and color order
+    /// Create a new georeferenced `1:4_000` map with a complete `ISSprOM` symbolset and color order
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if georeferencing cannot be initialized or the
+    /// embedded default map cannot be parsed.
     #[cfg(feature = "geo_ref")]
     pub fn default_4_000_geo_referenced(
         projected_ref_point: Coord,
@@ -90,30 +105,42 @@ impl Omap {
         Ok(omap)
     }
 
-    /// Create a new 1:15_000 map with a complete ISOM symbolset and color order
+    /// Create a new `1:15_000` map with a complete ISOM symbolset and color order
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedded default map cannot be parsed.
     pub fn default_15_000() -> Result<Self> {
         Self::from_bytes(DEFAULT_ISOM_15000)
     }
 
-    /// Create a new 1:10_000 map with a complete ISOM symbolset and color order
+    /// Create a new `1:10_000` map with a complete ISOM symbolset and color order
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedded default map cannot be parsed.
     pub fn default_10_000() -> Result<Self> {
         Self::from_bytes(DEFAULT_ISOM_10000)
     }
 
-    /// Create a new 1:4_000 map with a complete ISSprOM symbolset and color order
+    /// Create a new `1:4_000` map with a complete `ISSprOM` symbolset and color order
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedded default map cannot be parsed.
     pub fn default_4_000() -> Result<Self> {
         Self::from_bytes(DEFAULT_ISSPROM_4000)
     }
 
     /// Create a new empty map
     pub fn new(scale_denominator: u32) -> Self {
-        Omap {
+        Self {
             notes: Default::default(),
             geo_referencing: GeoRef::new(scale_denominator),
             colors: ColorSet(Vec::new()),
             symbols: SymbolSet {
                 symbols: Vec::new(),
-                name: "Custom".to_string(),
+                name: "Custom".to_owned(),
             },
             parts: MapParts(vec![MapPart::new("Map")]),
             templates: Default::default(),
@@ -170,11 +197,11 @@ impl Omap {
                         }
                     }
                     b"templates" => {
-                        templates = Templates::parse(&mut reader, &bytes_start).unwrap_or_default()
+                        templates = Templates::parse(&mut reader, &bytes_start).unwrap_or_default();
                     }
                     b"view" => {
                         view = View::parse(&mut reader, &bytes_start, &mut templates)
-                            .unwrap_or_default()
+                            .unwrap_or_default();
                     }
                     _ => (),
                 },
@@ -183,7 +210,7 @@ impl Omap {
             }
         }
 
-        Ok(Omap {
+        Ok(Self {
             notes,
             geo_referencing: georef.ok_or(Error::MissingRequiredSection(
                 crate::OmapSection::Georeferencing,
@@ -207,12 +234,22 @@ impl Omap {
     ///
     /// The core sections `georeferencing`, `colors`, `symbols`, and `parts`
     /// must still parse successfully or else loading fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or a required map section
+    /// cannot be parsed.
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = File::open(path)?;
         Self::from_reader(BufReader::new(file))
     }
 
     /// Write the map to an `.omap` file at the given path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created or any map data cannot
+    /// be serialized.
     pub fn write_to_file(self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let file = File::create(path)?;
         let mut writer = Writer::new(BufWriter::new(file));
@@ -265,7 +302,7 @@ impl Omap {
     /// positions. Obtain the transform with
     /// [`MapTransform::affine_between`].
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        for part in self.parts.0.iter_mut() {
+        for part in &mut self.parts.0 {
             for object in part.iter_all_objects_mut() {
                 object.apply_affine(transform);
             }
@@ -276,6 +313,10 @@ impl Omap {
     /// Compute the affine transform between two [`MapTransform`]s and apply it
     /// to every object and non-georeferenced template. This is a convenience
     /// wrapper around [`MapTransform::affine_between`] + [`Omap::apply_affine`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `old` and `new` use different projections.
     pub fn apply_affine_between(&mut self, old: &MapTransform, new: &MapTransform) -> Result<()> {
         let affine = MapTransform::affine_between(old, new)?;
         self.apply_affine(&affine);

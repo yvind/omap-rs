@@ -1,7 +1,12 @@
 mod template;
 mod template_transform;
 
-pub use template::Template;
+pub use template::{
+    GdalTemplate, ImageTemplate, MapTemplate, OgrTemplate, Template, TemplateCommon, TrackTemplate,
+};
+pub use template_transform::{
+    AdjustmentState, Matrix3x3, PassPoint, TemplateTransform, TemplateTransformations,
+};
 
 use quick_xml::{
     Reader, Writer,
@@ -45,19 +50,19 @@ impl TemplateDefaults {
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"use_meters_per_pixel" => {
-                    d.use_meters_per_pixel = attr.as_bool().unwrap_or(d.use_meters_per_pixel)
+                    d.use_meters_per_pixel = attr.as_bool().unwrap_or(d.use_meters_per_pixel);
                 }
                 b"meters_per_pixel" => {
                     d.meters_per_pixel = parse_attr_raw(attr.value)
-                        .unwrap_or(d.meters_per_pixel.get())
+                        .unwrap_or_else(|_| d.meters_per_pixel.get())
                         .try_into()
-                        .unwrap_or_default()
+                        .unwrap_or_default();
                 }
                 b"dpi" => {
                     d.dpi = parse_attr_raw(attr.value)
-                        .unwrap_or(d.dpi.get())
+                        .unwrap_or_else(|_| d.dpi.get())
                         .try_into()
-                        .unwrap_or_default()
+                        .unwrap_or_default();
                 }
                 b"scale" => d.scale = parse_attr_raw(attr.value).unwrap_or(d.scale),
                 _ => {}
@@ -103,7 +108,7 @@ impl TemplateEntry {
 #[derive(Debug, Default, Clone)]
 pub struct Templates {
     /// The template entries, ordered back-to-front.
-    /// A [TemplateEntry] is a [Template] and [TemplateVisibility]
+    /// A [`TemplateEntry`] is a [Template] and [`TemplateVisibility`]
     pub template_entries: Vec<TemplateEntry>,
     /// Index of the first [Template] that is drawn in front of the map.
     /// Templates with `index >= first_front_template` are in front of the map.
@@ -172,7 +177,7 @@ impl Templates {
             })
             .collect();
 
-        Ok(Templates {
+        Ok(Self {
             template_entries,
             first_front_template,
             defaults,

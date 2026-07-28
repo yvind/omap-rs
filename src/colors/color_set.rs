@@ -9,11 +9,15 @@ use super::{Color, ColorComponent, WeakColor, color::ColorParseReturn};
 use crate::utils::{UnitF64, try_get_attr_raw};
 use crate::{Error, OmapSection, Result};
 
-/// The order of the [Color]s in the [Vec] is the order of priority
-/// Move the colors around to change priority, f.ex. using `color_set.0.swap(2, 5)`
-/// Deleting a [Color] from the [ColorSet] will drop that colors allocation (if no outstanding [Rc]s have been made)
-/// as [crate::symbols::Symbol]s and [ColorComponent]s in [super::MixedColor] only have [std::rc::Weak] references
-/// If a weak reference is referencing a deleted color at the time of writing to file, no color will be used
+/// An ordered set of map colors.
+///
+/// The order of the [`Color`] values in the [`Vec`] determines their priority.
+/// Move colors to change priority, for example with `color_set.0.swap(2, 5)`.
+///
+/// Deleting a color drops its allocation if there are no outstanding [`Rc`]
+/// references. Symbols and [`ColorComponent`] values only hold
+/// [`std::rc::Weak`] references. A dangling weak reference contributes no color
+/// when the map is written.
 #[derive(Debug, Clone, Default)]
 pub struct ColorSet(pub Vec<Color>);
 
@@ -42,7 +46,12 @@ impl ColorSet {
         }
     }
 
-    /// Insert a new color into the ColorSet with priority `index`, fails if `index > self.len()`
+    /// Insert a new color into the `ColorSet` with priority `index`, fails if `index > self.len()`
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ColorError`] if `index` is greater than the number of
+    /// colors.
     pub fn insert(&mut self, index: usize, color: impl Into<Color>) -> Result<()> {
         if index > self.len() {
             return Err(Error::ColorError);
@@ -104,7 +113,7 @@ impl ColorSet {
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
-    ) -> Result<ColorSet> {
+    ) -> Result<Self> {
         let num_colors = try_get_attr_raw(element, "count")?.ok_or(Error::ColorError)?;
         let mut colors_and_components = Vec::with_capacity(num_colors);
 
@@ -136,7 +145,7 @@ impl ColorSet {
         for color_parse_return in colors_and_components {
             match color_parse_return {
                 ColorParseReturn::Spot { color, priority } => {
-                    spot_colors.push((Rc::new(RefCell::new(color)), priority))
+                    spot_colors.push((Rc::new(RefCell::new(color)), priority));
                 }
                 ColorParseReturn::Mix {
                     color,
@@ -169,9 +178,7 @@ impl ColorSet {
         );
         parsed_colors.sort_by(|a, b| a.1.cmp(&b.1));
 
-        Ok(ColorSet(
-            parsed_colors.into_iter().map(|(c, _)| c).collect(),
-        ))
+        Ok(Self(parsed_colors.into_iter().map(|(c, _)| c).collect()))
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
@@ -183,9 +190,9 @@ impl ColorSet {
             match color {
                 Color::SpotColor(ref_cell) => ref_cell.try_borrow()?.write(writer, priority)?,
                 Color::MixedColor(ref_cell) => {
-                    ref_cell.try_borrow()?.write(writer, priority, &self)?
+                    ref_cell.try_borrow()?.write(writer, priority, &self)?;
                 }
-            };
+            }
             writer.get_mut().write_all(b"\n".as_slice())?;
         }
         writer.write_event(Event::End(BytesEnd::new("colors")))?;

@@ -17,7 +17,7 @@ impl<'writer> OmapVersion {
         let xmlns = try_get_attr_raw(element, "xmlns")?;
         let version = try_get_attr_raw::<u8>(element, "version")?;
 
-        if xmlns != Some("http://openorienteering.org/apps/mapper/xml/v2".to_string()) {
+        if xmlns != Some("http://openorienteering.org/apps/mapper/xml/v2".to_owned()) {
             return Err(Error::UnsupportedOmapNamespace);
         }
         let version = version.ok_or(Error::MissingOmapVersion)?;
@@ -76,7 +76,7 @@ impl FromStr for Encoding {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "UTF-8" | "utf-8" | "Utf-8" => Ok(Encoding::Utf8),
+            "UTF-8" | "utf-8" | "Utf-8" => Ok(Self::Utf8),
             _ => Err(Error::UnsupportedXmlEncoding),
         }
     }

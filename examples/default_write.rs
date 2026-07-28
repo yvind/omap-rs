@@ -1,3 +1,12 @@
+#![expect(
+    clippy::print_stdout,
+    reason = "the example intentionally displays the map data it reads"
+)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "the bundled default map is known to contain these symbols and colors"
+)]
+
 use geo_types::{Coord, LineString};
 #[cfg(feature = "geo_ref")]
 use omap::geo_referencing::CrsType;
@@ -49,8 +58,7 @@ fn main() -> Result<(), Error> {
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
-    ls.tags
-        .insert("Some Key".to_string(), "My value".to_string());
+    ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts.0[0].add_object(ls);
 
@@ -61,7 +69,7 @@ fn main() -> Result<(), Error> {
         }
     }
     if let Some(s) = map.symbols.get_symbol_by_name("Railway, Olive background") {
-        println!("{:?}", s);
+        println!("{s:?}");
     }
 
     let mut num = 0;

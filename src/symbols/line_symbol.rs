@@ -51,13 +51,13 @@ pub struct LineSymbol {
 
 impl LineSymbol {
     /// Create a new empty line symbol with the given code and name.
-    pub fn new(code: Code, name: impl Into<String>) -> LineSymbol {
+    pub fn new(code: Code, name: impl Into<String>) -> Self {
         let common = SymbolCommon {
             code,
             name: name.into(),
             ..Default::default()
         };
-        LineSymbol {
+        Self {
             common,
             border: None,
             start_symbol: None,
@@ -158,9 +158,10 @@ pub struct DashSymbol {
     pub dash_symbol: PointSymbol,
 }
 
+/// Point symbols placed at regular positions along a line.
 #[derive(Debug, Clone)]
 pub struct MidSymbol {
-    /// Number of mid symbols per
+    /// Number of mid symbols per placement spot.
     pub mid_symbols_per_spot: u16,
     /// Distance in mm
     pub mid_symbol_distance: NonNegativeF64,
@@ -195,10 +196,10 @@ impl FromStr for CapStyle {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "0" => Ok(CapStyle::Flat),
-            "1" => Ok(CapStyle::Round),
-            "2" => Ok(CapStyle::Square),
-            "3" => Ok(CapStyle::Pointed),
+            "0" => Ok(Self::Flat),
+            "1" => Ok(Self::Round),
+            "2" => Ok(Self::Square),
+            "3" => Ok(Self::Pointed),
             _ => Err(Error::UnknownCapStyle),
         }
     }
@@ -221,15 +222,15 @@ impl FromStr for JoinStyle {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "0" => Ok(JoinStyle::Bevel),
-            "1" => Ok(JoinStyle::Miter),
-            "2" => Ok(JoinStyle::Round),
+            "0" => Ok(Self::Bevel),
+            "1" => Ok(Self::Miter),
+            "2" => Ok(Self::Round),
             _ => Err(Error::UnknownJoinStyle),
         }
     }
 }
 
-#[allow(clippy::enum_variant_names)]
+/// Placement of mid symbols relative to the line's dash pattern.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum MidSymbolPlacement {
     /// Mid symbols on every dash
@@ -247,9 +248,9 @@ impl FromStr for MidSymbolPlacement {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "0" => Ok(MidSymbolPlacement::CenterOfDash),
-            "1" => Ok(MidSymbolPlacement::CenterOfDashGroup),
-            "2" => Ok(MidSymbolPlacement::CenterOfGap),
+            "0" => Ok(Self::CenterOfDash),
+            "1" => Ok(Self::CenterOfDashGroup),
+            "2" => Ok(Self::CenterOfGap),
             _ => Err(Error::UnknownMidSymbolPlacement),
         }
     }
@@ -306,7 +307,7 @@ impl LineSymbolBorder {
         } else {
             None
         };
-        Ok(LineSymbolBorder {
+        Ok(Self {
             color,
             width,
             shift,
@@ -379,7 +380,7 @@ pub enum DashStyle {
 
 impl Default for DashStyle {
     fn default() -> Self {
-        DashStyle::NotDashed {
+        Self::NotDashed {
             segment_length: NonNegativeF64::clamped_from(4.),
             end_length: NonNegativeF64::default(),
         }
@@ -393,26 +394,34 @@ pub enum GroupDashes {
     Grouped {
         /// allowed to be in range 2..=4
         dashes_in_group: u8,
+        /// Length of the gap between dashes within a group.
         in_group_break_length: NonNegativeF64,
     },
     /// Dashes are not grouped.
-    UnGrouped { half_outer_dashes: bool },
+    UnGrouped {
+        /// Whether the first and last dashes use half their normal length.
+        half_outer_dashes: bool,
+    },
 }
 
 impl Default for GroupDashes {
     fn default() -> Self {
-        GroupDashes::UnGrouped {
+        Self::UnGrouped {
             half_outer_dashes: false,
         }
     }
 }
 
 impl LineSymbol {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "line-symbol parsing maps a large file-format record"
+    )]
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
-    ) -> Result<LineSymbol> {
+    ) -> Result<Self> {
         let mut common = attributes;
         let mut color = SymbolColor::NoColor;
         let mut line_width = NonNegativeF64::default();
@@ -565,7 +574,7 @@ impl LineSymbol {
             dash_symbol: ps,
         });
 
-        Ok(LineSymbol {
+        Ok(Self {
             common,
             border,
             start_symbol,
@@ -674,6 +683,10 @@ impl LineSymbol {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "line-symbol serialization maps a large file-format record"
+    )]
     pub(super) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,

@@ -31,32 +31,25 @@ pub enum Template {
 /// A raster image template.
 #[derive(Debug, Clone)]
 pub struct ImageTemplate {
+    /// Fields shared by every template kind.
     pub common: TemplateCommon,
-}
-
-impl ImageTemplate {
-    fn write<W: std::io::Write>(&self, _writer: &mut Writer<W>) -> Result<()> {
-        Ok(())
-    }
 }
 
 /// A map file template.
 #[derive(Debug, Clone)]
 pub struct MapTemplate {
+    /// Fields shared by every template kind.
     pub common: TemplateCommon,
-}
-
-impl MapTemplate {
-    fn write<W: std::io::Write>(&self, _writer: &mut Writer<W>) -> Result<()> {
-        Ok(())
-    }
 }
 
 /// A GPS track template.
 #[derive(Debug, Clone)]
 pub struct TrackTemplate {
+    /// Fields shared by every template kind.
     pub common: TemplateCommon,
+    /// Coordinate reference system of the track data.
     pub track_crs_spec: String,
+    /// Projected coordinate reference system used for the track.
     pub projected_crs_spec: String,
 }
 
@@ -79,7 +72,9 @@ impl TrackTemplate {
 /// A geospatial raster data template (via GDAL).
 #[derive(Debug, Clone)]
 pub struct GdalTemplate {
+    /// Fields shared by every template kind.
     pub common: TemplateCommon,
+    /// Coordinate reference system of the raster data.
     pub crs_spec: String,
 }
 
@@ -95,9 +90,13 @@ impl GdalTemplate {
 /// A geospatial vector data template (via OGR).
 #[derive(Debug, Clone)]
 pub struct OgrTemplate {
+    /// Fields shared by every template kind.
     pub common: TemplateCommon,
+    /// Coordinate reference system of the vector data.
     pub crs_spec: String,
+    /// Coordinate reference system of any associated track data.
     pub track_crs_spec: String,
+    /// Projected coordinate reference system used for the data.
     pub projected_crs_spec: String,
 }
 
@@ -126,22 +125,22 @@ impl Template {
     /// Get the common properties shared by all template types.
     pub fn get_common(&self) -> &TemplateCommon {
         match self {
-            Template::Image(t) => &t.common,
-            Template::Map(t) => &t.common,
-            Template::Track(t) => &t.common,
-            Template::Gdal(t) => &t.common,
-            Template::Ogr(t) => &t.common,
+            Self::Image(t) => &t.common,
+            Self::Map(t) => &t.common,
+            Self::Track(t) => &t.common,
+            Self::Gdal(t) => &t.common,
+            Self::Ogr(t) => &t.common,
         }
     }
 
     /// Get the mutable common properties shared by all template types.
     pub fn get_common_mut(&mut self) -> &mut TemplateCommon {
         match self {
-            Template::Image(t) => &mut t.common,
-            Template::Map(t) => &mut t.common,
-            Template::Track(t) => &mut t.common,
-            Template::Gdal(t) => &mut t.common,
-            Template::Ogr(t) => &mut t.common,
+            Self::Image(t) => &mut t.common,
+            Self::Map(t) => &mut t.common,
+            Self::Track(t) => &mut t.common,
+            Self::Gdal(t) => &mut t.common,
+            Self::Ogr(t) => &mut t.common,
         }
     }
 
@@ -163,11 +162,11 @@ impl Template {
     /// Returns the template type name as used in the XML format.
     pub fn type_name(&self) -> &'static str {
         match self {
-            Template::Image(_) => "TemplateImage",
-            Template::Map(_) => "TemplateMap",
-            Template::Track(_) => "TemplateTrack",
-            Template::Gdal(_) => "GdalTemplate",
-            Template::Ogr(_) => "OgrTemplate",
+            Self::Image(_) => "TemplateImage",
+            Self::Map(_) => "TemplateMap",
+            Self::Track(_) => "TemplateTrack",
+            Self::Gdal(_) => "GdalTemplate",
+            Self::Ogr(_) => "OgrTemplate",
         }
     }
 
@@ -238,20 +237,20 @@ impl Template {
         };
 
         let template = match template_type.as_str() {
-            "TemplateTrack" => Template::Track(TrackTemplate {
+            "TemplateTrack" => Self::Track(TrackTemplate {
                 common,
                 track_crs_spec,
                 projected_crs_spec,
             }),
-            "TemplateMap" => Template::Map(MapTemplate { common }),
-            "GdalTemplate" => Template::Gdal(GdalTemplate { common, crs_spec }),
-            "OgrTemplate" => Template::Ogr(OgrTemplate {
+            "TemplateMap" => Self::Map(MapTemplate { common }),
+            "GdalTemplate" => Self::Gdal(GdalTemplate { common, crs_spec }),
+            "OgrTemplate" => Self::Ogr(OgrTemplate {
                 common,
                 crs_spec,
                 track_crs_spec,
                 projected_crs_spec,
             }),
-            "TemplateImage" => Template::Image(ImageTemplate { common }),
+            "TemplateImage" => Self::Image(ImageTemplate { common }),
             _ => return Err(Error::TemplateError),
         };
         Ok(template)
@@ -288,11 +287,10 @@ impl Template {
         }
 
         match &self {
-            Template::Gdal(t) => t.write(writer)?,
-            Template::Track(t) => t.write(writer)?,
-            Template::Ogr(t) => t.write(writer)?,
-            Template::Image(t) => t.write(writer)?,
-            Template::Map(t) => t.write(writer)?,
+            Self::Gdal(t) => t.write(writer)?,
+            Self::Track(t) => t.write(writer)?,
+            Self::Ogr(t) => t.write(writer)?,
+            Self::Image(_) | Self::Map(_) => {}
         }
 
         writer.write_event(Event::End(BytesEnd::new("template")))?;

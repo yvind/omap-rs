@@ -26,17 +26,17 @@ pub struct SymbolSet {
 }
 
 impl SymbolSet {
-    /// Get the number of symbols in the [SymbolSet].
+    /// Get the number of symbols in the [`SymbolSet`].
     pub fn len(&self) -> usize {
         self.symbols.len()
     }
 
-    /// Add a new symbol to the [SymbolSet]
+    /// Add a new symbol to the [`SymbolSet`]
     pub fn push(&mut self, symbol: impl Into<Symbol>) {
         self.symbols.push(symbol.into());
     }
 
-    /// Get a symbol by its index in the [SymbolSet]
+    /// Get a symbol by its index in the [`SymbolSet`]
     pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
         if id >= self.len() {
             None
@@ -54,7 +54,7 @@ impl SymbolSet {
 
     /// Find a [Symbol] by its display name. The first match is returned.
     /// If a symbol cannot be borrowed for name checking (because it is mutably borrowed somewhere else) it is simply skipped.
-    /// This means that a symbol-name that actually exists in the [SymbolSet] can return `None` in some cases
+    /// This means that a symbol-name that actually exists in the [`SymbolSet`] can return `None` in some cases
     pub fn get_symbol_by_name(&self, name: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|s| match s {
             Symbol::Line(ref_cell) => ref_cell
@@ -162,12 +162,16 @@ impl SymbolSet {
 }
 
 impl SymbolSet {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "symbol-set parsing also resolves combined-symbol references"
+    )]
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         colors: &ColorSet,
-    ) -> Result<SymbolSet> {
-        let symbol_set_name = try_get_attr(element, "id")?.unwrap_or("Custom".to_string());
+    ) -> Result<Self> {
+        let symbol_set_name = try_get_attr(element, "id")?.unwrap_or_else(|| "Custom".to_owned());
         let count = try_get_attr_raw(element, "count")
             .ok()
             .flatten()
@@ -207,8 +211,11 @@ impl SymbolSet {
         if symbols.iter().any(|s| s.is_none()) {
             return Err(Error::SymbolCountMismatch);
         }
-        let mut symbol_set = SymbolSet {
-            symbols: symbols.into_iter().collect::<Option<Vec<_>>>().unwrap(),
+        let mut symbol_set = Self {
+            symbols: symbols
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+                .ok_or(Error::SymbolCountMismatch)?,
             name: symbol_set_name,
         };
 
@@ -232,7 +239,7 @@ impl SymbolSet {
                     matches!(
                         symbol_set.symbols.get(id),
                         // Point and text is not allowed in combined symbol, that is treated later on
-                        Some(Symbol::Area(_)) | Some(Symbol::Point(_)) | Some(Symbol::Text(_))
+                        Some(Symbol::Area(_) | Symbol::Point(_) | Symbol::Text(_))
                     )
                 });
                 if has_area_public {
@@ -328,7 +335,7 @@ impl SymbolSet {
                             WeakSymbol::CombinedLine(weak) => {
                                 symb.add_component(PublicOrPrivateSymbol::Public(
                                     WeakLinePathSymbol::CombinedLine(weak),
-                                ))?
+                                ))?;
                             }
                             _ => return Err(Error::CombinedLineSymbolContainsNonLine),
                         }

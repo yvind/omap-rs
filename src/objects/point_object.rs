@@ -28,7 +28,7 @@ pub struct PointObject {
 impl PointObject {
     /// Create a new point object with the given symbol and position.
     pub fn new(symbol: Weak<RefCell<PointSymbol>>, geometry: Point) -> Self {
-        PointObject {
+        Self {
             tags: HashMap::new(),
             rotation: 0.0,
             symbol,
@@ -138,7 +138,7 @@ impl PointObject {
         reader: &mut Reader<R>,
         symbol: Weak<RefCell<PointSymbol>>,
         rotation: f64,
-    ) -> Result<PointObject> {
+    ) -> Result<Self> {
         let mut tags = HashMap::new();
         let mut point = None;
         let mut buf = Vec::new();
@@ -177,7 +177,7 @@ impl PointObject {
                 _ => (),
             }
         }
-        Ok(PointObject {
+        Ok(Self {
             tags,
             rotation,
             symbol,

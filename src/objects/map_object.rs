@@ -36,52 +36,52 @@ impl MapObject {
     /// Get a non-owning reference to the symbol associated with this object.
     pub fn get_weak_symbol(&self) -> WeakSymbol {
         match self {
-            MapObject::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
-            MapObject::Line(line_object) => match &line_object.symbol {
+            Self::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
+            Self::Line(line_object) => match &line_object.symbol {
                 WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
                 WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
             },
-            MapObject::Area(area_object) => match &area_object.symbol {
+            Self::Area(area_object) => match &area_object.symbol {
                 WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
                 WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
             },
-            MapObject::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
+            Self::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
         }
     }
 
     /// Get the tags of the object
     pub fn tags(&self) -> &HashMap<String, String> {
         match self {
-            MapObject::Point(o) => &o.tags,
-            MapObject::Line(o) => &o.tags,
-            MapObject::Area(o) => &o.tags,
-            MapObject::Text(o) => &o.tags,
+            Self::Point(o) => &o.tags,
+            Self::Line(o) => &o.tags,
+            Self::Area(o) => &o.tags,
+            Self::Text(o) => &o.tags,
         }
     }
 
     /// Get mutable tags of the object
     pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
         match self {
-            MapObject::Point(o) => &mut o.tags,
-            MapObject::Line(o) => &mut o.tags,
-            MapObject::Area(o) => &mut o.tags,
-            MapObject::Text(o) => &mut o.tags,
+            Self::Point(o) => &mut o.tags,
+            Self::Line(o) => &mut o.tags,
+            Self::Area(o) => &mut o.tags,
+            Self::Text(o) => &mut o.tags,
         }
     }
 
     /// Get a weak pointer to the objects symbol
     pub fn get_symbol(&self) -> WeakSymbol {
         match self {
-            MapObject::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
-            MapObject::Line(line_object) => match &line_object.symbol {
+            Self::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
+            Self::Line(line_object) => match &line_object.symbol {
                 WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
                 WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
             },
-            MapObject::Area(area_object) => match &area_object.symbol {
+            Self::Area(area_object) => match &area_object.symbol {
                 WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
                 WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
             },
-            MapObject::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
+            Self::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
         }
     }
 
@@ -91,10 +91,10 @@ impl MapObject {
         symbol_set: &SymbolSet,
     ) -> Result<()> {
         match self {
-            MapObject::Point(point_object) => point_object.write(writer, symbol_set)?,
-            MapObject::Line(line_object) => line_object.write(writer, symbol_set)?,
-            MapObject::Area(area_object) => area_object.write(writer, symbol_set)?,
-            MapObject::Text(text_object) => text_object.write(writer, symbol_set)?,
+            Self::Point(point_object) => point_object.write(writer, symbol_set)?,
+            Self::Line(line_object) => line_object.write(writer, symbol_set)?,
+            Self::Area(area_object) => area_object.write(writer, symbol_set)?,
+            Self::Text(text_object) => text_object.write(writer, symbol_set)?,
         }
         Ok(())
     }
@@ -103,35 +103,35 @@ impl MapObject {
     /// Bézier control points for line and area objects.
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
         match self {
-            MapObject::Point(o) => o.apply_affine(transform),
-            MapObject::Line(o) => o.apply_affine(transform),
-            MapObject::Area(o) => o.apply_affine(transform),
-            MapObject::Text(o) => o.apply_affine(transform),
+            Self::Point(o) => o.apply_affine(transform),
+            Self::Line(o) => o.apply_affine(transform),
+            Self::Area(o) => o.apply_affine(transform),
+            Self::Text(o) => o.apply_affine(transform),
         }
     }
 }
 
 impl From<AreaObject> for MapObject {
     fn from(value: AreaObject) -> Self {
-        MapObject::Area(value)
+        Self::Area(value)
     }
 }
 
 impl From<LineObject> for MapObject {
     fn from(value: LineObject) -> Self {
-        MapObject::Line(value)
+        Self::Line(value)
     }
 }
 
 impl From<PointObject> for MapObject {
     fn from(value: PointObject) -> Self {
-        MapObject::Point(value)
+        Self::Point(value)
     }
 }
 
 impl From<TextObject> for MapObject {
     fn from(value: TextObject) -> Self {
-        MapObject::Text(value)
+        Self::Text(value)
     }
 }
 
@@ -141,7 +141,7 @@ impl MapObject {
         bytes_start: &BytesStart<'_>,
         symbols: &SymbolSet,
         is_line_element: bool,
-    ) -> Result<MapObject> {
+    ) -> Result<Self> {
         let mut object_type = None;
         let mut symbol_id = None;
         let mut rotation = 0.;
@@ -169,7 +169,7 @@ impl MapObject {
         };
 
         if is_line_element {
-            object_type = ObjectType::Line
+            object_type = ObjectType::Line;
         }
 
         // for elements the symbol_id is not given as the symbol is given in the element and we need to create a dummy weaksymbol
@@ -200,24 +200,26 @@ impl MapObject {
 
         match (object_type, weak_symbol) {
             (ObjectType::Point, WeakSymbol::Point(ps)) => {
-                Ok(MapObject::Point(PointObject::parse(reader, ps, rotation)?))
+                Ok(Self::Point(PointObject::parse(reader, ps, rotation)?))
             }
-            (ObjectType::Line, WeakSymbol::Line(ls)) => Ok(MapObject::Line(LineObject::parse(
+            (ObjectType::Line, WeakSymbol::Line(ls)) => Ok(Self::Line(LineObject::parse(
                 reader,
                 WeakLinePathSymbol::Line(ls),
             )?)),
-            (ObjectType::Line, WeakSymbol::CombinedLine(cls)) => Ok(MapObject::Line(
-                LineObject::parse(reader, WeakLinePathSymbol::CombinedLine(cls))?,
-            )),
+            (ObjectType::Line, WeakSymbol::CombinedLine(cls)) => Ok(Self::Line(LineObject::parse(
+                reader,
+                WeakLinePathSymbol::CombinedLine(cls),
+            )?)),
             // do not bother sending rotation to the AreaObject as it is also given in the pattern rotation
-            (ObjectType::Area, WeakSymbol::Area(ars)) => Ok(MapObject::Area(AreaObject::parse(
+            (ObjectType::Area, WeakSymbol::Area(ars)) => Ok(Self::Area(AreaObject::parse(
                 reader,
                 WeakAreaPathSymbol::Area(ars),
             )?)),
-            (ObjectType::Area, WeakSymbol::CombinedArea(cas)) => Ok(MapObject::Area(
-                AreaObject::parse(reader, WeakAreaPathSymbol::CombinedArea(cas))?,
-            )),
-            (ObjectType::Text, WeakSymbol::Text(ts)) => Ok(MapObject::Text(TextObject::parse(
+            (ObjectType::Area, WeakSymbol::CombinedArea(cas)) => Ok(Self::Area(AreaObject::parse(
+                reader,
+                WeakAreaPathSymbol::CombinedArea(cas),
+            )?)),
+            (ObjectType::Text, WeakSymbol::Text(ts)) => Ok(Self::Text(TextObject::parse(
                 reader, ts, h_align, v_align, rotation,
             )?)),
             _ => Err(Error::ObjectError),
