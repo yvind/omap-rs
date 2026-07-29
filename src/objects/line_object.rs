@@ -1,13 +1,16 @@
-use std::collections::HashMap;
+use std::{cell::OnceCell, collections::HashMap};
 
 use geo_types::{Coord, LineString};
-use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
+use linestring2bezier::BezierString;
 use quick_xml::{
     Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{BezierPath, FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
+use super::{
+    BezierPath, COORD_FLAG_CURVE_START, COORD_FLAGS_RING_END, FileCoord, bezier_from_raw_coords,
+    file_coords_from_bezier,
+};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
@@ -22,9 +25,11 @@ pub struct LineObject {
     pub tags: HashMap<String, String>,
     /// The line or combined-line symbol used to render this object.
     pub symbol: WeakLinePathSymbol,
-    /// Whether the coordinates should be written back as bezier curves and the permitted error. Minimum error for attempting bezier conversion is 0.1
-    pub write_as_bezier: Option<NonNegativeF64>,
-    geometry: LineString,
+    /// The permitted error when fitting Bézier curves for writing.
+    ///
+    /// Bézier fitting is enabled when this is [`Some`].
+    pub bezier_write_error: Option<NonNegativeF64>,
+    geometry: OnceCell<LineString>,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
     raw_map_coords: Vec<FileCoord>,
@@ -37,39 +42,90 @@ impl LineObject {
         Self {
             tags: HashMap::new(),
             symbol: symbol.into(),
-            write_as_bezier: None,
-            geometry,
+            bezier_write_error: None,
+            geometry: OnceCell::from(geometry),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
     }
 
-    /// Get a shared reference to the line geometry.
-    pub fn get_geometry(&self) -> &LineString {
-        &self.geometry
+    /// Get the line geometry, flattening and caching raw Bézier coordinates
+    /// when needed.
+    ///
+    /// `allowed_error` is used only when initializing the cache. Later calls
+    /// return the previously cached geometry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the raw geometry cannot be flattened with the
+    /// requested error tolerance.
+    pub fn get_geometry(&self, allowed_error: f64) -> Result<&LineString> {
+        if let Some(geometry) = self.geometry.get() {
+            return Ok(geometry);
+        }
+
+        let geometry = self.flattened_geometry(allowed_error)?;
+        self.geometry
+            .set(geometry)
+            .map_err(|_geometry| Error::ObjectError)?;
+        self.geometry.get().ok_or(Error::ObjectError)
     }
 
-    /// Get the original line geometry as a mixed straight/cubic Bézier path,
-    /// including dash-point metadata for its segment-end vertices.
+    /// Rebuild the original line geometry as a mixed straight/cubic Bézier
+    /// path, including dash-point metadata for every vertex.
     ///
     /// This is generated directly from the original file coordinates and
     /// therefore preserves the exact Bézier handles. Returns [`None`] when the
     /// object was not read from raw file coordinates or after
     /// [`Self::get_geometry_mut`] has marked those coordinates as touched.
+    pub fn bezier_geometry(&self) -> Option<BezierPath> {
+        (!self.is_coords_touched).then(|| bezier_from_raw_coords(&self.raw_map_coords))
+    }
+
+    /// Rebuild the original line geometry as a mixed straight/cubic Bézier
+    /// path.
+    ///
+    /// Prefer [`Self::bezier_geometry`], whose name makes the reconstruction
+    /// cost explicit.
+    #[deprecated(note = "renamed to bezier_geometry")]
     pub fn get_geometry_bezier(&self) -> Option<BezierPath> {
-        (!self.is_coords_touched && !self.raw_map_coords.is_empty())
-            .then(|| bezier_from_raw_coords(&self.raw_map_coords))
+        self.bezier_geometry()
     }
 
-    /// Get a mutable reference to the line geometry (marks coords as touched).
-    pub fn get_geometry_mut(&mut self) -> &mut LineString {
+    /// Get a mutable reference to the line geometry, flattening it first when
+    /// needed, and mark the coordinates as touched.
+    ///
+    /// `allowed_error` is used only when initializing the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the raw geometry cannot be flattened with the
+    /// requested error tolerance.
+    pub fn get_geometry_mut(&mut self, allowed_error: f64) -> Result<&mut LineString> {
+        if self.geometry.get().is_none() {
+            let geometry = self.flattened_geometry(allowed_error)?;
+            self.geometry
+                .set(geometry)
+                .map_err(|_geometry| Error::ObjectError)?;
+        }
         self.is_coords_touched = true;
-        &mut self.geometry
+        self.geometry.get_mut().ok_or(Error::ObjectError)
     }
 
-    /// Consume this object and return its geometry.
-    pub fn into_geometry(self) -> LineString {
-        self.geometry
+    /// Consume this object and return its line geometry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if uncached raw geometry cannot be flattened with the
+    /// requested error tolerance.
+    pub fn into_geometry(self, allowed_error: f64) -> Result<LineString> {
+        if self.geometry.get().is_none() {
+            let geometry = self.flattened_geometry(allowed_error)?;
+            self.geometry
+                .set(geometry)
+                .map_err(|_geometry| Error::ObjectError)?;
+        }
+        self.geometry.into_inner().ok_or(Error::ObjectError)
     }
 
     /// Create a `LineObject` for use as a `PointSymbol` element (no map symbol needed)
@@ -77,25 +133,40 @@ impl LineObject {
         Self {
             tags: HashMap::new(),
             symbol: WeakLinePathSymbol::Line(std::rc::Weak::new()),
-            write_as_bezier: None,
-            geometry,
+            bezier_write_error: None,
+            geometry: OnceCell::from(geometry),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
     }
 
-    /// Get the raw file coordinates in mm with their flags.
+    /// Iterate over the raw file coordinates in mm with their flags.
     ///
     /// These are the original control points (including Bézier handles) as read
-    /// from the file, converted from µm integers to mm floats. The flags encode
-    /// Bézier start (1), close/hole (2), dash point (4/16/32), etc.
+    /// from the file, converted from µm integers to mm floats. See the
+    /// `COORD_FLAG_*` constants in this module for the flag assignments.
     ///
-    /// The returned vec is empty for objects not read from file data
-    pub fn get_raw_coords(&self) -> Vec<(Coord, u8)> {
+    /// The iterator is empty for objects not read from file data.
+    pub fn raw_coords(&self) -> impl ExactSizeIterator<Item = (Coord, u8)> + '_ {
         self.raw_map_coords
             .iter()
             .map(|(c, flag)| (from_file_coords(*c), *flag))
-            .collect()
+    }
+
+    /// Get the raw file coordinates in mm with their flags.
+    ///
+    /// Prefer [`Self::raw_coords`] when a collected [`Vec`] is not needed.
+    #[deprecated(note = "use the allocation-free raw_coords iterator")]
+    pub fn get_raw_coords(&self) -> Vec<(Coord, u8)> {
+        self.raw_coords().collect()
+    }
+
+    pub(crate) fn geometry_is_empty(&self) -> bool {
+        self.geometry
+            .get()
+            .map_or(self.raw_map_coords.len() < 2, |geometry| {
+                geometry.0.is_empty()
+            })
     }
 
     /// Apply an affine coordinate transform to both the geometry and the raw
@@ -104,9 +175,11 @@ impl LineObject {
     /// This does **not** mark the coordinates as touched, so the raw (affine transformed) control
     /// points (with Bézier flags) will still be used on write.
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        // Transform the discretized geometry
-        for coord in &mut self.geometry.0 {
-            *coord = transform.apply(*coord);
+        // Transform the discretized geometry if it has been initialized.
+        if let Some(geometry) = self.geometry.get_mut() {
+            for coord in &mut geometry.0 {
+                *coord = transform.apply(*coord);
+            }
         }
         // Transform raw control points — flags stay unchanged
         for (file_coord, _flag) in &mut self.raw_map_coords {
@@ -121,7 +194,9 @@ impl LineObject {
 
     /// Reverses a geometry and the input xml without marking it as touched
     pub fn reverse_linestring(&mut self) {
-        self.geometry.0.reverse();
+        if let Some(geometry) = self.geometry.get_mut() {
+            geometry.0.reverse();
+        }
         self.raw_map_coords = reverse_raw_line_coords(&self.raw_map_coords);
     }
 
@@ -187,152 +262,48 @@ impl LineObject {
             super::write_tags(writer, &self.tags)?;
         }
 
-        if !self.is_coords_touched && !self.raw_map_coords.is_empty() {
+        if !self.is_coords_touched {
             super::write_raw_coords(writer, &self.raw_map_coords)?;
         } else {
-            if self.geometry.0.len() < 2 {
+            let geometry = self.geometry.get().ok_or(Error::ObjectError)?;
+            if geometry.0.len() < 2 {
                 return Err(Error::ObjectError);
             }
-            self.write_geometry_coords(writer)?;
+            self.write_geometry_coords(writer, geometry)?;
         }
         writer.write_event(Event::End(BytesEnd::new("object")))?;
         Ok(())
     }
 
-    /// Write coords from the geometry, as bezier if `self.write_as_bezier`
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Bézier serialization handles each segment combination explicitly"
-    )]
-    fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let content = if let Some(bezier_error) = self.write_as_bezier
-            && bezier_error.get() > PARSE_BEZIER_ERROR
-        {
-            let bezier = BezierString::from_line_string(self.geometry.clone(), bezier_error.get())?;
-
-            let num_coords = bezier.num_points();
-
-            let bs = BytesStart::new("coords")
-                .with_attributes([("count", num_coords.to_string().as_str())]);
-            writer.write_event(Event::Start(bs))?;
-
-            let mut content = String::with_capacity(num_coords * 18);
-
-            let mut i = 0;
-            while i < bezier.num_segments() - 1 {
-                let current_segment = &bezier.0[i];
-                match current_segment {
-                    BezierSegment::Bezier(bezier_curve) => {
-                        let s = to_file_coords(bezier_curve.start)?;
-                        content.push_str(&s.x.to_string());
-                        content.push(' ');
-                        content.push_str(&s.y.to_string());
-                        content.push_str(" 1;");
-
-                        let h1 = to_file_coords(bezier_curve.handle1)?;
-                        content.push_str(&h1.x.to_string());
-                        content.push(' ');
-                        content.push_str(&h1.y.to_string());
-                        content.push(';');
-
-                        let h2 = to_file_coords(bezier_curve.handle2)?;
-                        content.push_str(&h2.x.to_string());
-                        content.push(' ');
-                        content.push_str(&h2.y.to_string());
-                        content.push(';');
-                    }
-                    BezierSegment::Line(line) => {
-                        let c = to_file_coords(line.start)?;
-                        content.push_str(&c.x.to_string());
-                        content.push(' ');
-                        content.push_str(&c.y.to_string());
-                        content.push(';');
-                    }
-                }
-                i += 1;
-            }
-            let last_segment = &bezier.0[bezier.num_segments() - 1];
-            match last_segment {
-                BezierSegment::Bezier(bezier_curve) => {
-                    let s = to_file_coords(bezier_curve.start)?;
-                    content.push_str(&s.x.to_string());
-                    content.push(' ');
-                    content.push_str(&s.y.to_string());
-                    content.push_str(" 1;");
-
-                    let h1 = to_file_coords(bezier_curve.handle1)?;
-                    content.push_str(&h1.x.to_string());
-                    content.push(' ');
-                    content.push_str(&h1.y.to_string());
-                    content.push(';');
-
-                    let h2 = to_file_coords(bezier_curve.handle2)?;
-                    content.push_str(&h2.x.to_string());
-                    content.push(' ');
-                    content.push_str(&h2.y.to_string());
-                    content.push(';');
-
-                    let e = to_file_coords(bezier_curve.end)?;
-                    content.push_str(&e.x.to_string());
-                    content.push(' ');
-                    content.push_str(&e.y.to_string());
-                    if self.geometry.is_closed() {
-                        content.push_str(" 18;");
-                    } else {
-                        content.push(';');
-                    }
-                }
-                BezierSegment::Line(line) => {
-                    let c = to_file_coords(line.start)?;
-                    content.push_str(&c.x.to_string());
-                    content.push(' ');
-                    content.push_str(&c.y.to_string());
-                    content.push(';');
-                    let c = to_file_coords(line.end)?;
-                    content.push_str(&c.x.to_string());
-                    content.push(' ');
-                    content.push_str(&c.y.to_string());
-                    if self.geometry.is_closed() {
-                        content.push_str(" 18;");
-                    } else {
-                        content.push(';');
-                    }
-                }
-            }
-            content
+    /// Write coords from the geometry, fitting Béziers when requested.
+    fn write_geometry_coords<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        geometry: &LineString,
+    ) -> Result<()> {
+        let coords = if let Some(bezier_error) = self.bezier_write_error {
+            let bezier = BezierString::from_line_string(geometry.clone(), bezier_error.get())?;
+            let final_vertex_flags = if geometry.is_closed() {
+                COORD_FLAGS_RING_END
+            } else {
+                0
+            };
+            file_coords_from_bezier(&bezier, final_vertex_flags)?
         } else {
-            let num_coords = self.geometry.0.len();
-
-            let bs = BytesStart::new("coords")
-                .with_attributes([("count", num_coords.to_string().as_str())]);
-            writer.write_event(Event::Start(bs))?;
-
-            let mut content = String::with_capacity(num_coords * 16);
-            for coord in self.geometry.coords() {
-                let fc = to_file_coords(*coord)?;
-                content.push_str(&fc.x.to_string());
-                content.push(' ');
-                content.push_str(&fc.y.to_string());
-                content.push(';');
-            }
-            content
+            geometry
+                .coords()
+                .map(|coord| Ok((to_file_coords(*coord)?, 0)))
+                .collect::<Result<Vec<_>>>()?
         };
-        writer.write_event(Event::Text(BytesText::new(&content)))?;
-        writer.write_event(Event::End(BytesEnd::new("coords")))?;
-        Ok(())
+        super::write_raw_coords(writer, &coords)
     }
 
     /// Parse a line object. The reader should be positioned right after the `<object>` start event. Reads through `</object>`.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "line-object parsing follows the nested OMAP XML structure"
-    )]
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: WeakLinePathSymbol,
     ) -> Result<Self> {
         let mut tags = HashMap::new();
-        let mut line = Vec::new();
         let mut raw_map_coords = Vec::new();
 
         let mut buf = Vec::new();
@@ -344,7 +315,6 @@ impl LineObject {
                             .ok()
                             .flatten()
                             .unwrap_or(0);
-                        line.reserve(num_coords);
                         raw_map_coords.reserve(num_coords);
                     }
                     b"tags" => tags = super::parse_tags(reader)?,
@@ -357,10 +327,6 @@ impl LineObject {
                 }
                 Event::Text(bytes_text) => {
                     let raw_xml = str::from_utf8(bytes_text.as_ref())?;
-
-                    let mut next_handle = 0_u8;
-                    let mut bezier_buf = BezierString::empty();
-                    let mut bezier_curve_buf = BezierCurve::zero();
 
                     for vertex in raw_xml.split_terminator(';') {
                         let mut parts: (i32, i32, u8) = (0, 0, 0);
@@ -385,62 +351,6 @@ impl LineObject {
                             },
                             parts.2,
                         ));
-
-                        let coord = from_file_coords(Coord {
-                            x: parts.0,
-                            y: parts.1,
-                        });
-
-                        // for lines we only care about the bezier flag 1
-                        // check for start of bezier flag, and how far along a bezier we are
-                        match (parts.2 & 1 == 1, next_handle) {
-                            (true, 0) => {
-                                // bezier start
-                                bezier_curve_buf.start = coord;
-                                next_handle += 1;
-                            }
-                            (true, 3) => {
-                                // bezier end and next start
-                                bezier_curve_buf.end = coord;
-                                bezier_buf
-                                    .0
-                                    .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
-                                bezier_curve_buf.start = coord;
-                                next_handle = 1;
-                            }
-                            (false, 1) => {
-                                // bezier first handle
-                                bezier_curve_buf.handle1 = coord;
-                                next_handle += 1;
-                            }
-                            (false, 2) => {
-                                // bezier second handle
-                                bezier_curve_buf.handle2 = coord;
-                                next_handle += 1;
-                            }
-                            (false, 3) => {
-                                // end point
-                                bezier_curve_buf.end = coord;
-                                bezier_buf
-                                    .0
-                                    .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
-
-                                // convert the bezier to line string and add to end of line
-                                line.extend(
-                                    bezier_buf
-                                        .clone()
-                                        .to_line_string(PARSE_BEZIER_ERROR)?
-                                        .into_inner(),
-                                );
-                                bezier_buf.0.clear();
-                                next_handle = 0;
-                            }
-                            (false, 0) => {
-                                // normal coord
-                                line.push(coord);
-                            }
-                            _ => return Err(Error::ObjectError),
-                        }
                     }
                 }
                 Event::Eof => {
@@ -452,39 +362,116 @@ impl LineObject {
         Ok(Self {
             tags,
             symbol,
-            write_as_bezier: None,
-            geometry: LineString::new(line),
+            bezier_write_error: None,
+            geometry: OnceCell::new(),
             raw_map_coords,
             is_coords_touched: false,
         })
+    }
+
+    fn flattened_geometry(&self, allowed_error: f64) -> Result<LineString> {
+        Ok(bezier_from_raw_coords(&self.raw_map_coords)
+            .geometry
+            .to_line_string(allowed_error)?)
     }
 }
 
 pub(crate) fn reverse_raw_line_coords(coords: &[FileCoord]) -> Vec<FileCoord> {
     // iterate through and check the flags
-    // flags 1, 2 and 16 must be moved
-    // 2 and 16 can only exist at the end and must be moved there
-    // flag 1 must be moved to the other end of the bezier
+    // Curve-start flags must move to the other end of each Bézier. Ring-end
+    // flags can only exist at the end and must move to the new end. All other
+    // flags, including dash-point flags, stay attached to their coordinates.
     let mut new_xml = Vec::with_capacity(coords.len());
 
     let mut end_flag = 0;
     for i in (0..coords.len()).rev() {
         let (coord, mut flag) = coords[i];
         // remove a possible bezier flag
-        flag -= flag & 1;
+        flag -= flag & COORD_FLAG_CURVE_START;
 
         if i == coords.len() - 1 {
-            end_flag += flag & 18;
+            end_flag += flag & COORD_FLAGS_RING_END;
             flag -= end_flag;
         }
         if i > 2 {
-            // check the flag of i + 3 for a 1
+            // Move a curve-start flag from the opposite end of the cubic.
             let (_, bez_flag) = coords[i - 3];
-            flag |= bez_flag & 1;
+            flag |= bez_flag & COORD_FLAG_CURVE_START;
         } else if i == 0 {
             flag |= end_flag;
         }
         new_xml.push((coord, flag));
     }
     new_xml
+}
+
+#[cfg(test)]
+mod tests {
+    use quick_xml::{Reader, Writer, events::Event};
+
+    use super::LineObject;
+    use crate::{Result, symbols::WeakLinePathSymbol};
+
+    #[test]
+    fn parsed_line_geometry_is_initialized_lazily() -> Result<()> {
+        let mut reader = Reader::from_str(
+            r#"<object><coords count="4">0 0 33;0 1000;1000 1000;1000 0 32;</coords></object>"#,
+        );
+        let event = reader.read_event()?;
+        assert!(matches!(event, Event::Start(_)));
+
+        let mut line =
+            LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
+        assert!(line.geometry.get().is_none());
+        assert!(!line.is_coords_touched);
+        assert!(line.bezier_geometry().is_some());
+
+        let mut writer = Writer::new(Vec::new());
+        line.write_content(&mut writer, None)?;
+        assert!(line.geometry.get().is_none());
+        let output = String::from_utf8(writer.into_inner())?;
+        assert!(output.contains("0 0 33;0 1000;1000 1000;1000 0 32;"));
+
+        assert!(line.get_geometry(0.0).is_err());
+        assert!(line.geometry.get().is_none());
+        assert!(!line.is_coords_touched);
+
+        assert!(!line.get_geometry(0.1)?.0.is_empty());
+        assert!(line.geometry.get().is_some());
+        assert!(!line.is_coords_touched);
+
+        let _ = line.get_geometry_mut(0.2)?;
+        assert!(line.is_coords_touched);
+        assert!(line.bezier_geometry().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn parsed_empty_line_flattens_and_writes_without_initializing_geometry() -> Result<()> {
+        let mut reader = Reader::from_str(r#"<object><coords count="0"></coords></object>"#);
+        let event = reader.read_event()?;
+        assert!(matches!(event, Event::Start(_)));
+
+        let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
+        assert!(line.geometry.get().is_none());
+        assert_eq!(
+            line.bezier_geometry()
+                .map(|path| path.geometry.num_segments()),
+            Some(0)
+        );
+        assert!(line.get_geometry(0.1)?.0.is_empty());
+
+        let mut reader = Reader::from_str(r#"<object><coords count="0"></coords></object>"#);
+        let event = reader.read_event()?;
+        assert!(matches!(event, Event::Start(_)));
+        let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
+        let mut writer = Writer::new(Vec::new());
+        line.write_content(&mut writer, None)?;
+        assert!(line.geometry.get().is_none());
+        assert_eq!(
+            String::from_utf8(writer.into_inner())?,
+            r#"<object type="1"><coords count="0"></coords></object>"#
+        );
+        Ok(())
+    }
 }

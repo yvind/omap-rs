@@ -344,12 +344,12 @@ impl PointSymbol {
                     }
                 }
                 Element::Line { symbol: _, object } => {
-                    if object.get_geometry().0.is_empty() {
+                    if object.geometry_is_empty() {
                         drop_elements.push(i);
                     }
                 }
                 Element::Area { symbol: _, object } => {
-                    if object.get_geometry().exterior().0.is_empty() {
+                    if object.geometry_is_empty() {
                         drop_elements.push(i);
                     }
                 }

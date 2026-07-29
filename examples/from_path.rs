@@ -42,27 +42,22 @@ fn main() -> Result<(), Error> {
                     num_coords += 1;
                 }
                 MapObject::Line(object) => {
-                    mean_pos = mean_pos
-                        + object
-                            .get_geometry()
-                            .0
-                            .iter()
-                            .copied()
-                            .reduce(|sum, c| sum + c)
-                            .unwrap();
-                    num_coords += object.get_geometry().0.len();
+                    let geometry = object.get_geometry(0.1)?;
+                    mean_pos =
+                        mean_pos + geometry.0.iter().copied().reduce(|sum, c| sum + c).unwrap();
+                    num_coords += geometry.0.len();
                 }
                 MapObject::Area(object) => {
+                    let geometry = object.get_geometry(0.1)?;
                     mean_pos = mean_pos
-                        + object
-                            .get_geometry()
+                        + geometry
                             .exterior()
                             .0
                             .iter()
                             .copied()
                             .reduce(|sum, c| sum + c)
                             .unwrap();
-                    num_coords += object.get_geometry().exterior().0.len();
+                    num_coords += geometry.exterior().0.len();
                 }
                 MapObject::Text(object) => {
                     match object.get_geometry() {

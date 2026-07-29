@@ -20,8 +20,15 @@ The best practice is to set the map's geo referencing before adding any objects.
 This is a conservative lightweight guard; `omap-rs` does not normalize equivalent CRS definitions or transform coordinates between different projections.
 
 ## Dash-points and beziers
-`omap-rs` ignores dash points on line and area objects. However, any line/area-object that `omap-rs` do not edit will be written back exactly as it was read, i.e. dash points will be preserved. The same is true for beziers. All line/area-objects are converted from beziers to LineString/Polygon on reading from file, but any object that is not edited will be written back as they were read, preserving beziers.
-Added or edited objects can be chosen to be written back as beziers by toggeling the bezier bool in all line/area-objects.
+
+Line and area objects expose their exact mixed straight/cubic geometry through
+`bezier_geometry()`. Its per-vertex metadata includes forced dash points,
+including both endpoints of an open path. The ordinary `get_geometry(error)`
+API lazily provides and caches a flattened `LineString` or `Polygon`.
+
+Objects that are not edited are written back using their original coordinates
+and flags. Added or edited line and area objects can be fitted to Bézier curves
+on write by setting `bezier_write_error`.
 
 ## Example
 
@@ -70,8 +77,8 @@ fn main() {
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
-    // Let's convert this LineString to a Cubic bezier when writing to file
-    ls.write_as_bezier = true;
+    // Fit this LineString to cubic Béziers with at most 0.2 mm error on write.
+    ls.bezier_write_error = Some(omap::NonNegativeF64::clamped_from(0.2));
     // Add some tags to the object
     ls.tags.insert("Some Key".to_string(), "My value".to_string());
 

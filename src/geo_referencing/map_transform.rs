@@ -115,7 +115,7 @@ impl MapTransform {
     pub fn to_map_bezierpath(&self, proj_bezierpath: BezierPath) -> BezierPath {
         BezierPath {
             geometry: self.to_map_bezierstring(proj_bezierpath.geometry),
-            end_vertex_is_dash_point: proj_bezierpath.end_vertex_is_dash_point,
+            vertex_is_dash_point: proj_bezierpath.vertex_is_dash_point,
         }
     }
 
@@ -178,7 +178,7 @@ impl MapTransform {
     pub fn to_projected_bezierpath(&self, map_bezierpath: BezierPath) -> BezierPath {
         BezierPath {
             geometry: self.to_projected_bezierstring(map_bezierpath.geometry),
-            end_vertex_is_dash_point: map_bezierpath.end_vertex_is_dash_point,
+            vertex_is_dash_point: map_bezierpath.vertex_is_dash_point,
         }
     }
 
@@ -286,7 +286,7 @@ fn transform_bezierstring(
     mut bezierstring: BezierString,
     transform: impl Fn(Coord) -> Coord,
 ) -> BezierString {
-    for segment in &mut bezierstring.0 {
+    for segment in bezierstring.segments_mut() {
         match segment {
             BezierSegment::Bezier(curve) => {
                 curve.start = transform(curve.start);

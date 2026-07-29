@@ -1,13 +1,15 @@
-use std::collections::HashMap;
+use std::{cell::OnceCell, collections::HashMap};
 
-use geo_types::{Coord, LineString, Polygon};
-use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
+use geo_types::{Coord, Polygon};
+use linestring2bezier::{BezierSegment, BezierString};
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{BezierPath, FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
+use super::{
+    BezierPath, COORD_FLAGS_RING_END, FileCoord, bezier_from_raw_coords, file_coords_from_bezier,
+};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
@@ -43,9 +45,11 @@ pub struct AreaObject {
     pub pattern_rotation: PatternRotation,
     /// The area or combined-area symbol used to render this object.
     pub symbol: WeakAreaPathSymbol,
-    /// Whether the coordinates should be written back as bezier curves and the permitted error. Minimum error for attempting bezier conversion is 0.1
-    pub allowed_bezier_error: Option<NonNegativeF64>,
-    geometry: Polygon,
+    /// The permitted error when fitting Bézier curves for writing.
+    ///
+    /// Bézier fitting is enabled when this is [`Some`].
+    pub bezier_write_error: Option<NonNegativeF64>,
+    geometry: OnceCell<Polygon>,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
     raw_map_coords: Vec<FileCoord>,
@@ -59,82 +63,128 @@ impl AreaObject {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
             symbol: symbol.into(),
-            allowed_bezier_error: None,
-            geometry,
+            bezier_write_error: None,
+            geometry: OnceCell::from(geometry),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
     }
 
-    /// Decompose it into its geometry
-    pub fn into_geometry(self) -> Polygon {
+    /// Consume this object and return its polygon geometry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if uncached raw geometry cannot be flattened with the
+    /// requested error tolerance.
+    pub fn into_geometry(self, allowed_error: f64) -> Result<Polygon> {
+        if self.geometry.get().is_none() {
+            let geometry = self.flattened_geometry(allowed_error)?;
+            self.geometry
+                .set(geometry)
+                .map_err(|_geometry| Error::ObjectError)?;
+        }
+        self.geometry.into_inner().ok_or(Error::ObjectError)
+    }
+
+    /// Get the polygon geometry, flattening and caching raw Bézier coordinates
+    /// when needed.
+    ///
+    /// `allowed_error` is used only when initializing the cache. Later calls
+    /// return the previously cached geometry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the raw geometry is empty or cannot be flattened
+    /// with the requested error tolerance.
+    pub fn get_geometry(&self, allowed_error: f64) -> Result<&Polygon> {
+        if let Some(geometry) = self.geometry.get() {
+            return Ok(geometry);
+        }
+
+        let geometry = self.flattened_geometry(allowed_error)?;
         self.geometry
+            .set(geometry)
+            .map_err(|_geometry| Error::ObjectError)?;
+        self.geometry.get().ok_or(Error::ObjectError)
     }
 
-    /// Get a shared reference to the polygon geometry.
-    pub fn get_geometry(&self) -> &Polygon {
-        &self.geometry
-    }
-
-    /// Get the original area geometry as mixed straight/cubic Bézier rings,
-    /// including dash-point metadata for each segment-end vertex.
+    /// Rebuild the original area geometry as mixed straight/cubic Bézier
+    /// rings, including dash-point metadata for every vertex.
     ///
     /// This is generated directly from the original file coordinates and
-    /// therefore preserves the exact Bézier handles. Returns [`None`] when the
-    /// object was not read from raw file coordinates or after
-    /// [`Self::get_geometry_mut`] has marked those coordinates as touched.
-    pub fn get_geometry_bezier(&self) -> Option<BezierPolygon> {
+    /// therefore preserves the exact Bézier handles. Every returned ring is
+    /// closed, matching [`Polygon`]'s invariant, and zero-segment rings are
+    /// omitted. For a successfully parsed object, ring order and count match
+    /// [`Self::get_geometry`].
+    ///
+    /// Returns [`None`] when the object was not read from raw file coordinates
+    /// or after [`Self::get_geometry_mut`] has marked those coordinates as
+    /// touched.
+    pub fn bezier_geometry(&self) -> Option<BezierPolygon> {
         if self.is_coords_touched || self.raw_map_coords.is_empty() {
             return None;
         }
 
-        let mut rings = Vec::new();
-        let mut ring_start = 0;
-
-        for (index, (_, flag)) in self.raw_map_coords.iter().enumerate() {
-            if flag & 18 != 0 {
-                rings.push(bezier_from_raw_coords(
-                    &self.raw_map_coords[ring_start..=index],
-                ));
-                ring_start = index + 1;
-            }
-        }
-
-        // Mapper normally terminates every ring with the close/hole flag,
-        // but tolerate an implicitly closed final ring, as parse does.
-        if ring_start < self.raw_map_coords.len() {
-            let raw_ring = &self.raw_map_coords[ring_start..];
-            let mut ring = bezier_from_raw_coords(raw_ring);
-            let start_is_dash_point = raw_ring.first().is_some_and(|(_, flag)| flag & 32 == 32);
-            close_bezier_ring(&mut ring, start_is_dash_point);
-            rings.push(ring);
-        }
-
-        let exterior = rings.remove(0);
-        Some(BezierPolygon {
-            exterior,
-            interiors: rings,
-        })
+        bezier_polygon_from_raw_coords(&self.raw_map_coords)
     }
 
-    /// Get a mutable reference to the polygon geometry (marks coords as touched).
-    pub fn get_geometry_mut(&mut self) -> &mut Polygon {
+    /// Rebuild the original area geometry as mixed straight/cubic Bézier
+    /// rings.
+    ///
+    /// Prefer [`Self::bezier_geometry`], whose name makes the reconstruction
+    /// cost explicit.
+    #[deprecated(note = "renamed to bezier_geometry")]
+    pub fn get_geometry_bezier(&self) -> Option<BezierPolygon> {
+        self.bezier_geometry()
+    }
+
+    /// Get a mutable reference to the polygon geometry, flattening it first
+    /// when needed, and mark the coordinates as touched.
+    ///
+    /// `allowed_error` is used only when initializing the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the raw geometry is empty or cannot be flattened
+    /// with the requested error tolerance.
+    pub fn get_geometry_mut(&mut self, allowed_error: f64) -> Result<&mut Polygon> {
+        if self.geometry.get().is_none() {
+            let geometry = self.flattened_geometry(allowed_error)?;
+            self.geometry
+                .set(geometry)
+                .map_err(|_geometry| Error::ObjectError)?;
+        }
         self.is_coords_touched = true;
-        &mut self.geometry
+        self.geometry.get_mut().ok_or(Error::ObjectError)
+    }
+
+    /// Iterate over the raw file coordinates in mm with their flags.
+    ///
+    /// These are the original control points (including Bézier handles) as read
+    /// from the file, converted from µm integers to mm floats. See the
+    /// `COORD_FLAG_*` constants in this module for the flag assignments.
+    ///
+    /// The iterator is empty for objects not read from file data.
+    pub fn raw_coords(&self) -> impl ExactSizeIterator<Item = (Coord, u8)> + '_ {
+        self.raw_map_coords
+            .iter()
+            .map(|(c, flag)| (from_file_coords(*c), *flag))
     }
 
     /// Get the raw file coordinates in mm with their flags.
     ///
-    /// These are the original control points (including Bézier handles) as read
-    /// from the file, converted from µm integers to mm floats. The flags encode
-    /// Bézier start (1), close/hole (2), dash point (4/16/32), etc.
-    ///
-    /// The returned vec is empty for objects not read from file data
+    /// Prefer [`Self::raw_coords`] when a collected [`Vec`] is not needed.
+    #[deprecated(note = "use the allocation-free raw_coords iterator")]
     pub fn get_raw_coords(&self) -> Vec<(Coord, u8)> {
-        self.raw_map_coords
-            .iter()
-            .map(|(c, flag)| (from_file_coords(*c), *flag))
-            .collect()
+        self.raw_coords().collect()
+    }
+
+    pub(crate) fn geometry_is_empty(&self) -> bool {
+        self.geometry
+            .get()
+            .map_or(self.raw_map_coords.len() < 2, |geometry| {
+                geometry.exterior().0.is_empty()
+            })
     }
 
     /// Apply an affine coordinate transform to both the geometry and the raw
@@ -143,19 +193,21 @@ impl AreaObject {
     /// This does **not** mark the coordinates as touched, so the raw (affine transformed) control
     /// points (with Bézier flags) will still be used on write.
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        // Transform the discretized geometry
-        self.geometry.exterior_mut(|ext| {
-            for coord in &mut ext.0 {
-                *coord = transform.apply(*coord);
-            }
-        });
-        self.geometry.interiors_mut(|interiors| {
-            for interior in interiors.iter_mut() {
-                for coord in &mut interior.0 {
+        // Transform the discretized geometry if it has been initialized.
+        if let Some(geometry) = self.geometry.get_mut() {
+            geometry.exterior_mut(|ext| {
+                for coord in &mut ext.0 {
                     *coord = transform.apply(*coord);
                 }
-            }
-        });
+            });
+            geometry.interiors_mut(|interiors| {
+                for interior in interiors.iter_mut() {
+                    for coord in &mut interior.0 {
+                        *coord = transform.apply(*coord);
+                    }
+                }
+            });
+        }
         // Transform the pattern rotation origin
         self.pattern_rotation.coord = transform.apply(self.pattern_rotation.coord);
         // Transform raw control points — flags stay unchanged
@@ -171,9 +223,10 @@ impl AreaObject {
 
     /// Reverse the winding order of all rings.
     pub fn reverse_polygon(&mut self) {
-        self.geometry.exterior_mut(|e| e.0.reverse());
-        self.geometry
-            .interiors_mut(|is| is.iter_mut().for_each(|i| i.0.reverse()));
+        if let Some(geometry) = self.geometry.get_mut() {
+            geometry.exterior_mut(|e| e.0.reverse());
+            geometry.interiors_mut(|is| is.iter_mut().for_each(|i| i.0.reverse()));
+        }
 
         self.raw_map_coords = reverse_raw_polygon_coords(&self.raw_map_coords);
     }
@@ -184,8 +237,8 @@ impl AreaObject {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
             symbol: WeakAreaPathSymbol::Area(std::rc::Weak::new()),
-            allowed_bezier_error: None,
-            geometry,
+            bezier_write_error: None,
+            geometry: OnceCell::from(geometry),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
@@ -253,37 +306,40 @@ impl AreaObject {
             super::write_tags(writer, &self.tags)?;
         }
 
-        if !self.is_coords_touched && !self.raw_map_coords.is_empty() {
+        if !self.is_coords_touched {
             super::write_raw_coords(writer, &self.raw_map_coords)?;
         } else {
-            self.write_geometry_coords(writer)?;
+            let geometry = self.geometry.get().ok_or(Error::ObjectError)?;
+            self.write_geometry_coords(writer, geometry)?;
         }
         self.write_pattern(writer)?;
         writer.write_event(Event::End(BytesEnd::new("object")))?;
         Ok(())
     }
 
-    /// Write coords from the geometry, as bezier if `self.write_as_bezier`
-    fn write_geometry_coords<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    /// Write coords from the geometry, fitting Béziers when requested.
+    fn write_geometry_coords<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        geometry: &Polygon,
+    ) -> Result<()> {
         let mut all_coords: Vec<FileCoord> = Vec::new();
 
-        // exterior ring
-        let ext = self.geometry.exterior();
-        for (i, coord) in ext.coords().enumerate() {
-            let fc = to_file_coords(*coord)?;
-            let flag = if i == ext.0.len() - 1 { 18_u8 } else { 0_u8 };
-            all_coords.push((fc, flag));
-        }
-        // interior rings
-        for interior in self.geometry.interiors() {
-            for (i, coord) in interior.coords().enumerate() {
-                let fc = to_file_coords(*coord)?;
-                let flag = if i == interior.0.len() - 1 {
-                    18_u8
-                } else {
-                    0_u8
-                };
-                all_coords.push((fc, flag));
+        if let Some(bezier_error) = self.bezier_write_error {
+            for ring in std::iter::once(geometry.exterior()).chain(geometry.interiors()) {
+                let bezier = BezierString::from_line_string(ring.clone(), bezier_error.get())?;
+                all_coords.extend(file_coords_from_bezier(&bezier, COORD_FLAGS_RING_END)?);
+            }
+        } else {
+            for ring in std::iter::once(geometry.exterior()).chain(geometry.interiors()) {
+                for (index, coord) in ring.coords().enumerate() {
+                    let flag = if index + 1 == ring.0.len() {
+                        COORD_FLAGS_RING_END
+                    } else {
+                        0
+                    };
+                    all_coords.push((to_file_coords(*coord)?, flag));
+                }
             }
         }
 
@@ -307,18 +363,12 @@ impl AreaObject {
     }
 
     /// Parse an area object. The reader should be positioned right after the `<object>` start event. Reads through `</object>`.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "area-object parsing follows the nested OMAP XML structure"
-    )]
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: WeakAreaPathSymbol,
     ) -> Result<Self> {
         let mut tags = HashMap::new();
         let mut pr = PatternRotation::default();
-        let mut linestrings = Vec::new();
-        let mut line = Vec::new();
         let mut raw_map_coords = Vec::new();
 
         let mut buf = Vec::new();
@@ -330,7 +380,6 @@ impl AreaObject {
                             .ok()
                             .flatten()
                             .unwrap_or(0);
-                        line.reserve(num_coords);
                         raw_map_coords.reserve(num_coords);
                     }
                     b"pattern" => {
@@ -355,10 +404,6 @@ impl AreaObject {
                 Event::Text(bytes_text) => {
                     let raw_xml = str::from_utf8(bytes_text.as_ref())?;
 
-                    let mut next_handle = 0_u8;
-                    let mut bezier_buf = BezierString::empty();
-                    let mut bezier_curve_buf = BezierCurve::zero();
-
                     for vertex in raw_xml.split_terminator(';') {
                         let mut parts: (i32, i32, u8) = (0, 0, 0);
                         let mut split = vertex.split_whitespace();
@@ -382,79 +427,6 @@ impl AreaObject {
                             },
                             parts.2,
                         ));
-
-                        let coord = from_file_coords(Coord {
-                            x: parts.0,
-                            y: parts.1,
-                        });
-
-                        // for areas we care about the bezier flag 1 and the close/hole flag 2
-                        // check for start of bezier flag, and how far along a bezier we are
-                        match (parts.2 & 1 == 1, next_handle) {
-                            (true, 0) => {
-                                // bezier start
-                                bezier_curve_buf.start = coord;
-                                next_handle += 1;
-                            }
-                            (true, 3) => {
-                                // bezier end and next start
-                                bezier_curve_buf.end = coord;
-                                bezier_buf
-                                    .0
-                                    .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
-                                bezier_curve_buf.start = coord;
-                                next_handle = 1;
-                            }
-                            (false, 1) => {
-                                // bezier first handle
-                                bezier_curve_buf.handle1 = coord;
-                                next_handle += 1;
-                            }
-                            (false, 2) => {
-                                // bezier second handle
-                                bezier_curve_buf.handle2 = coord;
-                                next_handle += 1;
-                            }
-                            (false, 3) => {
-                                // end point
-                                bezier_curve_buf.end = coord;
-                                bezier_buf
-                                    .0
-                                    .push(BezierSegment::Bezier(bezier_curve_buf.clone()));
-
-                                // convert the bezier to line string and add to end of line
-                                line.extend(
-                                    bezier_buf
-                                        .clone()
-                                        .to_line_string(PARSE_BEZIER_ERROR)?
-                                        .into_inner(),
-                                );
-                                bezier_buf.0.clear();
-                                next_handle = 0;
-                            }
-                            (false, 0) => {
-                                // normal coord
-                                line.push(coord);
-                            }
-                            _ => return Err(Error::ObjectError),
-                        }
-
-                        // check for hole or close flag (flag & (16+2))
-                        if (parts.2 & 18) != 0 {
-                            // check the status of the bezier_buf (in case the end point is also a 1)
-                            if !bezier_buf.0.is_empty() {
-                                line.extend(
-                                    bezier_buf
-                                        .clone()
-                                        .to_line_string(PARSE_BEZIER_ERROR)?
-                                        .into_inner(),
-                                );
-                                next_handle = 0;
-                                bezier_buf.0.clear();
-                            }
-                            linestrings.push(LineString::new(line));
-                            line = Vec::new();
-                        }
                     }
                 }
                 Event::Eof => {
@@ -463,51 +435,85 @@ impl AreaObject {
                 _ => (),
             }
         }
-        // Check if the polygon is not closed. Close it
-        if !line.is_empty() {
-            line.push(line[0]);
-            linestrings.push(LineString::new(line));
-        }
-        let exterior = if linestrings.is_empty() {
-            return Err(Error::ObjectError);
-        } else {
-            linestrings.remove(0)
-        };
         Ok(Self {
             tags,
             pattern_rotation: pr,
             symbol,
-            allowed_bezier_error: None,
-            geometry: Polygon::new(exterior, linestrings),
+            bezier_write_error: None,
+            geometry: OnceCell::new(),
             raw_map_coords,
             is_coords_touched: false,
         })
     }
+
+    fn flattened_geometry(&self, allowed_error: f64) -> Result<Polygon> {
+        let bezier =
+            bezier_polygon_from_raw_coords(&self.raw_map_coords).ok_or(Error::ObjectError)?;
+        let exterior = bezier.exterior.geometry.to_line_string(allowed_error)?;
+        let interiors = bezier
+            .interiors
+            .iter()
+            .map(|ring| ring.geometry.to_line_string(allowed_error))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(Polygon::new(exterior, interiors))
+    }
 }
 
-fn close_bezier_ring(ring: &mut BezierPath, closing_vertex_is_dash_point: bool) {
-    let Some(first_segment) = ring.geometry.0.first() else {
+fn bezier_polygon_from_raw_coords(coords: &[FileCoord]) -> Option<BezierPolygon> {
+    let mut rings = Vec::new();
+    let mut ring_start = 0;
+
+    for (index, (_, flag)) in coords.iter().enumerate() {
+        if flag & COORD_FLAGS_RING_END != 0 {
+            let mut ring = bezier_from_raw_coords(&coords[ring_start..=index]);
+            close_bezier_ring(&mut ring);
+            if ring.geometry.num_segments() != 0 {
+                rings.push(ring);
+            }
+            ring_start = index + 1;
+        }
+    }
+
+    // Mapper normally terminates every ring with a close/hole flag, but
+    // tolerate an implicitly closed final ring, as parse does.
+    if ring_start < coords.len() {
+        let mut ring = bezier_from_raw_coords(&coords[ring_start..]);
+        close_bezier_ring(&mut ring);
+        if ring.geometry.num_segments() != 0 {
+            rings.push(ring);
+        }
+    }
+
+    let mut rings = rings.into_iter();
+    Some(BezierPolygon {
+        exterior: rings.next()?,
+        interiors: rings.collect(),
+    })
+}
+
+fn close_bezier_ring(ring: &mut BezierPath) {
+    let Some(first) = ring.geometry.segments().next().map(BezierSegment::start) else {
         return;
     };
-    let first = match first_segment {
-        BezierSegment::Bezier(curve) => curve.start,
-        BezierSegment::Line(line) => line.start,
-    };
-    let Some(last_segment) = ring.geometry.0.last() else {
+    let Some(last) = ring.geometry.segments().last().map(BezierSegment::end) else {
         return;
-    };
-    let last = match last_segment {
-        BezierSegment::Bezier(curve) => curve.end,
-        BezierSegment::Line(line) => line.end,
     };
 
-    if last != first {
-        ring.geometry
-            .0
-            .push(BezierSegment::Line(geo_types::Line::new(last, first)));
-        ring.end_vertex_is_dash_point
-            .push(closing_vertex_is_dash_point);
+    if last == first {
+        let seam_is_dash_point = ring.vertex_is_dash_point.first().copied().unwrap_or(false)
+            || ring.vertex_is_dash_point.last().copied().unwrap_or(false);
+        if let Some(first_is_dash_point) = ring.vertex_is_dash_point.first_mut() {
+            *first_is_dash_point = seam_is_dash_point;
+        }
+        if let Some(last_is_dash_point) = ring.vertex_is_dash_point.last_mut() {
+            *last_is_dash_point = seam_is_dash_point;
+        }
+        return;
     }
+
+    ring.geometry.0.push(BezierSegment::new(last, None, first));
+    ring.vertex_is_dash_point
+        .push(ring.vertex_is_dash_point.first().copied().unwrap_or(false));
 }
 
 pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord> {
@@ -516,7 +522,7 @@ pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord>
     let mut s = Vec::with_capacity(coords.len());
     let mut prev_split = 0;
     for (i, (_, f)) in coords.iter().enumerate() {
-        if f & 18 != 0 || i == coords.len() - 1 {
+        if f & COORD_FLAGS_RING_END != 0 || i == coords.len() - 1 {
             s.extend(crate::objects::line_object::reverse_raw_line_coords(
                 &coords[prev_split..=i],
             ));
@@ -524,4 +530,111 @@ pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord>
         }
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use geo_types::Coord;
+    use quick_xml::{Reader, Writer, events::Event};
+
+    use super::{AreaObject, bezier_polygon_from_raw_coords};
+    use crate::objects::{COORD_FLAG_CLOSE_POINT, COORD_FLAG_DASH_POINT, COORD_FLAG_HOLE_POINT};
+    use crate::{Error, Result, symbols::WeakAreaPathSymbol};
+
+    #[test]
+    fn every_bezier_polygon_ring_is_closed() {
+        let polygon = bezier_polygon_from_raw_coords(&[
+            (Coord { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
+            (Coord { x: 2_000, y: 0 }, 0),
+            (Coord { x: 1_000, y: 1_000 }, COORD_FLAG_CLOSE_POINT),
+            (Coord { x: 500, y: 250 }, 0),
+            (Coord { x: 1_000, y: 250 }, 0),
+            (
+                Coord { x: 750, y: 750 },
+                COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT,
+            ),
+        ]);
+        assert!(polygon.is_some());
+        let Some(polygon) = polygon else {
+            return;
+        };
+
+        assert_eq!(polygon.interiors.len(), 1);
+        for ring in std::iter::once(&polygon.exterior).chain(&polygon.interiors) {
+            assert!(!ring.geometry.0.is_empty());
+            let first = ring.geometry.0[0].start();
+            let last = ring.geometry.0[ring.geometry.0.len() - 1].end();
+            assert_eq!(first, last);
+            assert_eq!(
+                ring.vertex_is_dash_point.len(),
+                ring.geometry.num_segments() + 1
+            );
+            assert_eq!(
+                ring.vertex_is_dash_point.first(),
+                ring.vertex_is_dash_point.last()
+            );
+        }
+        assert_eq!(
+            polygon.exterior.vertex_is_dash_point,
+            [true, false, false, true]
+        );
+    }
+
+    #[test]
+    fn zero_segment_rings_are_omitted() {
+        let polygon = bezier_polygon_from_raw_coords(&[
+            (Coord { x: 0, y: 0 }, 0),
+            (Coord { x: 1_000, y: 0 }, 0),
+            (Coord { x: 0, y: 0 }, COORD_FLAG_CLOSE_POINT),
+            (
+                Coord { x: 500, y: 500 },
+                COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT,
+            ),
+        ]);
+        assert!(polygon.is_some());
+        let Some(polygon) = polygon else {
+            return;
+        };
+
+        assert!(polygon.interiors.is_empty());
+    }
+
+    #[test]
+    fn parsed_polygon_accessors_have_matching_closed_rings() -> Result<()> {
+        let mut reader = Reader::from_str(
+            r#"<object><coords count="6">0 0 32;2000 0;1000 1000 2;500 250;1000 250;750 750 18;</coords><pattern rotation="0"></pattern></object>"#,
+        );
+        let event = reader.read_event()?;
+        assert!(matches!(event, Event::Start(_)));
+
+        let mut area =
+            AreaObject::parse(&mut reader, WeakAreaPathSymbol::Area(std::rc::Weak::new()))?;
+        let bezier = area.bezier_geometry().ok_or(Error::ObjectError)?;
+
+        assert!(area.geometry.get().is_none());
+        assert!(!area.is_coords_touched);
+        let mut writer = Writer::new(Vec::new());
+        area.write_content(&mut writer, None)?;
+        assert!(area.geometry.get().is_none());
+        let output = String::from_utf8(writer.into_inner())?;
+        assert!(output.contains("0 0 32;2000 0;1000 1000 2;"));
+
+        assert_eq!(area.get_geometry(0.1)?.interiors().len(), 1);
+        assert!(area.geometry.get().is_some());
+        assert!(!area.is_coords_touched);
+        assert_eq!(bezier.interiors.len(), 1);
+        assert_eq!(area.raw_coords().len(), 6);
+        assert_eq!(
+            bezier.exterior.vertex_is_dash_point,
+            [true, false, false, true]
+        );
+        assert_eq!(
+            bezier.exterior.vertex_is_dash_point.first(),
+            bezier.exterior.vertex_is_dash_point.last()
+        );
+        let _ = area.get_geometry_mut(0.2)?;
+        assert!(area.is_coords_touched);
+        assert!(area.bezier_geometry().is_none());
+        Ok(())
+    }
 }

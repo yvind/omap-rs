@@ -288,6 +288,37 @@ mod tests {
     }
 
     #[test]
+    fn reverse_preserves_dash_flags_on_open_path_vertices() {
+        use crate::objects::{COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT};
+
+        let in_xml = [
+            (coord! { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
+            (
+                coord! { x: 1_000, y: 0 },
+                COORD_FLAG_CURVE_START | COORD_FLAG_DASH_POINT,
+            ),
+            (coord! { x: 1_000, y: 1_000 }, 0),
+            (coord! { x: 2_000, y: 1_000 }, 0),
+            (coord! { x: 2_000, y: 0 }, COORD_FLAG_DASH_POINT),
+            (coord! { x: 3_000, y: 0 }, COORD_FLAG_DASH_POINT),
+        ];
+        let expected = [
+            (coord! { x: 3_000, y: 0 }, COORD_FLAG_DASH_POINT),
+            (
+                coord! { x: 2_000, y: 0 },
+                COORD_FLAG_CURVE_START | COORD_FLAG_DASH_POINT,
+            ),
+            (coord! { x: 2_000, y: 1_000 }, 0),
+            (coord! { x: 1_000, y: 1_000 }, 0),
+            (coord! { x: 1_000, y: 0 }, COORD_FLAG_DASH_POINT),
+            (coord! { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
+        ];
+
+        let reversed = super::super::line_object::reverse_raw_line_coords(&in_xml);
+        assert_eq!(reversed, expected);
+    }
+
+    #[test]
     fn reverse_line_string_xml_twice() {
         let in_xml = [
             (coord! {x: -11535, y: -1901}, 1),
