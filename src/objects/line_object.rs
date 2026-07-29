@@ -7,7 +7,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
-use super::{FileCoord, PARSE_BEZIER_ERROR};
+use super::{FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
@@ -47,6 +47,17 @@ impl LineObject {
     /// Get a shared reference to the line geometry.
     pub fn get_geometry(&self) -> &LineString {
         &self.geometry
+    }
+
+    /// Get the original line geometry as a mixed straight/cubic Bézier string.
+    ///
+    /// This is generated directly from the original file coordinates and
+    /// therefore preserves the exact Bézier handles. Returns [`None`] when the
+    /// object was not read from raw file coordinates or after
+    /// [`Self::get_geometry_mut`] has marked those coordinates as touched.
+    pub fn get_geometry_bezier(&self) -> Option<BezierString> {
+        (!self.is_coords_touched && !self.raw_map_coords.is_empty())
+            .then(|| bezier_from_raw_coords(&self.raw_map_coords))
     }
 
     /// Get a mutable reference to the line geometry (marks coords as touched).

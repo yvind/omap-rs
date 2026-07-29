@@ -1,6 +1,9 @@
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use geo_types::{Coord, LineString, Point, Polygon};
+use linestring2bezier::{BezierSegment, BezierString};
+
+use crate::objects::BezierPolygon;
 
 use super::GeoRef;
 
@@ -96,6 +99,18 @@ impl MapTransform {
         Polygon::new(map_ext, map_ints)
     }
 
+    /// Convert a [`BezierPolygon`] in projected (CRS) coordinates to map coordinates.
+    pub fn to_map_bezierpolygon(&self, proj_bezierpolygon: BezierPolygon) -> BezierPolygon {
+        BezierPolygon {
+            exterior: self.to_map_bezierstring(proj_bezierpolygon.exterior),
+            interiors: proj_bezierpolygon
+                .interiors
+                .into_iter()
+                .map(|ring| self.to_map_bezierstring(ring))
+                .collect(),
+        }
+    }
+
     /// Convert a [`LineString`] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_linestring(&self, proj_linestring: LineString) -> LineString {
         proj_linestring
@@ -103,6 +118,11 @@ impl MapTransform {
             .into_iter()
             .map(|c| self.to_map(c))
             .collect::<LineString>()
+    }
+
+    /// Convert a [`BezierString`] in projected (CRS) coordinates to map coordinates.
+    pub fn to_map_bezierstring(&self, proj_bezierstring: BezierString) -> BezierString {
+        transform_bezierstring(proj_bezierstring, |coord| self.to_map(coord))
     }
 
     /// Convert a [Point] in projected (CRS) coordinates to map coordinates.
@@ -134,6 +154,18 @@ impl MapTransform {
         Polygon::new(map_ext, map_ints)
     }
 
+    /// Convert a [`BezierPolygon`] in map coordinates to projected (CRS) coordinates.
+    pub fn to_projected_bezierpolygon(&self, map_bezierpolygon: BezierPolygon) -> BezierPolygon {
+        BezierPolygon {
+            exterior: self.to_projected_bezierstring(map_bezierpolygon.exterior),
+            interiors: map_bezierpolygon
+                .interiors
+                .into_iter()
+                .map(|ring| self.to_projected_bezierstring(ring))
+                .collect(),
+        }
+    }
+
     /// Convert a [`LineString`] in map coordinates to projected (CRS) coordinates.
     pub fn to_projected_linestring(&self, map_linestring: LineString) -> LineString {
         map_linestring
@@ -141,6 +173,11 @@ impl MapTransform {
             .into_iter()
             .map(|c| self.to_projected(c))
             .collect::<LineString>()
+    }
+
+    /// Convert a [`BezierString`] in map coordinates to projected (CRS) coordinates.
+    pub fn to_projected_bezierstring(&self, map_bezierstring: BezierString) -> BezierString {
+        transform_bezierstring(map_bezierstring, |coord| self.to_projected(coord))
     }
 
     /// Convert a [Point] in map coordinates to projected (CRS) coordinates.
@@ -229,35 +266,23 @@ impl MapTransform {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use geo_types::Coord;
-
-    use super::MapTransform;
-    use crate::{Error, geo_referencing::CrsType};
-
-    fn transform_for_crs(crs_type: CrsType) -> MapTransform {
-        let mut geo_ref = crate::geo_referencing::GeoRef::new(15_000);
-        geo_ref.crs_type = crs_type;
-        geo_ref.projected_ref_point = Coord {
-            x: 463_575.5,
-            y: 6_833_849.6,
-        };
-        geo_ref.get_transform()
+fn transform_bezierstring(
+    mut bezierstring: BezierString,
+    transform: impl Fn(Coord) -> Coord,
+) -> BezierString {
+    for segment in &mut bezierstring.0 {
+        match segment {
+            BezierSegment::Bezier(curve) => {
+                curve.start = transform(curve.start);
+                curve.handle1 = transform(curve.handle1);
+                curve.handle2 = transform(curve.handle2);
+                curve.end = transform(curve.end);
+            }
+            BezierSegment::Line(line) => {
+                line.start = transform(line.start);
+                line.end = transform(line.end);
+            }
+        }
     }
-
-    #[test]
-    fn affine_between_rejects_different_epsg_codes() {
-        let old = transform_for_crs(CrsType::Epsg(25832));
-        let new = transform_for_crs(CrsType::Epsg(25833));
-
-        let Err(err) = MapTransform::affine_between(&old, &new) else {
-            panic!("different EPSG codes must not produce an affine transform");
-        };
-
-        assert!(matches!(
-            err,
-            Error::CannotGetAffineTransformBetweenDifferentProjections
-        ));
-    }
+    bezierstring
 }

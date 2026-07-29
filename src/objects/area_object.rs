@@ -7,13 +7,23 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{FileCoord, PARSE_BEZIER_ERROR};
+use super::{FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
     symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
+
+/// A polygon whose exterior and interior rings retain straight and cubic
+/// Bézier segments.
+#[derive(Debug, Clone)]
+pub struct BezierPolygon {
+    /// The polygon's exterior ring.
+    pub exterior: BezierString,
+    /// The polygon's interior rings.
+    pub interiors: Vec<BezierString>,
+}
 
 /// A fill pattern rotation and origin used by area objects.
 #[derive(Debug, Clone, Default)]
@@ -64,6 +74,44 @@ impl AreaObject {
     /// Get a shared reference to the polygon geometry.
     pub fn get_geometry(&self) -> &Polygon {
         &self.geometry
+    }
+
+    /// Get the original area geometry as mixed straight/cubic Bézier rings.
+    ///
+    /// This is generated directly from the original file coordinates and
+    /// therefore preserves the exact Bézier handles. Returns [`None`] when the
+    /// object was not read from raw file coordinates or after
+    /// [`Self::get_geometry_mut`] has marked those coordinates as touched.
+    pub fn get_geometry_bezier(&self) -> Option<BezierPolygon> {
+        if self.is_coords_touched || self.raw_map_coords.is_empty() {
+            return None;
+        }
+
+        let mut rings = Vec::new();
+        let mut ring_start = 0;
+
+        for (index, (_, flag)) in self.raw_map_coords.iter().enumerate() {
+            if flag & 2 == 2 {
+                rings.push(bezier_from_raw_coords(
+                    &self.raw_map_coords[ring_start..=index],
+                ));
+                ring_start = index + 1;
+            }
+        }
+
+        // Mapper normally terminates every ring with the close/hole flag,
+        // but tolerate an implicitly closed final ring, as parse does.
+        if ring_start < self.raw_map_coords.len() {
+            let mut ring = bezier_from_raw_coords(&self.raw_map_coords[ring_start..]);
+            close_bezier_ring(&mut ring);
+            rings.push(ring);
+        }
+
+        let exterior = rings.remove(0);
+        Some(BezierPolygon {
+            exterior,
+            interiors: rings,
+        })
     }
 
     /// Get a mutable reference to the polygon geometry (marks coords as touched).
@@ -431,6 +479,28 @@ impl AreaObject {
             raw_map_coords,
             is_coords_touched: false,
         })
+    }
+}
+
+fn close_bezier_ring(ring: &mut BezierString) {
+    let Some(first_segment) = ring.0.first() else {
+        return;
+    };
+    let first = match first_segment {
+        BezierSegment::Bezier(curve) => curve.start,
+        BezierSegment::Line(line) => line.start,
+    };
+    let Some(last_segment) = ring.0.last() else {
+        return;
+    };
+    let last = match last_segment {
+        BezierSegment::Bezier(curve) => curve.end,
+        BezierSegment::Line(line) => line.end,
+    };
+
+    if last != first {
+        ring.0
+            .push(BezierSegment::Line(geo_types::Line::new(last, first)));
     }
 }
 

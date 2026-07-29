@@ -1,6 +1,6 @@
 [package]
 name = "omap"
-version = "0.8.3"
+version = "0.9.0"
 edition = "2024"
 authors = ["Øyvind Hjermstad <@yvind>"]
 description = "Interact with or write new Open Orienteering Mapper omap-files"
