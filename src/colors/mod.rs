@@ -187,9 +187,9 @@ impl From<Cmyk> for Rgb {
 impl Default for Rgb {
     fn default() -> Self {
         Self {
-            r: UnitF64::zero(),
-            g: UnitF64::zero(),
-            b: UnitF64::zero(),
+            r: UnitF64::one(),
+            g: UnitF64::one(),
+            b: UnitF64::one(),
         }
     }
 }
