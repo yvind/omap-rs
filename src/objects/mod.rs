@@ -31,14 +31,31 @@ const PARSE_BEZIER_ERROR: f64 = 0.1;
 
 type FileCoord = (Coord<i32>, u8);
 
+/// A mixed straight/cubic Bézier path with dash-point metadata on its
+/// vertices.
+///
+/// `end_vertex_is_dash_point[i]` describes the end vertex of segment `i`.
+/// The vectors therefore always have the same length. For a closed path, the
+/// final entry describes the vertex shared by the final segment's end and the
+/// first segment's start. For an open path, its unrepresented initial vertex
+/// and its final end vertex cannot be dash points in the OMAP format.
+#[derive(Debug, Clone)]
+pub struct BezierPath {
+    /// The straight and cubic segments forming the path.
+    pub geometry: BezierString,
+    /// Whether each segment's end vertex carries OMAP dash-point flag 32.
+    pub end_vertex_is_dash_point: Vec<bool>,
+}
+
 /// Build the exact mixed line/Bézier representation encoded by Mapper's raw
 /// coordinate flags.
 ///
 /// A coordinate with bit 0 set starts a cubic Bézier whose two handles and end
 /// point are the following three coordinates. An end point may also start the
 /// next curve, so it is deliberately visited again in that case.
-fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierString {
+fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierPath {
     let mut segments = Vec::new();
+    let mut end_vertex_is_dash_point = Vec::new();
     let mut previous_anchor = None;
     let mut index = 0;
 
@@ -53,6 +70,7 @@ fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierString {
                 previous_coord,
                 coord,
             )));
+            end_vertex_is_dash_point.push(flag & 32 == 32);
         }
 
         if flag & 1 == 1 && index + 3 < coords.len() {
@@ -63,6 +81,7 @@ fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierString {
             segments.push(BezierSegment::Bezier(BezierCurve::new(
                 coord, handle1, handle2, end,
             )));
+            end_vertex_is_dash_point.push(coords[end_index].1 & 32 == 32);
             previous_anchor = Some((end_index, end));
 
             if coords[end_index].1 & 1 == 1 {
@@ -76,7 +95,27 @@ fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierString {
         }
     }
 
-    BezierString::new(segments)
+    // A closed path repeats its first vertex as its final endpoint. Treat flag
+    // 32 on either raw representation as metadata for that shared vertex.
+    if let (Some((first_coord, first_flag)), Some((last_coord, last_flag))) =
+        (coords.first(), coords.last())
+        && last_flag & 2 == 2
+        && first_coord == last_coord
+        && (first_flag & 32 == 32 || last_flag & 32 == 32)
+        && let Some(last_is_dash_point) = end_vertex_is_dash_point.last_mut()
+    {
+        *last_is_dash_point = true;
+    }
+
+    debug_assert_eq!(
+        segments.len(),
+        end_vertex_is_dash_point.len(),
+        "every Bézier segment must have one end-vertex dash flag"
+    );
+    BezierPath {
+        geometry: BezierString::new(segments),
+        end_vertex_is_dash_point,
+    }
 }
 
 fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<String, String>> {
@@ -143,4 +182,42 @@ fn write_raw_coords<W: std::io::Write>(writer: &mut Writer<W>, coords: &[FileCoo
     writer.write_event(Event::Text(BytesText::new(&content)))?;
     writer.write_event(Event::End(BytesEnd::new("coords")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use geo_types::Coord;
+    use linestring2bezier::BezierSegment;
+
+    use super::bezier_from_raw_coords;
+
+    #[test]
+    fn dash_flags_align_with_segment_end_vertices() {
+        let path = bezier_from_raw_coords(&[
+            (Coord { x: 0, y: 0 }, 0),
+            (Coord { x: 1_000, y: 0 }, 33),
+            (Coord { x: 1_000, y: 1_000 }, 0),
+            (Coord { x: 2_000, y: 1_000 }, 0),
+            (Coord { x: 2_000, y: 0 }, 32),
+            (Coord { x: 3_000, y: 0 }, 0),
+        ]);
+
+        assert_eq!(path.geometry.num_segments(), 3);
+        assert_eq!(path.end_vertex_is_dash_point, [true, true, false]);
+        assert!(matches!(path.geometry.0[0], BezierSegment::Line(_)));
+        assert!(matches!(path.geometry.0[1], BezierSegment::Bezier(_)));
+        assert!(matches!(path.geometry.0[2], BezierSegment::Line(_)));
+    }
+
+    #[test]
+    fn closed_path_combines_first_and_closing_vertex_dash_flags() {
+        let path = bezier_from_raw_coords(&[
+            (Coord { x: 0, y: 0 }, 32),
+            (Coord { x: 1_000, y: 0 }, 0),
+            (Coord { x: 0, y: 0 }, 2),
+        ]);
+
+        assert_eq!(path.geometry.num_segments(), 2);
+        assert_eq!(path.end_vertex_is_dash_point, [false, true]);
+    }
 }

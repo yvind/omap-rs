@@ -3,7 +3,7 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
 
-use crate::objects::BezierPolygon;
+use crate::objects::{BezierPath, BezierPolygon};
 
 use super::GeoRef;
 
@@ -102,12 +102,20 @@ impl MapTransform {
     /// Convert a [`BezierPolygon`] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_bezierpolygon(&self, proj_bezierpolygon: BezierPolygon) -> BezierPolygon {
         BezierPolygon {
-            exterior: self.to_map_bezierstring(proj_bezierpolygon.exterior),
+            exterior: self.to_map_bezierpath(proj_bezierpolygon.exterior),
             interiors: proj_bezierpolygon
                 .interiors
                 .into_iter()
-                .map(|ring| self.to_map_bezierstring(ring))
+                .map(|ring| self.to_map_bezierpath(ring))
                 .collect(),
+        }
+    }
+
+    /// Convert a [`BezierPath`] in projected (CRS) coordinates to map coordinates.
+    pub fn to_map_bezierpath(&self, proj_bezierpath: BezierPath) -> BezierPath {
+        BezierPath {
+            geometry: self.to_map_bezierstring(proj_bezierpath.geometry),
+            end_vertex_is_dash_point: proj_bezierpath.end_vertex_is_dash_point,
         }
     }
 
@@ -157,12 +165,20 @@ impl MapTransform {
     /// Convert a [`BezierPolygon`] in map coordinates to projected (CRS) coordinates.
     pub fn to_projected_bezierpolygon(&self, map_bezierpolygon: BezierPolygon) -> BezierPolygon {
         BezierPolygon {
-            exterior: self.to_projected_bezierstring(map_bezierpolygon.exterior),
+            exterior: self.to_projected_bezierpath(map_bezierpolygon.exterior),
             interiors: map_bezierpolygon
                 .interiors
                 .into_iter()
-                .map(|ring| self.to_projected_bezierstring(ring))
+                .map(|ring| self.to_projected_bezierpath(ring))
                 .collect(),
+        }
+    }
+
+    /// Convert a [`BezierPath`] in map coordinates to projected (CRS) coordinates.
+    pub fn to_projected_bezierpath(&self, map_bezierpath: BezierPath) -> BezierPath {
+        BezierPath {
+            geometry: self.to_projected_bezierstring(map_bezierpath.geometry),
+            end_vertex_is_dash_point: map_bezierpath.end_vertex_is_dash_point,
         }
     }
 

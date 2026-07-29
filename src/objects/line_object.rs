@@ -7,7 +7,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
-use super::{FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
+use super::{BezierPath, FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
@@ -49,13 +49,14 @@ impl LineObject {
         &self.geometry
     }
 
-    /// Get the original line geometry as a mixed straight/cubic Bézier string.
+    /// Get the original line geometry as a mixed straight/cubic Bézier path,
+    /// including dash-point metadata for its segment-end vertices.
     ///
     /// This is generated directly from the original file coordinates and
     /// therefore preserves the exact Bézier handles. Returns [`None`] when the
     /// object was not read from raw file coordinates or after
     /// [`Self::get_geometry_mut`] has marked those coordinates as touched.
-    pub fn get_geometry_bezier(&self) -> Option<BezierString> {
+    pub fn get_geometry_bezier(&self) -> Option<BezierPath> {
         (!self.is_coords_touched && !self.raw_map_coords.is_empty())
             .then(|| bezier_from_raw_coords(&self.raw_map_coords))
     }
@@ -473,7 +474,7 @@ pub(crate) fn reverse_raw_line_coords(coords: &[FileCoord]) -> Vec<FileCoord> {
         flag -= flag & 1;
 
         if i == coords.len() - 1 {
-            end_flag += (flag & 2) + (flag & 16);
+            end_flag += flag & 18;
             flag -= end_flag;
         }
         if i > 2 {

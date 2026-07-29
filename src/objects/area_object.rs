@@ -7,7 +7,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
+use super::{BezierPath, FileCoord, PARSE_BEZIER_ERROR, bezier_from_raw_coords};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
     geo_referencing::AffineMapTransform,
@@ -20,9 +20,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct BezierPolygon {
     /// The polygon's exterior ring.
-    pub exterior: BezierString,
+    pub exterior: BezierPath,
     /// The polygon's interior rings.
-    pub interiors: Vec<BezierString>,
+    pub interiors: Vec<BezierPath>,
 }
 
 /// A fill pattern rotation and origin used by area objects.
@@ -76,7 +76,8 @@ impl AreaObject {
         &self.geometry
     }
 
-    /// Get the original area geometry as mixed straight/cubic Bézier rings.
+    /// Get the original area geometry as mixed straight/cubic Bézier rings,
+    /// including dash-point metadata for each segment-end vertex.
     ///
     /// This is generated directly from the original file coordinates and
     /// therefore preserves the exact Bézier handles. Returns [`None`] when the
@@ -91,7 +92,7 @@ impl AreaObject {
         let mut ring_start = 0;
 
         for (index, (_, flag)) in self.raw_map_coords.iter().enumerate() {
-            if flag & 2 == 2 {
+            if flag & 18 != 0 {
                 rings.push(bezier_from_raw_coords(
                     &self.raw_map_coords[ring_start..=index],
                 ));
@@ -102,8 +103,10 @@ impl AreaObject {
         // Mapper normally terminates every ring with the close/hole flag,
         // but tolerate an implicitly closed final ring, as parse does.
         if ring_start < self.raw_map_coords.len() {
-            let mut ring = bezier_from_raw_coords(&self.raw_map_coords[ring_start..]);
-            close_bezier_ring(&mut ring);
+            let raw_ring = &self.raw_map_coords[ring_start..];
+            let mut ring = bezier_from_raw_coords(raw_ring);
+            let start_is_dash_point = raw_ring.first().is_some_and(|(_, flag)| flag & 32 == 32);
+            close_bezier_ring(&mut ring, start_is_dash_point);
             rings.push(ring);
         }
 
@@ -436,8 +439,8 @@ impl AreaObject {
                             _ => return Err(Error::ObjectError),
                         }
 
-                        // check for close/hole flag (flag & 2)
-                        if (parts.2 & 2) == 2 {
+                        // check for hole or close flag (flag & (16+2))
+                        if (parts.2 & 18) != 0 {
                             // check the status of the bezier_buf (in case the end point is also a 1)
                             if !bezier_buf.0.is_empty() {
                                 line.extend(
@@ -482,15 +485,15 @@ impl AreaObject {
     }
 }
 
-fn close_bezier_ring(ring: &mut BezierString) {
-    let Some(first_segment) = ring.0.first() else {
+fn close_bezier_ring(ring: &mut BezierPath, closing_vertex_is_dash_point: bool) {
+    let Some(first_segment) = ring.geometry.0.first() else {
         return;
     };
     let first = match first_segment {
         BezierSegment::Bezier(curve) => curve.start,
         BezierSegment::Line(line) => line.start,
     };
-    let Some(last_segment) = ring.0.last() else {
+    let Some(last_segment) = ring.geometry.0.last() else {
         return;
     };
     let last = match last_segment {
@@ -499,8 +502,11 @@ fn close_bezier_ring(ring: &mut BezierString) {
     };
 
     if last != first {
-        ring.0
+        ring.geometry
+            .0
             .push(BezierSegment::Line(geo_types::Line::new(last, first)));
+        ring.end_vertex_is_dash_point
+            .push(closing_vertex_is_dash_point);
     }
 }
 
@@ -510,7 +516,7 @@ pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord>
     let mut s = Vec::with_capacity(coords.len());
     let mut prev_split = 0;
     for (i, (_, f)) in coords.iter().enumerate() {
-        if f & 2 == 2 || i == coords.len() - 1 {
+        if f & 18 != 0 || i == coords.len() - 1 {
             s.extend(crate::objects::line_object::reverse_raw_line_coords(
                 &coords[prev_split..=i],
             ));
