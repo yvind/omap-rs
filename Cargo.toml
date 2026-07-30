@@ -16,8 +16,8 @@ thiserror = "2"
 quick-xml = "0.41"
 linestring2bezier = { git = "https://github.com/yvind/linestring2bezier"}
 
-proj-wkt = { version = "0.8.0", optional = true }
-proj-core = { version = "0.8.0", features = [
+proj-wkt = { version = "0.10.0", optional = true }
+proj-core = { version = "0.10.0", features = [
     "geo-types",
 ], optional = true }
 chrono = { version = "0.4", optional = true }
