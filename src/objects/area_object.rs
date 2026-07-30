@@ -74,9 +74,13 @@ impl AreaObject {
     ///
     /// # Errors
     ///
-    /// Returns an error if uncached raw geometry cannot be flattened with the
-    /// requested error tolerance.
+    /// Returns an error if the object has no usable geometry or if uncached raw
+    /// geometry cannot be flattened with the requested error tolerance.
     pub fn into_geometry(self, allowed_error: f64) -> Result<Polygon> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
         if self.geometry.get().is_none() {
             let geometry = self.flattened_geometry(allowed_error)?;
             self.geometry
@@ -94,9 +98,13 @@ impl AreaObject {
     ///
     /// # Errors
     ///
-    /// Returns an error if the raw geometry is empty or cannot be flattened
-    /// with the requested error tolerance.
+    /// Returns an error if the object has no usable geometry or if its raw
+    /// geometry cannot be flattened with the requested error tolerance.
     pub fn get_geometry(&self, allowed_error: f64) -> Result<&Polygon> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
         if let Some(geometry) = self.geometry.get() {
             return Ok(geometry);
         }
@@ -145,9 +153,13 @@ impl AreaObject {
     ///
     /// # Errors
     ///
-    /// Returns an error if the raw geometry is empty or cannot be flattened
-    /// with the requested error tolerance.
+    /// Returns an error if the object has no usable geometry or if its raw
+    /// geometry cannot be flattened with the requested error tolerance.
     pub fn get_geometry_mut(&mut self, allowed_error: f64) -> Result<&mut Polygon> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
         if self.geometry.get().is_none() {
             let geometry = self.flattened_geometry(allowed_error)?;
             self.geometry
@@ -183,7 +195,7 @@ impl AreaObject {
         self.geometry
             .get()
             .map_or(self.raw_map_coords.len() < 2, |geometry| {
-                geometry.exterior().0.is_empty()
+                geometry.exterior().0.len() < 2
             })
     }
 
@@ -296,6 +308,10 @@ impl AreaObject {
         writer: &mut Writer<W>,
         symbol_index: Option<i32>,
     ) -> Result<()> {
+        if self.geometry_is_empty() {
+            return Ok(());
+        }
+
         let mut bs = BytesStart::new("object").with_attributes([("type", "1")]);
         if let Some(sid) = symbol_index {
             bs.push_attribute(("symbol", sid.to_string().as_str()));
@@ -449,11 +465,11 @@ impl AreaObject {
     fn flattened_geometry(&self, allowed_error: f64) -> Result<Polygon> {
         let bezier =
             bezier_polygon_from_raw_coords(&self.raw_map_coords).ok_or(Error::ObjectError)?;
-        let exterior = bezier.exterior.geometry.to_line_string(allowed_error)?;
+        let exterior = bezier.exterior.geometry().to_line_string(allowed_error)?;
         let interiors = bezier
             .interiors
             .iter()
-            .map(|ring| ring.geometry.to_line_string(allowed_error))
+            .map(|ring| ring.geometry().to_line_string(allowed_error))
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(Polygon::new(exterior, interiors))
     }
@@ -465,9 +481,8 @@ fn bezier_polygon_from_raw_coords(coords: &[FileCoord]) -> Option<BezierPolygon>
 
     for (index, (_, flag)) in coords.iter().enumerate() {
         if flag & COORD_FLAGS_RING_END != 0 {
-            let mut ring = bezier_from_raw_coords(&coords[ring_start..=index]);
-            close_bezier_ring(&mut ring);
-            if ring.geometry.num_segments() != 0 {
+            if let Some(mut ring) = bezier_from_raw_coords(&coords[ring_start..=index]) {
+                close_bezier_ring(&mut ring);
                 rings.push(ring);
             }
             ring_start = index + 1;
@@ -476,12 +491,11 @@ fn bezier_polygon_from_raw_coords(coords: &[FileCoord]) -> Option<BezierPolygon>
 
     // Mapper normally terminates every ring with a close/hole flag, but
     // tolerate an implicitly closed final ring, as parse does.
-    if ring_start < coords.len() {
-        let mut ring = bezier_from_raw_coords(&coords[ring_start..]);
+    if ring_start < coords.len()
+        && let Some(mut ring) = bezier_from_raw_coords(&coords[ring_start..])
+    {
         close_bezier_ring(&mut ring);
-        if ring.geometry.num_segments() != 0 {
-            rings.push(ring);
-        }
+        rings.push(ring);
     }
 
     let mut rings = rings.into_iter();

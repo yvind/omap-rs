@@ -55,7 +55,23 @@ pub enum Element {
 }
 
 impl Element {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Point { symbol, .. } => {
+                symbol.inner_color == SymbolColor::NoColor
+                    && symbol.outer_color == SymbolColor::NoColor
+                    && symbol.elements.is_empty()
+            }
+            Self::Line { object, .. } => object.geometry_is_empty(),
+            Self::Area { object, .. } => object.geometry_is_empty(),
+        }
+    }
+
     fn write<W: std::io::Write>(&self, writer: &mut Writer<W>, color_set: &ColorSet) -> Result<()> {
+        if self.is_empty() {
+            return Ok(());
+        }
+
         writer.write_event(Event::Start(BytesStart::new("element")))?;
         match self {
             Self::Point { symbol, object } => {
@@ -261,7 +277,9 @@ impl PointSymbol {
 
     /// Add a graphical element (builder-style).
     pub fn with_element(mut self, element: Element) -> Self {
-        self.elements.push(element);
+        if !element.is_empty() {
+            self.elements.push(element);
+        }
         self
     }
 
@@ -331,33 +349,8 @@ impl PointSymbol {
             }
         }
 
-        // Check the point symbol for empty elements. Drop them
-        let mut drop_elements = Vec::with_capacity(elements.len());
-        for (i, element) in elements.iter().enumerate() {
-            match element {
-                Element::Point { symbol, object: _ } => {
-                    if symbol.inner_color == SymbolColor::NoColor
-                        && symbol.outer_color == SymbolColor::NoColor
-                        && symbol.elements.is_empty()
-                    {
-                        drop_elements.push(i);
-                    }
-                }
-                Element::Line { symbol: _, object } => {
-                    if object.geometry_is_empty() {
-                        drop_elements.push(i);
-                    }
-                }
-                Element::Area { symbol: _, object } => {
-                    if object.geometry_is_empty() {
-                        drop_elements.push(i);
-                    }
-                }
-            }
-        }
-        for i in drop_elements.into_iter().rev() {
-            let _ = elements.swap_remove(i);
-        }
+        // Ignore elements without anything to render.
+        elements.retain(|element| !element.is_empty());
 
         Ok(Self {
             common,
@@ -437,10 +430,15 @@ impl PointSymbol {
                 .to_string()
                 .as_str(),
         ));
-        bs.push_attribute(("elements", self.elements.len().to_string().as_str()));
+        let element_count = self
+            .elements
+            .iter()
+            .filter(|element| !element.is_empty())
+            .count();
+        bs.push_attribute(("elements", element_count.to_string().as_str()));
         writer.write_event(Event::Start(bs))?;
 
-        for element in &self.elements {
+        for element in self.elements.iter().filter(|element| !element.is_empty()) {
             element.write(writer, color_set)?;
         }
 
@@ -452,6 +450,38 @@ impl PointSymbol {
             ))?;
         }
         writer.write_event(Event::End(BytesEnd::new("symbol")))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use geo_types::LineString;
+    use quick_xml::Writer;
+
+    use super::{Element, PointSymbol};
+    use crate::{Code, Result, colors::ColorSet, objects::LineObject, symbols::LineSymbol};
+
+    fn empty_line_element() -> Element {
+        Element::Line {
+            symbol: Box::new(LineSymbol::new(Code::default(), "")),
+            object: Box::new(LineObject::new_element(LineString::new(Vec::new()))),
+        }
+    }
+
+    #[test]
+    fn empty_path_elements_are_rejected_and_skipped_on_write() -> Result<()> {
+        let symbol = PointSymbol::new(Code::default(), "").with_element(empty_line_element());
+        assert!(symbol.elements.is_empty());
+
+        let mut symbol = PointSymbol::new(Code::default(), "");
+        symbol.elements.push(empty_line_element());
+        let mut writer = Writer::new(Vec::new());
+        symbol.write(&mut writer, &ColorSet::default(), None)?;
+        let output = String::from_utf8(writer.into_inner())?;
+
+        assert!(output.contains(r#"elements="0""#));
+        assert!(!output.contains("<element>"));
         Ok(())
     }
 }

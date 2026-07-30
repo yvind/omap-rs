@@ -57,9 +57,13 @@ impl LineObject {
     ///
     /// # Errors
     ///
-    /// Returns an error if the raw geometry cannot be flattened with the
-    /// requested error tolerance.
+    /// Returns an error if the object has no usable geometry or if its raw
+    /// geometry cannot be flattened with the requested error tolerance.
     pub fn get_geometry(&self, allowed_error: f64) -> Result<&LineString> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
         if let Some(geometry) = self.geometry.get() {
             return Ok(geometry);
         }
@@ -76,10 +80,15 @@ impl LineObject {
     ///
     /// This is generated directly from the original file coordinates and
     /// therefore preserves the exact Bézier handles. Returns [`None`] when the
-    /// object was not read from raw file coordinates or after
-    /// [`Self::get_geometry_mut`] has marked those coordinates as touched.
+    /// object was not read from raw file coordinates, the coordinates do not
+    /// form a segment, or [`Self::get_geometry_mut`] has marked them as
+    /// touched.
     pub fn bezier_geometry(&self) -> Option<BezierPath> {
-        (!self.is_coords_touched).then(|| bezier_from_raw_coords(&self.raw_map_coords))
+        if self.is_coords_touched {
+            return None;
+        }
+
+        bezier_from_raw_coords(&self.raw_map_coords)
     }
 
     /// Rebuild the original line geometry as a mixed straight/cubic Bézier
@@ -99,9 +108,13 @@ impl LineObject {
     ///
     /// # Errors
     ///
-    /// Returns an error if the raw geometry cannot be flattened with the
-    /// requested error tolerance.
+    /// Returns an error if the object has no usable geometry or if its raw
+    /// geometry cannot be flattened with the requested error tolerance.
     pub fn get_geometry_mut(&mut self, allowed_error: f64) -> Result<&mut LineString> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
         if self.geometry.get().is_none() {
             let geometry = self.flattened_geometry(allowed_error)?;
             self.geometry
@@ -116,9 +129,13 @@ impl LineObject {
     ///
     /// # Errors
     ///
-    /// Returns an error if uncached raw geometry cannot be flattened with the
-    /// requested error tolerance.
+    /// Returns an error if the object has no usable geometry or if uncached raw
+    /// geometry cannot be flattened with the requested error tolerance.
     pub fn into_geometry(self, allowed_error: f64) -> Result<LineString> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
         if self.geometry.get().is_none() {
             let geometry = self.flattened_geometry(allowed_error)?;
             self.geometry
@@ -165,7 +182,7 @@ impl LineObject {
         self.geometry
             .get()
             .map_or(self.raw_map_coords.len() < 2, |geometry| {
-                geometry.0.is_empty()
+                geometry.0.len() < 2
             })
     }
 
@@ -252,6 +269,10 @@ impl LineObject {
         writer: &mut Writer<W>,
         symbol_index: Option<i32>,
     ) -> Result<()> {
+        if self.geometry_is_empty() {
+            return Ok(());
+        }
+
         let mut bs = BytesStart::new("object").with_attributes([("type", "1")]);
         if let Some(sid) = symbol_index {
             bs.push_attribute(("symbol", sid.to_string().as_str()));
@@ -370,8 +391,13 @@ impl LineObject {
     }
 
     fn flattened_geometry(&self, allowed_error: f64) -> Result<LineString> {
+        if self.raw_map_coords.len() < 2 {
+            return Err(Error::ObjectError);
+        }
+
         Ok(bezier_from_raw_coords(&self.raw_map_coords)
-            .geometry
+            .ok_or(Error::ObjectError)?
+            .geometry()
             .to_line_string(allowed_error)?)
     }
 }
@@ -447,31 +473,27 @@ mod tests {
     }
 
     #[test]
-    fn parsed_empty_line_flattens_and_writes_without_initializing_geometry() -> Result<()> {
-        let mut reader = Reader::from_str(r#"<object><coords count="0"></coords></object>"#);
-        let event = reader.read_event()?;
-        assert!(matches!(event, Event::Start(_)));
+    fn parsed_empty_line_has_no_geometry_and_is_not_written() -> Result<()> {
+        for xml in [
+            r#"<object><coords count="0"></coords></object>"#,
+            r#"<object><coords count="1">0 0;</coords></object>"#,
+        ] {
+            let mut reader = Reader::from_str(xml);
+            let event = reader.read_event()?;
+            assert!(matches!(event, Event::Start(_)));
 
-        let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
-        assert!(line.geometry.get().is_none());
-        assert_eq!(
-            line.bezier_geometry()
-                .map(|path| path.geometry.num_segments()),
-            Some(0)
-        );
-        assert!(line.get_geometry(0.1)?.0.is_empty());
+            let line =
+                LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
+            assert!(line.geometry.get().is_none());
+            assert!(line.geometry_is_empty());
+            assert!(line.bezier_geometry().is_none());
+            assert!(line.get_geometry(0.1).is_err());
 
-        let mut reader = Reader::from_str(r#"<object><coords count="0"></coords></object>"#);
-        let event = reader.read_event()?;
-        assert!(matches!(event, Event::Start(_)));
-        let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
-        let mut writer = Writer::new(Vec::new());
-        line.write_content(&mut writer, None)?;
-        assert!(line.geometry.get().is_none());
-        assert_eq!(
-            String::from_utf8(writer.into_inner())?,
-            r#"<object type="1"><coords count="0"></coords></object>"#
-        );
+            let mut writer = Writer::new(Vec::new());
+            line.write_content(&mut writer, None)?;
+            assert!(line.geometry.get().is_none());
+            assert!(writer.into_inner().is_empty());
+        }
         Ok(())
     }
 }

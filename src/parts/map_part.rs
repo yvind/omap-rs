@@ -57,6 +57,10 @@ impl MapPart {
     /// Add an object to the map
     pub fn add_object(&mut self, object: impl Into<MapObject>) {
         let mo = object.into();
+        if mo.geometry_is_empty() {
+            return;
+        }
+
         let pointer = match &mo {
             MapObject::Point(o) => SymbolPointer::Point(o.symbol.as_ptr()),
             MapObject::Line(o) => match &o.symbol {
@@ -164,6 +168,10 @@ impl MapPart {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), b"object") {
                         let object = MapObject::parse(reader, &bytes_start, symbols, false)?;
+                        if object.geometry_is_empty() {
+                            continue;
+                        }
+
                         let symbol_pointer = (&object.get_weak_symbol()).into();
 
                         if let Some(contained) = objects.get_mut(&symbol_pointer) {
@@ -193,23 +201,98 @@ impl MapPart {
         writer: &mut Writer<W>,
         symbols: &SymbolSet,
     ) -> Result<()> {
+        let object_count = self
+            .objects
+            .values()
+            .flatten()
+            .filter(|object| !object.geometry_is_empty())
+            .count();
+
         writer.write_event(Event::Start(
             BytesStart::new("part")
                 .with_attributes([("name", quick_xml::escape::escape(self.name.as_str()))]),
         ))?;
-        writer
-            .write_event(Event::Start(BytesStart::new("objects").with_attributes([
-                ("count", self.objects.len().to_string().as_str()),
-            ])))?;
+        writer.write_event(Event::Start(
+            BytesStart::new("objects")
+                .with_attributes([("count", object_count.to_string().as_str())]),
+        ))?;
 
         for (_, objects) in self.objects {
             for object in objects {
+                if object.geometry_is_empty() {
+                    continue;
+                }
                 object.write(writer, symbols)?;
                 writer.get_mut().write_all(b"\n")?;
             }
         }
         writer.write_event(Event::End(BytesEnd::new("objects")))?;
         writer.write_event(Event::End(BytesEnd::new("part")))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Weak;
+
+    use geo_types::{LineString, coord};
+    use quick_xml::{Reader, Writer, events::Event};
+
+    use super::MapPart;
+    use crate::{
+        Result,
+        objects::{LineObject, MapObject},
+        symbols::{SymbolSet, WeakLinePathSymbol},
+    };
+
+    fn empty_symbol_set() -> SymbolSet {
+        SymbolSet {
+            symbols: Vec::new(),
+            name: String::new(),
+        }
+    }
+
+    #[test]
+    fn parsed_objects_without_geometry_are_ignored() -> Result<()> {
+        let mut reader = Reader::from_str(
+            r#"<part name="Map"><objects count="1"><object type="1"><coords count="0"></coords></object></objects></part>"#,
+        );
+        let Event::Start(start) = reader.read_event()? else {
+            panic!("expected part start");
+        };
+
+        let part = MapPart::parse(&mut reader, &start, &empty_symbol_set())?;
+
+        assert!(part.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn empty_objects_are_rejected_on_insert_and_skipped_on_write() -> Result<()> {
+        let weak_symbol = WeakLinePathSymbol::Line(Weak::new());
+        let mut part = MapPart::new("Map");
+        part.add_object(LineObject::new(
+            weak_symbol.clone(),
+            LineString::new(Vec::new()),
+        ));
+        assert!(part.is_empty());
+
+        part.add_object(LineObject::new(
+            weak_symbol,
+            LineString::new(vec![coord! { x: 0., y: 0. }, coord! { x: 1., y: 0. }]),
+        ));
+        let Some(MapObject::Line(line)) = part.iter_all_objects_mut().next() else {
+            panic!("expected line object");
+        };
+        line.get_geometry_mut(0.1)?.0.clear();
+
+        let mut writer = Writer::new(Vec::new());
+        part.write(&mut writer, &empty_symbol_set())?;
+        let output = String::from_utf8(writer.into_inner())?;
+
+        assert!(output.contains(r#"<objects count="0">"#));
+        assert!(!output.contains("<object "));
         Ok(())
     }
 }

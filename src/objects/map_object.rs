@@ -90,6 +90,10 @@ impl MapObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
+        if self.geometry_is_empty() {
+            return Ok(());
+        }
+
         match self {
             Self::Point(point_object) => point_object.write(writer, symbol_set)?,
             Self::Line(line_object) => line_object.write(writer, symbol_set)?,
@@ -97,6 +101,14 @@ impl MapObject {
             Self::Text(text_object) => text_object.write(writer, symbol_set)?,
         }
         Ok(())
+    }
+
+    pub(crate) fn geometry_is_empty(&self) -> bool {
+        match self {
+            Self::Line(object) => object.geometry_is_empty(),
+            Self::Area(object) => object.geometry_is_empty(),
+            Self::Point(_) | Self::Text(_) => false,
+        }
     }
 
     /// Apply an affine coordinate transform to this object, preserving

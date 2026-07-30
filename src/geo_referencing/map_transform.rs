@@ -113,10 +113,7 @@ impl MapTransform {
 
     /// Convert a [`BezierPath`] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_bezierpath(&self, proj_bezierpath: BezierPath) -> BezierPath {
-        BezierPath {
-            geometry: self.to_map_bezierstring(proj_bezierpath.geometry),
-            vertex_is_dash_point: proj_bezierpath.vertex_is_dash_point,
-        }
+        proj_bezierpath.map_geometry(|geometry| self.to_map_bezierstring(geometry))
     }
 
     /// Convert a [`LineString`] in projected (CRS) coordinates to map coordinates.
@@ -176,10 +173,7 @@ impl MapTransform {
 
     /// Convert a [`BezierPath`] in map coordinates to projected (CRS) coordinates.
     pub fn to_projected_bezierpath(&self, map_bezierpath: BezierPath) -> BezierPath {
-        BezierPath {
-            geometry: self.to_projected_bezierstring(map_bezierpath.geometry),
-            vertex_is_dash_point: map_bezierpath.vertex_is_dash_point,
-        }
+        map_bezierpath.map_geometry(|geometry| self.to_projected_bezierstring(geometry))
     }
 
     /// Convert a [`LineString`] in map coordinates to projected (CRS) coordinates.

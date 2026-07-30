@@ -52,23 +52,78 @@ const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT;
 #[derive(Debug, Clone)]
 pub struct BezierPath {
     /// The straight and cubic segments forming the path.
-    pub geometry: BezierString,
+    geometry: BezierString,
     /// Whether each path vertex carries [`COORD_FLAG_DASH_POINT`].
-    pub vertex_is_dash_point: Vec<bool>,
+    vertex_is_dash_point: Vec<bool>,
 }
 
 impl BezierPath {
+    /// Create a non-empty Bézier path with dash-point metadata for every
+    /// vertex.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `geometry` is empty, if there is not exactly one
+    /// dash flag for the initial vertex and every segment end, or if the two
+    /// flags describing a closed path's seam disagree.
+    pub fn new(geometry: BezierString, vertex_is_dash_point: Vec<bool>) -> Result<Self> {
+        let segments = geometry.num_segments();
+        if segments == 0 {
+            return Err(Error::EmptyBezierPath);
+        }
+
+        let expected = segments + 1;
+        let actual = vertex_is_dash_point.len();
+        if actual != expected {
+            return Err(Error::InvalidBezierPathDashFlagCount {
+                segments,
+                expected,
+                actual,
+            });
+        }
+
+        let first_segment = geometry.segments().next().ok_or(Error::EmptyBezierPath)?;
+        let last_segment = geometry.segments().last().ok_or(Error::EmptyBezierPath)?;
+        if first_segment.start() == last_segment.end()
+            && vertex_is_dash_point.first() != vertex_is_dash_point.last()
+        {
+            return Err(Error::MismatchedBezierPathSeamDashFlags);
+        }
+
+        Ok(Self {
+            geometry,
+            vertex_is_dash_point,
+        })
+    }
+
+    /// Get the mixed straight/cubic geometry.
+    pub fn geometry(&self) -> &BezierString {
+        &self.geometry
+    }
+
+    /// Get the dash-point state of the initial vertex and every segment end.
+    pub fn vertex_is_dash_point(&self) -> &[bool] {
+        &self.vertex_is_dash_point
+    }
+
+    /// Consume the path and return its geometry and vertex dash flags.
+    pub fn into_parts(self) -> (BezierString, Vec<bool>) {
+        (self.geometry, self.vertex_is_dash_point)
+    }
+
+    pub(crate) fn map_geometry(self, transform: impl FnOnce(BezierString) -> BezierString) -> Self {
+        Self {
+            geometry: transform(self.geometry),
+            vertex_is_dash_point: self.vertex_is_dash_point,
+        }
+    }
+
     /// Iterate over segments paired with the dash-point state of their end
     /// vertices.
     ///
     /// The initial vertex's state is available as
-    /// `vertex_is_dash_point.first()`.
+    /// `vertex_is_dash_point().first()`.
     pub fn segments(&self) -> impl ExactSizeIterator<Item = (&BezierSegment, bool)> {
-        debug_assert_eq!(
-            self.geometry.num_segments() + 1,
-            self.vertex_is_dash_point.len(),
-            "a Bézier path must have one more vertex flag than segments"
-        );
         self.geometry
             .segments()
             .zip(self.vertex_is_dash_point.iter().copied().skip(1))
@@ -81,7 +136,7 @@ impl BezierPath {
 /// A coordinate with bit 0 set starts a cubic Bézier whose two handles and end
 /// point are the following three coordinates. An end point may also start the
 /// next curve, so it is deliberately visited again in that case.
-fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierPath {
+fn bezier_from_raw_coords(coords: &[FileCoord]) -> Option<BezierPath> {
     let mut segments = Vec::new();
     let mut vertex_is_dash_point = coords
         .first()
@@ -139,15 +194,7 @@ fn bezier_from_raw_coords(coords: &[FileCoord]) -> BezierPath {
         }
     }
 
-    debug_assert_eq!(
-        segments.len() + usize::from(!coords.is_empty()),
-        vertex_is_dash_point.len(),
-        "every non-empty Bézier path must have one more vertex flag than segments"
-    );
-    BezierPath {
-        geometry: BezierString::new(segments),
-        vertex_is_dash_point,
-    }
+    BezierPath::new(BezierString::new(segments), vertex_is_dash_point).ok()
 }
 
 fn file_coords_from_bezier(
@@ -249,9 +296,10 @@ mod tests {
     use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
 
     use super::{
-        COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT, COORD_FLAGS_RING_END,
+        BezierPath, COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT, COORD_FLAGS_RING_END,
         bezier_from_raw_coords, file_coords_from_bezier,
     };
+    use crate::Error;
 
     #[test]
     fn dash_flags_align_with_segment_end_vertices() {
@@ -263,12 +311,16 @@ mod tests {
             (Coord { x: 2_000, y: 0 }, 32),
             (Coord { x: 3_000, y: 0 }, 0),
         ]);
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
 
-        assert_eq!(path.geometry.num_segments(), 3);
-        assert_eq!(path.vertex_is_dash_point, [true, true, true, false]);
-        assert!(matches!(path.geometry.0[0], BezierSegment::Line(_)));
-        assert!(matches!(path.geometry.0[1], BezierSegment::Bezier(_)));
-        assert!(matches!(path.geometry.0[2], BezierSegment::Line(_)));
+        assert_eq!(path.geometry().num_segments(), 3);
+        assert_eq!(path.vertex_is_dash_point(), [true, true, true, false]);
+        assert!(matches!(path.geometry().0[0], BezierSegment::Line(_)));
+        assert!(matches!(path.geometry().0[1], BezierSegment::Bezier(_)));
+        assert!(matches!(path.geometry().0[2], BezierSegment::Line(_)));
         assert_eq!(
             path.segments()
                 .map(|(_, end_is_dash_point)| end_is_dash_point)
@@ -284,9 +336,13 @@ mod tests {
             (Coord { x: 1_000, y: 0 }, 0),
             (Coord { x: 0, y: 0 }, 2),
         ]);
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
 
-        assert_eq!(path.geometry.num_segments(), 2);
-        assert_eq!(path.vertex_is_dash_point, [true, false, true]);
+        assert_eq!(path.geometry().num_segments(), 2);
+        assert_eq!(path.vertex_is_dash_point(), [true, false, true]);
     }
 
     #[test]
@@ -297,9 +353,44 @@ mod tests {
             (Coord { x: 2_000, y: 0 }, COORD_FLAG_DASH_POINT),
             (Coord { x: 3_000, y: 0 }, COORD_FLAG_DASH_POINT),
         ]);
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
 
-        assert_eq!(path.geometry.num_segments(), 3);
-        assert_eq!(path.vertex_is_dash_point, [true, true, true, true]);
+        assert_eq!(path.geometry().num_segments(), 3);
+        assert_eq!(path.vertex_is_dash_point(), [true, true, true, true]);
+    }
+
+    #[test]
+    fn bezier_path_constructor_enforces_invariants() {
+        assert!(matches!(
+            BezierPath::new(BezierString::empty(), Vec::new()),
+            Err(Error::EmptyBezierPath)
+        ));
+
+        let open_geometry = BezierString::new(vec![BezierSegment::new(
+            Coord { x: 0.0, y: 0.0 },
+            None,
+            Coord { x: 1.0, y: 0.0 },
+        )]);
+        assert!(matches!(
+            BezierPath::new(open_geometry, vec![false]),
+            Err(Error::InvalidBezierPathDashFlagCount {
+                segments: 1,
+                expected: 2,
+                actual: 1
+            })
+        ));
+
+        let closed_geometry = BezierString::new(vec![
+            BezierSegment::new(Coord { x: 0.0, y: 0.0 }, None, Coord { x: 1.0, y: 0.0 }),
+            BezierSegment::new(Coord { x: 1.0, y: 0.0 }, None, Coord { x: 0.0, y: 0.0 }),
+        ]);
+        assert!(matches!(
+            BezierPath::new(closed_geometry, vec![false, false, true]),
+            Err(Error::MismatchedBezierPathSeamDashFlags)
+        ));
     }
 
     #[test]

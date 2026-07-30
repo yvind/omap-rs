@@ -267,6 +267,24 @@ pub enum Error {
     /// A Bézier-curve conversion error.
     #[error(transparent)]
     BezierConversionError(#[from] linestring2bezier::Error),
+    /// A Bézier path has no segments.
+    #[error("a Bézier path must contain at least one segment")]
+    EmptyBezierPath,
+    /// A Bézier path has the wrong number of vertex dash flags.
+    #[error(
+        "a Bézier path with {segments} segments requires {expected} vertex dash flags, got {actual}"
+    )]
+    InvalidBezierPathDashFlagCount {
+        /// Number of segments in the path.
+        segments: usize,
+        /// Required number of vertex dash flags.
+        expected: usize,
+        /// Supplied number of vertex dash flags.
+        actual: usize,
+    },
+    /// The duplicate seam flags of a closed Bézier path disagree.
+    #[error("the first and final dash flags of a closed Bézier path must match")]
+    MismatchedBezierPathSeamDashFlags,
     /// An invalid color definition.
     #[error("Color definition error")]
     ColorError,
