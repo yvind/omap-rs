@@ -2,7 +2,7 @@ use std::str::FromStr as _;
 
 use geo_types::Coord;
 #[cfg(feature = "geo_ref")]
-use proj_core::{CrsDef, Transform};
+use proj_core::{CrsDef, LinearUnit, ProjectedCrsDef, ProjectionMethod, Transform};
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -404,14 +404,23 @@ impl GeoRef {
         local_proj: &CrsDef,
         geo_ref_point: Coord,
     ) -> Result<(f64, f64)> {
-        let baseline_proj = proj_wkt::parse_crs(
-            format!(
-                "+proj=sterea +lat_0={} +lon_0={} +ellps=WGS84 +units=m",
-                geo_ref_point.y, geo_ref_point.x
-            )
-            .as_str(),
-        )?;
+        let baseline_proj = CrsDef::Projected(ProjectedCrsDef::new_with_base_geographic_crs(
+            0,
+            4326,
+            proj_core::datum::WGS84,
+            ProjectionMethod::ObliqueStereographic {
+                lon0: geo_ref_point.x,
+                lat0: geo_ref_point.y,
+                k0: 1.0,
+                false_easting: 0.0,
+                false_northing: 0.0,
+            },
+            LinearUnit::metre(),
+            "WGS 84 convergence baseline",
+        ));
 
+        // The projected CRS is anonymous, but its registered WGS84 base CRS
+        // lets proj-core select an operation directly to the local CRS.
         let transform = Transform::from_crs_defs(&baseline_proj, local_proj)?;
 
         const D: f64 = 1000.0;
