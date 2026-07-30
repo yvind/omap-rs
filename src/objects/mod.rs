@@ -47,7 +47,8 @@ const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT;
 ///
 /// `vertex_is_dash_point` contains one entry for the initial vertex followed
 /// by one entry for every segment end, so its length is always
-/// `geometry.num_segments() + 1`. For a closed path, its first and final
+/// `geometry.num_segments() + 1`, except for an empty path, which has
+/// neither vertices nor segments. For a closed path, its first and final
 /// entries describe the same seam vertex and therefore have the same value.
 #[derive(Debug, Clone)]
 pub struct BezierPath {
@@ -64,10 +65,10 @@ impl BezierPath {
     /// The initial vertex's state is available as
     /// `vertex_is_dash_point.first()`.
     pub fn segments(&self) -> impl ExactSizeIterator<Item = (&BezierSegment, bool)> {
-        debug_assert_eq!(
-            self.geometry.num_segments() + 1,
-            self.vertex_is_dash_point.len(),
-            "a Bézier path must have one more vertex flag than segments"
+        debug_assert!(
+            (self.geometry.num_segments() == 0 && self.vertex_is_dash_point.is_empty())
+                || self.geometry.num_segments() + 1 == self.vertex_is_dash_point.len(),
+            "a non-empty Bézier path must have one more vertex flag than segments"
         );
         self.geometry
             .segments()

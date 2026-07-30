@@ -455,8 +455,7 @@ mod tests {
         let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
         assert!(line.geometry.get().is_none());
         assert_eq!(
-            line.bezier_geometry()
-                .map(|path| path.geometry.num_segments()),
+            line.bezier_geometry().map(|path| path.segments().len()),
             Some(0)
         );
         assert!(line.get_geometry(0.1)?.0.is_empty());
