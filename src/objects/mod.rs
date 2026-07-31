@@ -5,7 +5,7 @@ mod text_object;
 
 mod map_object;
 
-use geo_types::Coord;
+use geo_types::{Coord, LineString};
 pub use linestring2bezier::{BezierSegment, BezierString};
 use quick_xml::{
     Reader, Writer,
@@ -140,6 +140,96 @@ impl BezierPath {
         self.geometry
             .segments()
             .zip(self.vertex_is_dash_point.iter().copied().skip(1))
+    }
+
+    /// Approximate the path by a polyline whose vertices keep their
+    /// dash-point state.
+    ///
+    /// The polyline is the one [`BezierString::to_line_string`] produces for
+    /// the same tolerance, so it matches the flattened geometry the object
+    /// accessors hand out. Every path vertex survives flattening exactly and
+    /// keeps its dash-point state; the points introduced when subdividing a
+    /// curve fall between vertices and are never dash points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the geometry cannot be flattened with the requested
+    /// error tolerance.
+    pub fn flatten(&self, allowed_error: f64) -> Result<FlattenedPath> {
+        let (line_string, segment_end_indices) = self
+            .geometry
+            .to_line_string_with_segment_ends(allowed_error)?;
+
+        // The initial vertex lands at index 0 and every later vertex ends a
+        // segment, so this walks the two vectors in step. Segment ends are
+        // ascending and none of them is 0, so the kept indices are too.
+        let dash_point_indices = std::iter::once(0)
+            .chain(segment_end_indices)
+            .zip(self.vertex_is_dash_point.iter().copied())
+            .filter_map(|(index, is_dash_point)| is_dash_point.then_some(index))
+            .collect();
+
+        Ok(FlattenedPath {
+            line_string,
+            dash_point_indices,
+        })
+    }
+}
+
+/// A flattened path and the vertices along it that are dash points.
+///
+/// Produced by [`BezierPath::flatten`], which is the only thing that can build
+/// one. A path normally has a handful of dash points among a great many
+/// flattened vertices, so they are held as ascending indices into
+/// [`Self::line_string`] rather than as a flag per vertex.
+#[derive(Debug, Clone)]
+pub struct FlattenedPath {
+    /// The polyline approximating the Bézier path.
+    line_string: LineString,
+    /// Where the dash points sit in `line_string`, ascending.
+    dash_point_indices: Vec<usize>,
+}
+
+impl FlattenedPath {
+    /// Get the flattened geometry.
+    pub fn line_string(&self) -> &LineString {
+        &self.line_string
+    }
+
+    /// Get the positions of the dash points in [`Self::line_string`], in
+    /// ascending order.
+    pub fn dash_point_indices(&self) -> &[usize] {
+        &self.dash_point_indices
+    }
+
+    /// Iterate over every vertex paired with its dash-point state.
+    ///
+    /// Walks the sparse indices alongside the coordinates, so reading the
+    /// whole path this way costs no more than the dense form would.
+    pub fn vertices(&self) -> impl ExactSizeIterator<Item = (Coord, bool)> {
+        let mut remaining = self.dash_point_indices.as_slice();
+
+        self.line_string
+            .0
+            .iter()
+            .copied()
+            .enumerate()
+            .map(move |(index, coord)| {
+                if let Some((&next_dash_point, rest)) = remaining.split_first()
+                    && next_dash_point == index
+                {
+                    remaining = rest;
+                    (coord, true)
+                } else {
+                    (coord, false)
+                }
+            })
+    }
+
+    /// Consume the flattened path and return its geometry and dash-point
+    /// positions.
+    pub fn into_parts(self) -> (LineString, Vec<usize>) {
+        (self.line_string, self.dash_point_indices)
     }
 }
 
@@ -307,20 +397,30 @@ mod tests {
     use linestring2bezier::{BezierCurve, BezierSegment, BezierString};
 
     use super::{
-        BezierPath, COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT, COORD_FLAGS_RING_END,
-        bezier_from_raw_coords, file_coords_from_bezier,
+        BezierPath, COORD_FLAG_CLOSE_POINT, COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT,
+        COORD_FLAGS_RING_END, bezier_from_raw_coords, file_coords_from_bezier,
     };
+
+    /// Three segments — line, curve, line — whose first three vertices are
+    /// dash points. In map coordinates the vertices are (0, 0), (1, 0),
+    /// (2, 0) and (3, 0), with the curve bulging away from the y = 0 axis.
+    fn line_curve_line() -> Option<BezierPath> {
+        bezier_from_raw_coords(&[
+            (Coord { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
+            (
+                Coord { x: 1_000, y: 0 },
+                COORD_FLAG_CURVE_START | COORD_FLAG_DASH_POINT,
+            ),
+            (Coord { x: 1_000, y: 1_000 }, 0),
+            (Coord { x: 2_000, y: 1_000 }, 0),
+            (Coord { x: 2_000, y: 0 }, COORD_FLAG_DASH_POINT),
+            (Coord { x: 3_000, y: 0 }, 0),
+        ])
+    }
 
     #[test]
     fn dash_flags_align_with_segment_end_vertices() {
-        let path = bezier_from_raw_coords(&[
-            (Coord { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
-            (Coord { x: 1_000, y: 0 }, 33),
-            (Coord { x: 1_000, y: 1_000 }, 0),
-            (Coord { x: 2_000, y: 1_000 }, 0),
-            (Coord { x: 2_000, y: 0 }, 32),
-            (Coord { x: 3_000, y: 0 }, 0),
-        ]);
+        let path = line_curve_line();
         assert!(path.is_some());
         let Some(path) = path else {
             return;
@@ -463,5 +563,135 @@ mod tests {
                 (Coord { x: 2_000, y: 0 }, COORD_FLAGS_RING_END),
             ]
         );
+    }
+
+    #[test]
+    fn flattening_keeps_dash_points_on_their_own_vertices() {
+        let path = line_curve_line();
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
+
+        let flattened = path.flatten(0.01);
+        assert!(flattened.is_ok());
+        let Ok(flattened) = flattened else {
+            return;
+        };
+
+        // The curve was subdivided, so the polyline has vertices the path did
+        // not, and none of them may be a dash point.
+        let vertex_count = flattened.line_string().0.len();
+        assert!(vertex_count > path.geometry().num_segments() + 1);
+        assert_eq!(flattened.dash_point_indices().len(), 3);
+        assert!(flattened.dash_point_indices().is_sorted());
+        assert!(
+            flattened
+                .dash_point_indices()
+                .iter()
+                .all(|index| *index < vertex_count)
+        );
+
+        // The dash points are exactly the three flagged path vertices, which
+        // also shows subdivision reproduced them without drift.
+        assert_eq!(
+            flattened
+                .dash_point_indices()
+                .iter()
+                .filter_map(|index| flattened.line_string().0.get(*index))
+                .collect::<Vec<_>>(),
+            [
+                &Coord { x: 0., y: 0. },
+                &Coord { x: 1., y: 0. },
+                &Coord { x: 2., y: 0. },
+            ]
+        );
+    }
+
+    #[test]
+    fn iterating_vertices_reproduces_the_sparse_dash_points() {
+        let path = line_curve_line();
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
+
+        let flattened = path.flatten(0.01);
+        assert!(flattened.is_ok());
+        let Ok(flattened) = flattened else {
+            return;
+        };
+
+        assert_eq!(flattened.vertices().len(), flattened.line_string().0.len());
+        assert_eq!(
+            flattened
+                .vertices()
+                .enumerate()
+                .filter_map(|(index, (_, is_dash_point))| is_dash_point.then_some(index))
+                .collect::<Vec<_>>(),
+            flattened.dash_point_indices()
+        );
+        assert_eq!(
+            flattened
+                .vertices()
+                .map(|(coord, _)| coord)
+                .collect::<Vec<_>>(),
+            flattened.line_string().0
+        );
+    }
+
+    #[test]
+    fn flattening_agrees_with_the_plain_line_string_conversion() {
+        let path = line_curve_line();
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
+
+        let flattened = path.flatten(0.01);
+        let plain = path.geometry().to_line_string(0.01);
+        assert!(flattened.is_ok() && plain.is_ok());
+        let (Ok(flattened), Ok(plain)) = (flattened, plain) else {
+            return;
+        };
+
+        assert_eq!(flattened.line_string(), &plain);
+    }
+
+    #[test]
+    fn flattening_a_closed_path_keeps_both_ends_of_the_seam() {
+        let path = bezier_from_raw_coords(&[
+            (Coord { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
+            (Coord { x: 1_000, y: 0 }, 0),
+            (Coord { x: 0, y: 0 }, COORD_FLAG_CLOSE_POINT),
+        ]);
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
+
+        let flattened = path.flatten(0.01);
+        assert!(flattened.is_ok());
+        let Ok(flattened) = flattened else {
+            return;
+        };
+
+        assert_eq!(flattened.line_string().0.len(), 3);
+        assert_eq!(flattened.dash_point_indices(), [0, 2]);
+        assert_eq!(
+            flattened.line_string().0.first(),
+            flattened.line_string().0.last()
+        );
+    }
+
+    #[test]
+    fn flattening_propagates_an_unusable_tolerance() {
+        let path = line_curve_line();
+        assert!(path.is_some());
+        let Some(path) = path else {
+            return;
+        };
+
+        assert!(path.flatten(0.).is_err());
     }
 }

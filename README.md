@@ -29,6 +29,13 @@ Line and area objects expose their exact mixed straight/cubic geometry through
 including both endpoints of an open path. The ordinary `get_geometry(error)`
 API lazily provides and caches a flattened `LineString` or `Polygon`.
 
+`BezierPath::flatten(error)` bridges the two. It returns the same polyline
+`get_geometry(error)` would, together with the positions along it that are dash
+points. Both arrive as one `FlattenedPath` rather than as a loose pair, so they
+cannot drift out of step. A path normally has a handful of dash points among
+many flattened vertices, so they are held as indices rather than a flag per
+vertex; only vertices of the original path are ever among them.
+
 Objects that are not edited are written back using their original coordinates
 and flags. Added or edited line and area objects can be fitted to Bézier curves
 on write by setting `bezier_write_error`.
