@@ -342,6 +342,10 @@ pub enum Error {
         "Encountered a tolerence error when calculating the scale factor during geo referencing"
     )]
     ProjScaleToleranceError,
+    /// The local CRS type denotes the absence of a CRS, so it has no definition
+    #[cfg(feature = "geo_ref")]
+    #[error("The local CRS type has no CRS definition")]
+    LocalCrsHasNoDefinition,
     /// Affine transforms are only available between changed geo referencing within the same projection
     #[error(
         "Affine transforms are only available between changed geo referencing within the same projection"

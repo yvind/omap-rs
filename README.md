@@ -19,6 +19,9 @@ The best practice is to set the map's geo referencing before adding any objects.
 `MapTransform::affine_between` can be used to keep objects and non-georeferenced templates at the same projected positions after changing map reference point, scale, or rotation within the same CRS representation. It deliberately rejects transforms whose CRS fingerprints differ, for example different EPSG codes.
 This is a conservative lightweight guard; `omap-rs` does not normalize equivalent CRS definitions or transform coordinates between different projections.
 
+`GeoRef::to_wgs84` and `GeoRef::from_wgs84` give compiled `proj_core::Transform`s between the map's projected CRS and WGS84 (`x` longitude, `y` latitude, in degrees), so a paper coordinate reaches WGS84 through `MapTransform::to_projected` and back through `MapTransform::to_map` without a second projection dependency.
+Both resolve the CRS through `CrsType::to_crs_def`, the same resolution `GeoRef::initialize` uses.
+
 ## Dash-points and beziers
 
 Line and area objects expose their exact mixed straight/cubic geometry through
