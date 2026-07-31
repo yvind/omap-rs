@@ -29,6 +29,8 @@ pub struct LineObject {
     /// Bézier fitting is enabled when this is [`Some`].
     pub bezier_write_error: Option<NonNegativeF64>,
     geometry: OnceCell<LineString>,
+    // the exact path rebuilt from raw_map_coords, dropped whenever the coords change
+    bezier: OnceCell<BezierPath>,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
     raw_map_coords: Vec<FileCoord>,
@@ -43,6 +45,7 @@ impl LineObject {
             symbol: symbol.into(),
             bezier_write_error: None,
             geometry: OnceCell::from(geometry),
+            bezier: OnceCell::new(),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
@@ -74,30 +77,40 @@ impl LineObject {
         self.geometry.get().ok_or(Error::ObjectError)
     }
 
-    /// Rebuild the original line geometry as a mixed straight/cubic Bézier
-    /// path, including dash-point metadata for every vertex.
+    /// The original line geometry as a mixed straight/cubic Bézier path,
+    /// including dash-point metadata for every vertex.
     ///
     /// This is generated directly from the original file coordinates and
-    /// therefore preserves the exact Bézier handles. Returns [`None`] when the
-    /// object was not read from raw file coordinates, the coordinates do not
-    /// form a segment, or [`Self::get_geometry_mut`] has marked them as
-    /// touched.
-    pub fn bezier_geometry(&self) -> Option<BezierPath> {
+    /// therefore preserves the exact Bézier handles. The path is built on the
+    /// first call and cached, like the flattened geometry behind
+    /// [`Self::get_geometry`]; the cache is dropped whenever the coordinates
+    /// change.
+    ///
+    /// Returns [`None`] when the object was not read from raw file coordinates,
+    /// the coordinates do not form a segment, or [`Self::get_geometry_mut`] has
+    /// marked them as touched.
+    pub fn bezier_geometry(&self) -> Option<&BezierPath> {
         if self.is_coords_touched {
             return None;
         }
 
-        bezier_from_raw_coords(&self.raw_map_coords)
+        if let Some(bezier) = self.bezier.get() {
+            return Some(bezier);
+        }
+
+        let bezier = bezier_from_raw_coords(&self.raw_map_coords)?;
+        let _ = self.bezier.set(bezier);
+        self.bezier.get()
     }
 
     /// Rebuild the original line geometry as a mixed straight/cubic Bézier
     /// path.
     ///
-    /// Prefer [`Self::bezier_geometry`], whose name makes the reconstruction
-    /// cost explicit.
+    /// Prefer [`Self::bezier_geometry`], which hands out the cached path
+    /// instead of a fresh clone.
     #[deprecated(note = "renamed to bezier_geometry")]
     pub fn get_geometry_bezier(&self) -> Option<BezierPath> {
-        self.bezier_geometry()
+        self.bezier_geometry().cloned()
     }
 
     /// Get a mutable reference to the line geometry, flattening it first when
@@ -121,6 +134,8 @@ impl LineObject {
                 .map_err(|_geometry| Error::ObjectError)?;
         }
         self.is_coords_touched = true;
+        // The caller may edit the geometry, so the cached path is now stale.
+        self.bezier = OnceCell::new();
         self.geometry.get_mut().ok_or(Error::ObjectError)
     }
 
@@ -151,6 +166,7 @@ impl LineObject {
             symbol: WeakLinePathSymbol::Line(std::rc::Weak::new()),
             bezier_write_error: None,
             geometry: OnceCell::from(geometry),
+            bezier: OnceCell::new(),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
@@ -210,6 +226,9 @@ impl LineObject {
             let map_coord = from_file_coords(*file_coord);
             *file_coord = to_file_coords(transform(map_coord)?)?;
         }
+        // The raw coords moved, so the cached path is stale — it is rebuilt
+        // from the transformed coords on the next request.
+        self.bezier = OnceCell::new();
         // Do NOT set is_coords_touched = true
         Ok(())
     }
@@ -220,6 +239,7 @@ impl LineObject {
             geometry.0.reverse();
         }
         self.raw_map_coords = reverse_raw_line_coords(&self.raw_map_coords);
+        self.bezier = OnceCell::new();
     }
 
     pub(super) fn write<W: std::io::Write>(
@@ -390,6 +410,7 @@ impl LineObject {
             symbol,
             bezier_write_error: None,
             geometry: OnceCell::new(),
+            bezier: OnceCell::new(),
             raw_map_coords,
             is_coords_touched: false,
         })
@@ -398,6 +419,13 @@ impl LineObject {
     fn flattened_geometry(&self, allowed_error: f64) -> Result<LineString> {
         if self.raw_map_coords.len() < 2 {
             return Err(Error::ObjectError);
+        }
+
+        // Flatten the cached path when there already is one — same result, one
+        // reconstruction less. Not populated here: a consumer that only ever
+        // asks for the flattened geometry should not pay to keep the path.
+        if let Some(bezier) = self.bezier.get() {
+            return Ok(bezier.geometry().to_line_string(allowed_error)?);
         }
 
         Ok(bezier_from_raw_coords(&self.raw_map_coords)
@@ -438,10 +466,89 @@ pub(crate) fn reverse_raw_line_coords(coords: &[FileCoord]) -> Vec<FileCoord> {
 
 #[cfg(test)]
 mod tests {
+    use geo_types::Coord;
+    use linestring2bezier::BezierSegment;
     use quick_xml::{Reader, Writer, events::Event};
 
     use super::LineObject;
-    use crate::{Result, symbols::WeakLinePathSymbol};
+    use crate::{
+        Error, Result,
+        geo_referencing::{AffineMapTransform, GeoRef, MapTransform},
+        symbols::WeakLinePathSymbol,
+    };
+
+    /// A curve from (0, 0) via (0, -1) and (1, -1) to (1, 0), both ends dashed.
+    const CURVE_XML: &str =
+        r#"<object><coords count="4">0 0 33;0 1000;1000 1000;1000 0 32;</coords></object>"#;
+
+    fn parse_line(xml: &str) -> Result<LineObject> {
+        let mut reader = Reader::from_str(xml);
+        let event = reader.read_event()?;
+        assert!(matches!(event, Event::Start(_)), "expected an object start");
+
+        LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))
+    }
+
+    /// An affine transform that only translates, built the only way the public
+    /// API allows: as the difference between two map reference points.
+    fn translation(dx: f64, dy: f64) -> Result<AffineMapTransform> {
+        let before = GeoRef::new(10_000).get_transform();
+        let mut after = GeoRef::new(10_000);
+        after.map_ref_point = Coord { x: dx, y: dy };
+        MapTransform::affine_between(&before, &after.get_transform())
+    }
+
+    fn first_segment_start(line: &LineObject) -> Result<Coord> {
+        line.bezier_geometry()
+            .ok_or(Error::ObjectError)?
+            .geometry()
+            .segments()
+            .next()
+            .map(BezierSegment::start)
+            .ok_or(Error::ObjectError)
+    }
+
+    #[test]
+    fn bezier_geometry_is_cached_until_the_coords_change() -> Result<()> {
+        let mut line = parse_line(CURVE_XML)?;
+
+        let first = std::ptr::from_ref(line.bezier_geometry().ok_or(Error::ObjectError)?);
+        let second = std::ptr::from_ref(line.bezier_geometry().ok_or(Error::ObjectError)?);
+        assert!(
+            std::ptr::eq(first, second),
+            "a second call must hand out the cached path, not a rebuilt one"
+        );
+
+        // Both of these move the raw coords without marking them as touched.
+        line.apply_affine(&translation(10., 20.)?);
+        assert_eq!(
+            first_segment_start(&line)?,
+            Coord { x: 10., y: 20. },
+            "the cache must not survive apply_affine"
+        );
+
+        line.reverse_linestring();
+        assert_eq!(
+            first_segment_start(&line)?,
+            Coord { x: 11., y: 20. },
+            "the cache must not survive reverse_linestring"
+        );
+
+        // Touching the coords drops the path for good.
+        let _ = line.get_geometry_mut(0.1)?;
+        assert!(line.bezier_geometry().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn flattening_is_unaffected_by_a_cached_path() -> Result<()> {
+        let cached = parse_line(CURVE_XML)?;
+        assert!(cached.bezier_geometry().is_some(), "expected a cached path");
+        let plain = parse_line(CURVE_XML)?;
+
+        assert_eq!(cached.get_geometry(0.01)?, plain.get_geometry(0.01)?);
+        Ok(())
+    }
 
     #[test]
     fn parsed_line_geometry_is_initialized_lazily() -> Result<()> {

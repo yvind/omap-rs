@@ -49,6 +49,8 @@ pub struct AreaObject {
     /// Bézier fitting is enabled when this is [`Some`].
     pub bezier_write_error: Option<NonNegativeF64>,
     geometry: OnceCell<Polygon>,
+    // the exact rings rebuilt from raw_map_coords, dropped whenever the coords change
+    bezier: OnceCell<BezierPolygon>,
     // store the raw map-file coords with flags so that the object can be written back unchanged if the coords are untouched
     // (so that the errors introduced when mapping from beziers to linestring and back only are introduced when necessary)
     raw_map_coords: Vec<FileCoord>,
@@ -64,6 +66,7 @@ impl AreaObject {
             symbol: symbol.into(),
             bezier_write_error: None,
             geometry: OnceCell::from(geometry),
+            bezier: OnceCell::new(),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
@@ -115,8 +118,8 @@ impl AreaObject {
         self.geometry.get().ok_or(Error::ObjectError)
     }
 
-    /// Rebuild the original area geometry as mixed straight/cubic Bézier
-    /// rings, including dash-point metadata for every vertex.
+    /// The original area geometry as mixed straight/cubic Bézier rings,
+    /// including dash-point metadata for every vertex.
     ///
     /// This is generated directly from the original file coordinates and
     /// therefore preserves the exact Bézier handles. Every returned ring is
@@ -124,25 +127,35 @@ impl AreaObject {
     /// omitted. For a successfully parsed object, ring order and count match
     /// [`Self::get_geometry`].
     ///
+    /// The rings are built on the first call and cached, like the flattened
+    /// geometry behind [`Self::get_geometry`]; the cache is dropped whenever
+    /// the coordinates change.
+    ///
     /// Returns [`None`] when the object was not read from raw file coordinates
     /// or after [`Self::get_geometry_mut`] has marked those coordinates as
     /// touched.
-    pub fn bezier_geometry(&self) -> Option<BezierPolygon> {
+    pub fn bezier_geometry(&self) -> Option<&BezierPolygon> {
         if self.is_coords_touched || self.raw_map_coords.is_empty() {
             return None;
         }
 
-        bezier_polygon_from_raw_coords(&self.raw_map_coords)
+        if let Some(bezier) = self.bezier.get() {
+            return Some(bezier);
+        }
+
+        let bezier = bezier_polygon_from_raw_coords(&self.raw_map_coords)?;
+        let _ = self.bezier.set(bezier);
+        self.bezier.get()
     }
 
     /// Rebuild the original area geometry as mixed straight/cubic Bézier
     /// rings.
     ///
-    /// Prefer [`Self::bezier_geometry`], whose name makes the reconstruction
-    /// cost explicit.
+    /// Prefer [`Self::bezier_geometry`], which hands out the cached rings
+    /// instead of a fresh clone.
     #[deprecated(note = "renamed to bezier_geometry")]
     pub fn get_geometry_bezier(&self) -> Option<BezierPolygon> {
-        self.bezier_geometry()
+        self.bezier_geometry().cloned()
     }
 
     /// Get a mutable reference to the polygon geometry, flattening it first
@@ -166,6 +179,8 @@ impl AreaObject {
                 .map_err(|_geometry| Error::ObjectError)?;
         }
         self.is_coords_touched = true;
+        // The caller may edit the geometry, so the cached rings are now stale.
+        self.bezier = OnceCell::new();
         self.geometry.get_mut().ok_or(Error::ObjectError)
     }
 
@@ -256,6 +271,9 @@ impl AreaObject {
             let map_coord = from_file_coords(*file_coord);
             *file_coord = to_file_coords(transform(map_coord)?)?;
         }
+        // The raw coords moved, so the cached rings are stale — they are
+        // rebuilt from the transformed coords on the next request.
+        self.bezier = OnceCell::new();
         // Do NOT set is_coords_touched = true
         Ok(())
     }
@@ -268,6 +286,7 @@ impl AreaObject {
         }
 
         self.raw_map_coords = reverse_raw_polygon_coords(&self.raw_map_coords);
+        self.bezier = OnceCell::new();
     }
 
     /// Create an `AreaObject` for use as a `PointSymbol` element (no map symbol needed)
@@ -278,6 +297,7 @@ impl AreaObject {
             symbol: WeakAreaPathSymbol::Area(std::rc::Weak::new()),
             bezier_write_error: None,
             geometry: OnceCell::from(geometry),
+            bezier: OnceCell::new(),
             raw_map_coords: Vec::new(),
             is_coords_touched: true,
         }
@@ -484,22 +504,34 @@ impl AreaObject {
             symbol,
             bezier_write_error: None,
             geometry: OnceCell::new(),
+            bezier: OnceCell::new(),
             raw_map_coords,
             is_coords_touched: false,
         })
     }
 
     fn flattened_geometry(&self, allowed_error: f64) -> Result<Polygon> {
+        // Flatten the cached rings when there already are some — same result,
+        // one reconstruction less. Not populated here: a consumer that only
+        // ever asks for the flattened geometry should not pay to keep them.
+        if let Some(bezier) = self.bezier.get() {
+            return flatten_bezier_polygon(bezier, allowed_error);
+        }
+
         let bezier =
             bezier_polygon_from_raw_coords(&self.raw_map_coords).ok_or(Error::ObjectError)?;
-        let exterior = bezier.exterior.geometry().to_line_string(allowed_error)?;
-        let interiors = bezier
-            .interiors
-            .iter()
-            .map(|ring| ring.geometry().to_line_string(allowed_error))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(Polygon::new(exterior, interiors))
+        flatten_bezier_polygon(&bezier, allowed_error)
     }
+}
+
+fn flatten_bezier_polygon(bezier: &BezierPolygon, allowed_error: f64) -> Result<Polygon> {
+    let exterior = bezier.exterior.geometry().to_line_string(allowed_error)?;
+    let interiors = bezier
+        .interiors
+        .iter()
+        .map(|ring| ring.geometry().to_line_string(allowed_error))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(Polygon::new(exterior, interiors))
 }
 
 fn bezier_polygon_from_raw_coords(coords: &[FileCoord]) -> Option<BezierPolygon> {
@@ -576,9 +608,11 @@ pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord>
 #[cfg(test)]
 mod tests {
     use geo_types::Coord;
+    use linestring2bezier::BezierSegment;
     use quick_xml::{Reader, Writer, events::Event};
 
     use super::{AreaObject, bezier_polygon_from_raw_coords};
+    use crate::geo_referencing::{AffineMapTransform, GeoRef, MapTransform};
     use crate::objects::{COORD_FLAG_CLOSE_POINT, COORD_FLAG_DASH_POINT, COORD_FLAG_HOLE_POINT};
     use crate::{Error, Result, symbols::WeakAreaPathSymbol};
 
@@ -640,16 +674,81 @@ mod tests {
         assert!(polygon.interiors.is_empty());
     }
 
+    const RING_XML: &str = r#"<object><coords count="6">0 0 32;2000 0;1000 1000 2;500 250;1000 250;750 750 18;</coords><pattern rotation="0"></pattern></object>"#;
+
+    fn parse_area(xml: &str) -> Result<AreaObject> {
+        let mut reader = Reader::from_str(xml);
+        let event = reader.read_event()?;
+        assert!(matches!(event, Event::Start(_)), "expected an object start");
+
+        AreaObject::parse(&mut reader, WeakAreaPathSymbol::Area(std::rc::Weak::new()))
+    }
+
+    /// An affine transform that only translates, built the only way the public
+    /// API allows: as the difference between two map reference points.
+    fn translation(dx: f64, dy: f64) -> Result<AffineMapTransform> {
+        let before = GeoRef::new(10_000).get_transform();
+        let mut after = GeoRef::new(10_000);
+        after.map_ref_point = Coord { x: dx, y: dy };
+        MapTransform::affine_between(&before, &after.get_transform())
+    }
+
+    fn exterior_start(area: &AreaObject) -> Result<geo_types::Coord> {
+        area.bezier_geometry()
+            .ok_or(Error::ObjectError)?
+            .exterior
+            .geometry()
+            .segments()
+            .next()
+            .map(BezierSegment::start)
+            .ok_or(Error::ObjectError)
+    }
+
+    #[test]
+    fn bezier_geometry_is_cached_until_the_coords_change() -> Result<()> {
+        let mut area = parse_area(RING_XML)?;
+
+        let first = std::ptr::from_ref(area.bezier_geometry().ok_or(Error::ObjectError)?);
+        let second = std::ptr::from_ref(area.bezier_geometry().ok_or(Error::ObjectError)?);
+        assert!(
+            std::ptr::eq(first, second),
+            "a second call must hand out the cached rings, not rebuilt ones"
+        );
+
+        // Both of these move the raw coords without marking them as touched.
+        area.apply_affine(&translation(10., 20.)?);
+        assert_eq!(
+            exterior_start(&area)?,
+            Coord { x: 10., y: 20. },
+            "the cache must not survive apply_affine"
+        );
+
+        area.reverse_polygon();
+        assert_eq!(
+            exterior_start(&area)?,
+            Coord { x: 11., y: 19. },
+            "the cache must not survive reverse_polygon"
+        );
+
+        // Touching the coords drops the rings for good.
+        let _ = area.get_geometry_mut(0.1)?;
+        assert!(area.bezier_geometry().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn flattening_is_unaffected_by_cached_rings() -> Result<()> {
+        let cached = parse_area(RING_XML)?;
+        assert!(cached.bezier_geometry().is_some(), "expected cached rings");
+        let plain = parse_area(RING_XML)?;
+
+        assert_eq!(cached.get_geometry(0.01)?, plain.get_geometry(0.01)?);
+        Ok(())
+    }
+
     #[test]
     fn parsed_polygon_accessors_have_matching_closed_rings() -> Result<()> {
-        let mut reader = Reader::from_str(
-            r#"<object><coords count="6">0 0 32;2000 0;1000 1000 2;500 250;1000 250;750 750 18;</coords><pattern rotation="0"></pattern></object>"#,
-        );
-        let event = reader.read_event()?;
-        assert!(matches!(event, Event::Start(_)));
-
-        let mut area =
-            AreaObject::parse(&mut reader, WeakAreaPathSymbol::Area(std::rc::Weak::new()))?;
+        let mut area = parse_area(RING_XML)?;
         let bezier = area.bezier_geometry().ok_or(Error::ObjectError)?;
 
         assert!(area.geometry.get().is_none());
