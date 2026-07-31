@@ -9,7 +9,7 @@ use quick_xml::{
 
 use super::{
     BezierPath, COORD_FLAG_CURVE_START, COORD_FLAGS_RING_END, FileCoord, bezier_from_raw_coords,
-    file_coords_from_bezier,
+    file_coords_from_bezier, straight_bezier_from_line_string,
 };
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
@@ -101,6 +101,44 @@ impl LineObject {
         let bezier = bezier_from_raw_coords(&self.raw_map_coords)?;
         let _ = self.bezier.set(bezier);
         self.bezier.get()
+    }
+
+    /// The line geometry as a mixed straight/cubic Bézier path, whether or not
+    /// the original control points survived.
+    ///
+    /// This is [`Self::bezier_geometry`] wherever that yields a path. For an
+    /// object built in memory, or one whose coordinates have been marked as
+    /// touched by [`Self::get_geometry_mut`], the flattened [`LineString`] is
+    /// lifted back into a path of straight segments instead, with no vertex
+    /// flagged as a dash point — the only honest answer once the raw flags are
+    /// gone.
+    ///
+    /// Consumers that want the geometry, and would treat a missing Bézier form
+    /// as all-straight anyway, want this one; reach for
+    /// [`Self::bezier_geometry`] when the difference matters. The path is
+    /// cached the same way.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object has no usable geometry.
+    pub fn bezier_geometry_or_straight(&self) -> Result<&BezierPath> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
+        if let Some(bezier) = self.bezier.get() {
+            return Ok(bezier);
+        }
+
+        let bezier = if self.is_coords_touched {
+            straight_bezier_from_line_string(self.geometry.get().ok_or(Error::ObjectError)?)
+        } else {
+            bezier_from_raw_coords(&self.raw_map_coords)
+        }
+        .ok_or(Error::ObjectError)?;
+
+        let _ = self.bezier.set(bezier);
+        self.bezier.get().ok_or(Error::ObjectError)
     }
 
     /// Rebuild the original line geometry as a mixed straight/cubic Bézier
@@ -466,7 +504,7 @@ pub(crate) fn reverse_raw_line_coords(coords: &[FileCoord]) -> Vec<FileCoord> {
 
 #[cfg(test)]
 mod tests {
-    use geo_types::Coord;
+    use geo_types::{Coord, LineString};
     use linestring2bezier::BezierSegment;
     use quick_xml::{Reader, Writer, events::Event};
 
@@ -541,6 +579,75 @@ mod tests {
     }
 
     #[test]
+    fn bezier_geometry_or_straight_keeps_the_exact_path() -> Result<()> {
+        let line = parse_line(CURVE_XML)?;
+
+        let exact = std::ptr::from_ref(line.bezier_geometry().ok_or(Error::ObjectError)?);
+        let always = std::ptr::from_ref(line.bezier_geometry_or_straight()?);
+        assert!(
+            std::ptr::eq(exact, always),
+            "must not fall back while the raw coords are intact"
+        );
+        assert!(
+            line.bezier_geometry_or_straight()?
+                .geometry()
+                .segments()
+                .any(BezierSegment::is_bezier_curve),
+            "the curve must survive"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bezier_geometry_or_straight_falls_back_to_straight_segments() -> Result<()> {
+        let vertices = vec![
+            Coord { x: 0., y: 0. },
+            Coord { x: 1., y: 0. },
+            Coord { x: 1., y: 1. },
+        ];
+        let line = LineObject::new(
+            WeakLinePathSymbol::Line(std::rc::Weak::new()),
+            LineString::new(vertices.clone()),
+        );
+
+        assert!(
+            line.bezier_geometry().is_none(),
+            "an object built in memory has no raw coords"
+        );
+
+        let path = line.bezier_geometry_or_straight()?;
+        assert_eq!(path.geometry().num_segments(), 2);
+        assert!(
+            path.geometry()
+                .segments()
+                .all(|segment| matches!(segment, BezierSegment::Line(_))),
+            "no handles can be invented"
+        );
+        assert_eq!(path.vertex_is_dash_point(), [false, false, false]);
+        assert_eq!(path.geometry().to_line_string(0.01)?.0, vertices);
+        Ok(())
+    }
+
+    #[test]
+    fn bezier_geometry_or_straight_follows_the_edited_geometry() -> Result<()> {
+        let mut line = parse_line(CURVE_XML)?;
+        // Cache the exact path first, so handing out a stale one would show.
+        assert!(line.bezier_geometry().is_some());
+
+        line.get_geometry_mut(0.01)?.0 = vec![Coord { x: 0., y: 0. }, Coord { x: 5., y: 5. }];
+
+        assert!(line.bezier_geometry().is_none());
+        let path = line.bezier_geometry_or_straight()?;
+        assert_eq!(path.geometry().num_segments(), 1);
+        assert_eq!(path.vertex_is_dash_point(), [false, false]);
+        assert_eq!(
+            path.geometry().segments().next().map(BezierSegment::end),
+            Some(Coord { x: 5., y: 5. })
+        );
+        Ok(())
+    }
+
+    #[test]
     fn flattening_is_unaffected_by_a_cached_path() -> Result<()> {
         let cached = parse_line(CURVE_XML)?;
         assert!(cached.bezier_geometry().is_some(), "expected a cached path");
@@ -599,6 +706,7 @@ mod tests {
             assert!(line.geometry.get().is_none());
             assert!(line.geometry_is_empty());
             assert!(line.bezier_geometry().is_none());
+            assert!(line.bezier_geometry_or_straight().is_err());
             assert!(line.get_geometry(0.1).is_err());
 
             let mut writer = Writer::new(Vec::new());

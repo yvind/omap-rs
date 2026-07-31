@@ -9,6 +9,7 @@ use quick_xml::{
 
 use super::{
     BezierPath, COORD_FLAGS_RING_END, FileCoord, bezier_from_raw_coords, file_coords_from_bezier,
+    straight_bezier_from_line_string,
 };
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
@@ -146,6 +147,44 @@ impl AreaObject {
         let bezier = bezier_polygon_from_raw_coords(&self.raw_map_coords)?;
         let _ = self.bezier.set(bezier);
         self.bezier.get()
+    }
+
+    /// The area geometry as mixed straight/cubic Bézier rings, whether or not
+    /// the original control points survived.
+    ///
+    /// This is [`Self::bezier_geometry`] wherever that yields rings. For an
+    /// object built in memory, or one whose coordinates have been marked as
+    /// touched by [`Self::get_geometry_mut`], the flattened [`Polygon`] is
+    /// lifted back into rings of straight segments instead, with no vertex
+    /// flagged as a dash point — the only honest answer once the raw flags are
+    /// gone.
+    ///
+    /// Consumers that want the geometry, and would treat missing Bézier rings
+    /// as all-straight anyway, want this one; reach for
+    /// [`Self::bezier_geometry`] when the difference matters. The rings are
+    /// cached the same way.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object has no usable geometry.
+    pub fn bezier_geometry_or_straight(&self) -> Result<&BezierPolygon> {
+        if self.geometry_is_empty() {
+            return Err(Error::ObjectError);
+        }
+
+        if let Some(bezier) = self.bezier.get() {
+            return Ok(bezier);
+        }
+
+        let bezier = if self.is_coords_touched {
+            straight_bezier_polygon(self.geometry.get().ok_or(Error::ObjectError)?)
+        } else {
+            bezier_polygon_from_raw_coords(&self.raw_map_coords)
+        }
+        .ok_or(Error::ObjectError)?;
+
+        let _ = self.bezier.set(bezier);
+        self.bezier.get().ok_or(Error::ObjectError)
     }
 
     /// Rebuild the original area geometry as mixed straight/cubic Bézier
@@ -524,6 +563,20 @@ impl AreaObject {
     }
 }
 
+/// Lift an already flattened polygon back into Bézier form, one straight ring
+/// per [`Polygon`] ring. Zero-segment rings are omitted, as they are when the
+/// rings are rebuilt from raw coordinates.
+fn straight_bezier_polygon(polygon: &Polygon) -> Option<BezierPolygon> {
+    Some(BezierPolygon {
+        exterior: straight_bezier_from_line_string(polygon.exterior())?,
+        interiors: polygon
+            .interiors()
+            .iter()
+            .filter_map(straight_bezier_from_line_string)
+            .collect(),
+    })
+}
+
 fn flatten_bezier_polygon(bezier: &BezierPolygon, allowed_error: f64) -> Result<Polygon> {
     let exterior = bezier.exterior.geometry().to_line_string(allowed_error)?;
     let interiors = bezier
@@ -607,7 +660,7 @@ pub(crate) fn reverse_raw_polygon_coords(coords: &[FileCoord]) -> Vec<FileCoord>
 
 #[cfg(test)]
 mod tests {
-    use geo_types::Coord;
+    use geo_types::{Coord, LineString, Polygon};
     use linestring2bezier::BezierSegment;
     use quick_xml::{Reader, Writer, events::Event};
 
@@ -733,6 +786,99 @@ mod tests {
         // Touching the coords drops the rings for good.
         let _ = area.get_geometry_mut(0.1)?;
         assert!(area.bezier_geometry().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn bezier_geometry_or_straight_keeps_the_exact_rings() -> Result<()> {
+        let area = parse_area(RING_XML)?;
+
+        let exact = std::ptr::from_ref(area.bezier_geometry().ok_or(Error::ObjectError)?);
+        let always = std::ptr::from_ref(area.bezier_geometry_or_straight()?);
+        assert!(
+            std::ptr::eq(exact, always),
+            "must not fall back while the raw coords are intact"
+        );
+        assert_eq!(
+            area.bezier_geometry_or_straight()?
+                .exterior
+                .vertex_is_dash_point(),
+            [true, false, false, true],
+            "the dash flags must survive"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bezier_geometry_or_straight_falls_back_to_straight_rings() -> Result<()> {
+        let exterior = LineString::new(vec![
+            Coord { x: 0., y: 0. },
+            Coord { x: 4., y: 0. },
+            Coord { x: 4., y: 4. },
+        ]);
+        let interior = LineString::new(vec![
+            Coord { x: 1., y: 1. },
+            Coord { x: 2., y: 1. },
+            Coord { x: 2., y: 2. },
+        ]);
+        let area = AreaObject::new(
+            WeakAreaPathSymbol::Area(std::rc::Weak::new()),
+            Polygon::new(exterior, vec![interior]),
+        );
+
+        assert!(
+            area.bezier_geometry().is_none(),
+            "an object built in memory has no raw coords"
+        );
+
+        let bezier = area.bezier_geometry_or_straight()?;
+        assert_eq!(bezier.interiors.len(), 1);
+        for ring in std::iter::once(&bezier.exterior).chain(&bezier.interiors) {
+            // geo_types closes the rings, so each has three segments.
+            assert_eq!(ring.geometry().num_segments(), 3);
+            assert!(
+                ring.geometry()
+                    .segments()
+                    .all(|segment| matches!(segment, BezierSegment::Line(_))),
+                "no handles can be invented"
+            );
+            assert_eq!(ring.vertex_is_dash_point(), [false; 4]);
+            assert_eq!(
+                ring.geometry().segments().next().map(BezierSegment::start),
+                ring.geometry().segments().last().map(BezierSegment::end),
+                "every ring must stay closed"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bezier_geometry_or_straight_follows_the_edited_geometry() -> Result<()> {
+        let mut area = parse_area(RING_XML)?;
+        // Cache the exact rings first, so handing out stale ones would show.
+        assert!(area.bezier_geometry().is_some());
+
+        *area.get_geometry_mut(0.01)? = Polygon::new(
+            LineString::new(vec![
+                Coord { x: 0., y: 0. },
+                Coord { x: 2., y: 0. },
+                Coord { x: 2., y: 2. },
+            ]),
+            Vec::new(),
+        );
+
+        assert!(area.bezier_geometry().is_none());
+        let bezier = area.bezier_geometry_or_straight()?;
+        assert!(bezier.interiors.is_empty(), "the hole is gone");
+        assert_eq!(bezier.exterior.geometry().num_segments(), 3);
+        assert!(
+            bezier
+                .exterior
+                .vertex_is_dash_point()
+                .iter()
+                .all(|is_dash_point| !is_dash_point),
+            "the dash flags do not survive an edit"
+        );
         Ok(())
     }
 

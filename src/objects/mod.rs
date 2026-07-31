@@ -5,7 +5,7 @@ mod text_object;
 
 mod map_object;
 
-use geo_types::Coord;
+use geo_types::{Coord, LineString};
 pub use linestring2bezier::{BezierSegment, BezierString};
 use quick_xml::{
     Reader, Writer,
@@ -206,6 +206,18 @@ fn bezier_from_raw_coords(coords: &[FileCoord]) -> Option<BezierPath> {
             *last_is_dash_point = true;
         }
     }
+
+    BezierPath::new(BezierString::new(segments), vertex_is_dash_point)
+}
+
+/// Lift an already flattened path back into Bézier form.
+///
+/// Every segment is straight and no vertex is a dash point: both the handles
+/// and the dash flags only ever exist on the raw file coordinates, so once
+/// those are gone this is the whole of what is left to say about the geometry.
+fn straight_bezier_from_line_string(line_string: &LineString) -> Option<BezierPath> {
+    let segments = line_string.lines().map(BezierSegment::Line).collect();
+    let vertex_is_dash_point = vec![false; line_string.0.len()];
 
     BezierPath::new(BezierString::new(segments), vertex_is_dash_point)
 }

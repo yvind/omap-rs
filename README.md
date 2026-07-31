@@ -27,7 +27,15 @@ That projection is compiled on first use and kept, so hold on to the transform i
 Line and area objects expose their exact mixed straight/cubic geometry through
 `bezier_geometry()`. Its per-vertex metadata includes forced dash points,
 including both endpoints of an open path. The ordinary `get_geometry(error)`
-API lazily provides and caches a flattened `LineString` or `Polygon`.
+API lazily provides a flattened `LineString` or `Polygon`. Both forms are built
+at most once and cached until the coordinates change.
+
+`bezier_geometry()` yields nothing for objects built in memory or edited
+through `get_geometry_mut`, whose original control points are gone.
+`bezier_geometry_or_straight()` always yields a Bézier form, lifting the
+flattened geometry back into straight segments with no dash points in that
+case — one code path for consumers that would treat a missing Bézier form as
+all-straight anyway.
 
 Objects that are not edited are written back using their original coordinates
 and flags. Added or edited line and area objects can be fitted to Bézier curves
