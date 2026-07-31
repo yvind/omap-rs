@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell, RefMut},
     rc::{Rc, Weak},
 };
 
@@ -185,6 +185,9 @@ macro_rules! impl_symbol_getter {
     ($method:ident -> $ret_type:ty, |$s:ident| $expr:expr) => {
         /// Access a common symbol property.
         ///
+        /// Takes its own borrow; use [`Symbol::common`] to read several
+        /// properties of the same symbol at once.
+        ///
         /// # Errors
         ///
         /// Returns an error if the symbol's `RefCell` is currently mutably
@@ -223,6 +226,9 @@ macro_rules! impl_symbol_setter {
     ($method:ident($param:ident: $param_type:ty), |$s:ident| $expr:expr) => {
         /// Update a common symbol property.
         ///
+        /// Takes its own borrow; use [`Symbol::common_mut`] to update several
+        /// properties of the same symbol at once.
+        ///
         /// # Errors
         ///
         /// Returns an error if the symbol's `RefCell` is already borrowed.
@@ -259,6 +265,56 @@ macro_rules! impl_symbol_setter {
 }
 
 impl Symbol {
+    /// Borrow the [`SymbolCommon`] properties shared by every symbol type.
+    ///
+    /// The individual getters below take one `RefCell` borrow per call and
+    /// clone the `String` fields. Reading several properties of the same
+    /// symbol — filtering on [`SymbolCommon::is_helper_symbol`] and
+    /// [`SymbolCommon::is_hidden`] before dispatching on
+    /// [`SymbolCommon::code`], say — is a single borrow through this accessor,
+    /// and the strings can be read by reference.
+    ///
+    /// The returned guard keeps the symbol immutably borrowed; the setters and
+    /// anything else needing a mutable borrow will fail while it is alive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the symbol's `RefCell` is currently mutably
+    /// borrowed.
+    pub fn common(&self) -> Result<Ref<'_, SymbolCommon>> {
+        Ok(match self {
+            Self::Line(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
+            Self::Area(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
+            Self::Point(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
+            Self::Text(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
+            Self::CombinedLine(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
+            Self::CombinedArea(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
+        })
+    }
+
+    /// Mutably borrow the [`SymbolCommon`] properties shared by every symbol
+    /// type.
+    ///
+    /// The counterpart of [`Symbol::common`] for the setters below, collapsing
+    /// a run of updates to the same symbol into a single borrow.
+    ///
+    /// The returned guard keeps the symbol mutably borrowed; every other
+    /// accessor will fail while it is alive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the symbol's `RefCell` is already borrowed.
+    pub fn common_mut(&self) -> Result<RefMut<'_, SymbolCommon>> {
+        Ok(match self {
+            Self::Line(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
+            Self::Area(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
+            Self::Point(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
+            Self::Text(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
+            Self::CombinedLine(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
+            Self::CombinedArea(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
+        })
+    }
+
     impl_symbol_getter!(has_custom_icon -> bool, |s| s.common.custom_icon.is_some());
     impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.common.custom_icon = icon);
     impl_symbol_getter!(get_code -> Code, |s| s.common.code);
@@ -354,6 +410,92 @@ impl Symbol {
             Self::CombinedArea(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
             Self::CombinedLine(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
         }?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Symbol;
+    use crate::{
+        Code, Result,
+        symbols::{
+            AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, TextSymbol,
+        },
+    };
+
+    fn one_of_each() -> Vec<Symbol> {
+        let code = Code::new(1, 2, 3);
+        vec![
+            LineSymbol::new(code, "line").into(),
+            AreaSymbol::new(code, "area").into(),
+            PointSymbol::new(code, "point").into(),
+            TextSymbol::new(code, "text").into(),
+            CombinedAreaSymbol::new(code, "combined area").into(),
+            CombinedLineSymbol::new(code, "combined line").into(),
+        ]
+    }
+
+    #[test]
+    fn common_sees_the_same_values_as_the_individual_getters() -> Result<()> {
+        for symbol in one_of_each() {
+            symbol.set_helper_symbol(true)?;
+            symbol.set_description("a description".to_owned())?;
+
+            let common = symbol.common()?;
+            assert_eq!(common.code, symbol.get_code()?, "code mismatch");
+            assert_eq!(common.name, symbol.get_name()?, "name mismatch");
+            assert_eq!(common.description, "a description", "description mismatch");
+            assert!(common.is_helper_symbol, "helper flag mismatch");
+            assert!(!common.is_hidden, "hidden flag mismatch");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn common_mut_writes_through_to_the_getters() -> Result<()> {
+        for symbol in one_of_each() {
+            {
+                let mut common = symbol.common_mut()?;
+                common.name = "renamed".to_owned();
+                common.code = Code::new(4, 5, 6);
+                common.is_hidden = true;
+            }
+
+            assert_eq!(symbol.get_name()?, "renamed");
+            assert_eq!(symbol.get_code()?, Code::new(4, 5, 6));
+            assert!(symbol.is_hidden()?);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn borrows_conflict_as_a_refcell_does() -> Result<()> {
+        for symbol in one_of_each() {
+            let common = symbol.common()?;
+            assert!(
+                symbol.set_hidden(true).is_err(),
+                "a setter must not succeed while a shared guard is alive"
+            );
+            assert!(
+                symbol.common_mut().is_err(),
+                "common_mut must not succeed while a shared guard is alive"
+            );
+            assert!(
+                symbol.is_hidden().is_ok(),
+                "a getter must still succeed while a shared guard is alive"
+            );
+            drop(common);
+
+            let common = symbol.common_mut()?;
+            assert!(
+                symbol.is_hidden().is_err(),
+                "a getter must not succeed while an exclusive guard is alive"
+            );
+            drop(common);
+
+            assert!(symbol.common().is_ok(), "guards must release on drop");
+        }
         Ok(())
     }
 }
