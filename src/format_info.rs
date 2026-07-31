@@ -33,8 +33,7 @@ impl<'writer> OmapVersion {
                 [
                     ("xmlns", "http://openorienteering.org/apps/mapper/xml/v2"),
                     ("version", "9"),
-                ]
-                .into_iter(),
+                ],
             ),
         ))?;
         Ok(())

@@ -732,11 +732,10 @@ impl Color {
                                         _ => (),
                                     }
                                 }
-                                Event::End(bytes_end) => {
-                                    if bytes_end.local_name().as_ref() == b"spotcolors" {
+                                Event::End(bytes_end)
+                                    if bytes_end.local_name().as_ref() == b"spotcolors" => {
                                         break;
                                     }
-                                }
                                 Event::Eof => {
                                     return Err(Error::UnexpectedEof(OmapSection::Color));
                                 }
@@ -746,11 +745,10 @@ impl Color {
                     }
                     _ => (),
                 },
-                Event::End(bytes_end) => {
-                    if bytes_end.local_name().as_ref() == b"color" {
+                Event::End(bytes_end)
+                    if bytes_end.local_name().as_ref() == b"color" => {
                         break;
                     }
-                }
                 Event::Eof => return Err(Error::UnexpectedEof(OmapSection::Color)),
                 _ => (),
             }
