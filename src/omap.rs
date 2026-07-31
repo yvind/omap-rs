@@ -16,6 +16,7 @@ use crate::{
     format_info::{OmapVersion, XmlDeclaration},
     geo_referencing::{AffineMapTransform, GeoRef, MapTransform},
     notes,
+    objects::MapObject,
     parts::MapPart,
     parts::MapParts,
     symbols::SymbolSet,
@@ -294,6 +295,24 @@ impl Omap {
         Ok(())
     }
 
+    /// Iterate through all objects of every map part in a flat iterator.
+    ///
+    /// The whole-map counterpart of [`MapPart::iter_all_objects`]; parts are
+    /// visited in order, objects within a part in no particular order.
+    pub fn iter_all_objects(&self) -> impl Iterator<Item = &MapObject> {
+        self.parts.iter().flat_map(MapPart::iter_all_objects)
+    }
+
+    /// Iterate mutably through all objects of every map part in a flat iterator.
+    ///
+    /// The whole-map counterpart of [`MapPart::iter_all_objects_mut`]; parts are
+    /// visited in order, objects within a part in no particular order.
+    pub fn iter_all_objects_mut(&mut self) -> impl Iterator<Item = &mut MapObject> {
+        self.parts
+            .iter_mut()
+            .flat_map(MapPart::iter_all_objects_mut)
+    }
+
     /// Apply an [`AffineMapTransform`] to every object and non-georeferenced
     /// template in the map.
     ///
@@ -302,10 +321,8 @@ impl Omap {
     /// positions. Obtain the transform with
     /// [`MapTransform::affine_between`].
     pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        for part in &mut self.parts.0 {
-            for object in part.iter_all_objects_mut() {
-                object.apply_affine(transform);
-            }
+        for object in self.iter_all_objects_mut() {
+            object.apply_affine(transform);
         }
         self.templates.apply_affine(transform);
     }

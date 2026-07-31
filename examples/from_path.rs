@@ -35,7 +35,7 @@ fn main() -> Result<(), Error> {
 
         let mut mean_pos = Coord::zero();
         let mut num_coords = 0;
-        for obj in map.parts.iter().flat_map(|part| part.iter_all_objects()) {
+        for obj in map.iter_all_objects() {
             match obj {
                 MapObject::Point(object) => {
                     mean_pos = mean_pos + object.get_geometry().0;
