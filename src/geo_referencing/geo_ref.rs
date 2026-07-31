@@ -47,6 +47,12 @@ pub struct GeoRef {
 
 impl GeoRef {
     /// The transform is used to go from map coordinates to projected coordinates or back
+    #[cfg_attr(
+        feature = "geo_ref",
+        doc = "",
+        doc = "The returned transform compiles its WGS84 operation once and reuses it,",
+        doc = "so keep it around instead of asking for a new one per object."
+    )]
     pub fn get_transform(&self) -> MapTransform {
         MapTransform::from_geo_ref(self)
     }
@@ -328,10 +334,9 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(bytes_start)
-                if bytes_start.local_name().as_ref() == event_name => {
-                    return notes::parse(reader);
-                }
+            Event::Start(bytes_start) if bytes_start.local_name().as_ref() == event_name => {
+                return notes::parse(reader);
+            }
             Event::Eof => {
                 return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
             }
@@ -342,46 +347,6 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
 
 #[cfg(feature = "geo_ref")]
 impl GeoRef {
-    /// A compiled transform from this map's projected CRS to WGS84.
-    ///
-    /// Takes coordinates in the projected CRS's own units (normally metres)
-    /// and yields degrees, `x` longitude and `y` latitude — the convention
-    /// [`GeoRef::geographic_ref_point_deg`] follows.
-    ///
-    /// Together with [`GeoRef::get_transform`] this completes the paper ↔
-    /// WGS84 round trip: [`MapTransform::to_projected`] to leave paper
-    /// millimetres, then this. Requires the `geo_ref` feature.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the map is not georeferenced ([`CrsType::Local`]),
-    /// or if its CRS cannot be resolved or related to WGS84.
-    pub fn to_wgs84(&self) -> Result<Transform> {
-        Ok(Transform::from_crs_defs(
-            &self.crs_type.to_crs_def()?,
-            &wgs84_crs_def()?,
-        )?)
-    }
-
-    /// A compiled transform from WGS84 to this map's projected CRS.
-    ///
-    /// The inverse of [`GeoRef::to_wgs84`]: takes degrees, `x` longitude and
-    /// `y` latitude, and yields the projected CRS's own units. Feed the result
-    /// to [`MapTransform::to_map`] to land back in paper millimetres.
-    ///
-    /// Requires the `geo_ref` feature.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the map is not georeferenced ([`CrsType::Local`]),
-    /// or if its CRS cannot be resolved or related to WGS84.
-    pub fn from_wgs84(&self) -> Result<Transform> {
-        Ok(Transform::from_crs_defs(
-            &wgs84_crs_def()?,
-            &self.crs_type.to_crs_def()?,
-        )?)
-    }
-
     /// Initialise full georeferencing from a projected reference point, CRS, elevation and scale.
     ///
     /// Computes declination, convergence and scale factors automatically.
@@ -404,7 +369,7 @@ impl GeoRef {
         }
 
         let local_crs = crs.to_crs_def()?;
-        let geographic_crs = wgs84_crs_def()?;
+        let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
 
         let transform = Transform::from_crs_defs(&local_crs, &geographic_crs)?;
 
@@ -528,119 +493,5 @@ impl GeoRef {
         let dec = field.declination().get::<degree>();
 
         Ok(dec as f64)
-    }
-}
-
-/// The geographic CRS every georeferenced omap file relates its projected CRS to.
-#[cfg(feature = "geo_ref")]
-fn wgs84_crs_def() -> Result<CrsDef> {
-    Ok(proj_wkt::parse_crs("EPSG:4326")?)
-}
-
-#[cfg(all(test, feature = "geo_ref"))]
-mod tests {
-    use geo_types::Coord;
-
-    use super::{CrsType, GeoRef};
-    use crate::{Error, Result};
-
-    /// On the UTM zone 32 central meridian, so the expected longitude is exact.
-    const UTM_32N_POINT: Coord = Coord {
-        x: 500_000.,
-        y: 6_650_000.,
-    };
-
-    fn georeferenced(crs_type: CrsType) -> GeoRef {
-        GeoRef {
-            crs_type,
-            ..GeoRef::new(10_000)
-        }
-    }
-
-    #[test]
-    fn local_crs_has_no_definition() {
-        assert!(matches!(
-            CrsType::Local.to_crs_def(),
-            Err(Error::LocalCrsHasNoDefinition)
-        ));
-        assert!(georeferenced(CrsType::Local).to_wgs84().is_err());
-        assert!(georeferenced(CrsType::Local).from_wgs84().is_err());
-    }
-
-    #[test]
-    fn to_wgs84_reproduces_the_geographic_ref_point() -> Result<()> {
-        // initialize resolves the CRS internally; to_wgs84 must resolve it the
-        // same way, or a consumer projecting its own coordinates would drift
-        // from the reference point stored in the file.
-        let geo_ref = GeoRef::initialize(UTM_32N_POINT, CrsType::Utm(32), 100., 10_000)?;
-
-        let converted = geo_ref.to_wgs84()?.convert(UTM_32N_POINT)?;
-
-        assert!(
-            (converted.x - geo_ref.geographic_ref_point_deg.x).abs() < 1e-9,
-            "longitude {} != {}",
-            converted.x,
-            geo_ref.geographic_ref_point_deg.x
-        );
-        assert!(
-            (converted.y - geo_ref.geographic_ref_point_deg.y).abs() < 1e-9,
-            "latitude {} != {}",
-            converted.y,
-            geo_ref.geographic_ref_point_deg.y
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn wgs84_transforms_are_degrees_lon_lat_and_round_trip() -> Result<()> {
-        let geo_ref = georeferenced(CrsType::Utm(32));
-
-        let degrees = geo_ref.to_wgs84()?.convert(UTM_32N_POINT)?;
-        assert!(
-            (degrees.x - 9.).abs() < 1e-9,
-            "x must be the longitude in degrees, got {}",
-            degrees.x
-        );
-        assert!(
-            (degrees.y - 59.9).abs() < 0.1,
-            "y must be the latitude in degrees, got {}",
-            degrees.y
-        );
-
-        let projected = geo_ref.from_wgs84()?.convert(degrees)?;
-        assert!(
-            (projected.x - UTM_32N_POINT.x).abs() < 1e-3,
-            "easting drift"
-        );
-        assert!(
-            (projected.y - UTM_32N_POINT.y).abs() < 1e-3,
-            "northing drift"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn epsg_code_and_proj_string_resolution_agree() -> Result<()> {
-        // EPSG:32632 is WGS84 / UTM 32N: the registry path, the PROJ.4 path
-        // and an EPSG code embedded in a PROJ.4 string must all land together.
-        let reference = georeferenced(CrsType::Utm(32))
-            .to_wgs84()?
-            .convert(UTM_32N_POINT)?;
-
-        for crs_type in [
-            CrsType::Epsg(32632),
-            CrsType::Proj4("+init=epsg:32632".to_owned()),
-        ] {
-            let converted = georeferenced(crs_type.clone())
-                .to_wgs84()?
-                .convert(UTM_32N_POINT)?;
-
-            assert!(
-                (converted.x - reference.x).abs() < 1e-9
-                    && (converted.y - reference.y).abs() < 1e-9,
-                "{crs_type:?} resolved to {converted:?}, expected {reference:?}"
-            );
-        }
-        Ok(())
     }
 }

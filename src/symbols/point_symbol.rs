@@ -161,10 +161,9 @@ impl Element {
                     }
                     _ => {}
                 },
-                Event::End(e)
-                    if e.local_name().as_ref() == b"element" => {
-                        break;
-                    }
+                Event::End(e) if e.local_name().as_ref() == b"element" => {
+                    break;
+                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::Element));
                 }
@@ -336,10 +335,9 @@ impl PointSymbol {
                     b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e)
-                    if e.local_name().as_ref() == b"symbol" => {
-                        break;
-                    }
+                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                    break;
+                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::PointSymbol));
                 }

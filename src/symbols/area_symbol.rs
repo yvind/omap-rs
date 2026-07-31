@@ -110,10 +110,9 @@ impl FillPattern {
                 let mut buf = Vec::new();
                 loop {
                     match reader.read_event_into(&mut buf)? {
-                        Event::End(e)
-                            if e.local_name().as_ref() == b"pattern" => {
-                                break;
-                            }
+                        Event::End(e) if e.local_name().as_ref() == b"pattern" => {
+                            break;
+                        }
                         Event::Eof => {
                             return Err(Error::UnexpectedEof(OmapSection::FillPattern));
                         }
@@ -139,29 +138,26 @@ impl FillPattern {
                 let mut buf = Vec::new();
                 loop {
                     match reader.read_event_into(&mut buf)? {
-                        Event::Start(e)
-                            if e.local_name().as_ref() == b"symbol" => {
-                                let mut sub_common = SymbolCommon::default();
-                                for attr in e.attributes().filter_map(std::result::Result::ok) {
-                                    match attr.key.local_name().as_ref() {
-                                        b"name" => {
-                                            sub_common.name = parse_attr(attr, e.decoder())
-                                                .unwrap_or(sub_common.name);
-                                        }
-                                        b"code" => {
-                                            sub_common.code =
-                                                crate::utils::parse_attr_raw(attr.value)
-                                                    .unwrap_or_default();
-                                        }
-                                        _ => {}
+                        Event::Start(e) if e.local_name().as_ref() == b"symbol" => {
+                            let mut sub_common = SymbolCommon::default();
+                            for attr in e.attributes().filter_map(std::result::Result::ok) {
+                                match attr.key.local_name().as_ref() {
+                                    b"name" => {
+                                        sub_common.name = parse_attr(attr, e.decoder())
+                                            .unwrap_or(sub_common.name);
                                     }
+                                    b"code" => {
+                                        sub_common.code = crate::utils::parse_attr_raw(attr.value)
+                                            .unwrap_or_default();
+                                    }
+                                    _ => {}
                                 }
-                                point = Some(PointSymbol::parse(reader, color_set, sub_common)?);
                             }
-                        Event::End(e)
-                            if e.local_name().as_ref() == b"pattern" => {
-                                break;
-                            }
+                            point = Some(PointSymbol::parse(reader, color_set, sub_common)?);
+                        }
+                        Event::End(e) if e.local_name().as_ref() == b"pattern" => {
+                            break;
+                        }
                         Event::Eof => {
                             return Err(Error::UnexpectedEof(OmapSection::FillPatternPoint));
                         }
@@ -366,10 +362,9 @@ impl AreaSymbol {
                     }
                     _ => {}
                 },
-                Event::End(e)
-                    if e.local_name().as_ref() == b"symbol" => {
-                        break;
-                    }
+                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                    break;
+                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::AreaSymbol));
                 }

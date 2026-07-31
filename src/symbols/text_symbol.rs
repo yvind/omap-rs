@@ -300,10 +300,9 @@ impl TextSymbol {
                         custom_tabs.push(NonNegativeF64::from_file_value(v));
                     }
                 }
-                Event::End(e)
-                    if e.local_name().as_ref() == b"symbol" => {
-                        break;
-                    }
+                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                    break;
+                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::TextSymbol));
                 }

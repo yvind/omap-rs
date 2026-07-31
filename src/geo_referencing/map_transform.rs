@@ -1,9 +1,15 @@
+#[cfg(feature = "geo_ref")]
+use std::cell::Cell;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
+#[cfg(feature = "geo_ref")]
+use proj_core::Transform;
 
 use crate::objects::{BezierPath, BezierPolygon};
+#[cfg(feature = "geo_ref")]
+use crate::{Result, geo_referencing::CrsType};
 
 use super::GeoRef;
 
@@ -59,6 +65,15 @@ impl AffineMapTransform {
 }
 
 /// Coordinate transform between map and projected (CRS) coordinates.
+#[cfg_attr(
+    feature = "geo_ref",
+    doc = "",
+    doc = "With the `geo_ref` feature the same transform also reaches WGS84 —",
+    doc = "`x` longitude and `y` latitude, in degrees — through the",
+    doc = "[`to_wgs84`](Self::to_wgs84) and [`from_wgs84`](Self::from_wgs84)",
+    doc = "families, which chain the paper ↔ projected step with a projection",
+    doc = "between the map's CRS and WGS84."
+)]
 #[derive(Debug, Clone)]
 pub struct MapTransform {
     map_center: Coord,
@@ -73,6 +88,17 @@ pub struct MapTransform {
     /// same CRS representation. This crate does not try to normalize equivalent
     /// CRS definitions.
     crs_hash: u64,
+    /// The WGS84 transform pair
+    #[cfg(feature = "geo_ref")]
+    wgs84: Wgs84Transforms,
+}
+
+/// The compiled projections between the map's CRS and WGS84.
+#[cfg(feature = "geo_ref")]
+#[derive(Debug, Clone)]
+struct Wgs84Transforms {
+    to_wgs84: Transform,
+    from_wgs84: Transform,
 }
 
 impl MapTransform {
@@ -208,6 +234,9 @@ impl MapTransform {
             scale_factor: geo_ref.combined_scale_factor() * geo_ref.scale_denominator as f64
                 / 1000.,
             crs_hash,
+            #[cfg(feature = "geo_ref")]
+            wgs84: MapTransform::wgs84_transforms(&geo_ref.crs_type)
+                .expect("Unable to create wgs84 tranform from crs"),
         }
     }
 
@@ -274,6 +303,257 @@ impl MapTransform {
             translation,
         })
     }
+}
+
+#[cfg(feature = "geo_ref")]
+impl MapTransform {
+    /// Build the projections between the map's CRS and WGS84
+    fn wgs84_transforms(crs_type: &CrsType) -> Result<Wgs84Transforms> {
+        let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
+        let to_wgs84 = Transform::from_crs_defs(&crs_type.to_crs_def()?, &geographic_crs)?;
+        let from_wgs84 = to_wgs84.inverse()?;
+
+        Ok(Wgs84Transforms {
+            to_wgs84,
+            from_wgs84,
+        })
+    }
+
+    /// Convert a [Coord] in map coordinates to WGS84 degrees, `x` longitude
+    /// and `y` latitude.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84(&self, map_coord: Coord) -> Result<Coord> {
+        Ok(self.wgs84.to_wgs84.convert(self.to_projected(map_coord))?)
+    }
+
+    /// Convert a [Polygon] in map coordinates to WGS84 degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84_polygon(&self, map_polygon: Polygon) -> Result<Polygon> {
+        Ok(self
+            .wgs84
+            .to_wgs84
+            .convert_geometry(self.to_projected_polygon(map_polygon))?)
+    }
+
+    /// Convert a [`BezierPolygon`] in map coordinates to WGS84 degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84_bezierpolygon(
+        &self,
+        map_bezierpolygon: BezierPolygon,
+    ) -> Result<BezierPolygon> {
+        let mut interiors = Vec::with_capacity(map_bezierpolygon.interiors.len());
+        for ring in map_bezierpolygon.interiors {
+            interiors.push(self.to_wgs84_bezierpath(ring)?);
+        }
+
+        Ok(BezierPolygon {
+            exterior: self.to_wgs84_bezierpath(map_bezierpolygon.exterior)?,
+            interiors,
+        })
+    }
+
+    /// Convert a [`BezierPath`] in map coordinates to WGS84 degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84_bezierpath(&self, map_bezierpath: BezierPath) -> Result<BezierPath> {
+        try_transform_bezierpath(map_bezierpath, |coord| {
+            Ok(self.wgs84.to_wgs84.convert(self.to_projected(coord))?)
+        })
+    }
+
+    /// Convert a [`LineString`] in map coordinates to WGS84 degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84_linestring(&self, map_linestring: LineString) -> Result<LineString> {
+        Ok(self
+            .wgs84
+            .to_wgs84
+            .convert_geometry(self.to_projected_linestring(map_linestring))?)
+    }
+
+    /// Convert a [`BezierString`] in map coordinates to WGS84 degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84_bezierstring(&self, map_bezierstring: BezierString) -> Result<BezierString> {
+        try_transform_bezierstring(map_bezierstring, |coord| {
+            Ok(self.wgs84.to_wgs84.convert(self.to_projected(coord))?)
+        })
+    }
+
+    /// Convert a [Point] in map coordinates to WGS84 degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn to_wgs84_point(&self, map_point: Point) -> Result<Point> {
+        Ok(self.to_wgs84(map_point.0)?.into())
+    }
+
+    /// Convert a [Coord] in WGS84 degrees, `x` longitude and `y` latitude, to
+    /// map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84(&self, wgs84_coord: Coord) -> Result<Coord> {
+        Ok(self.to_map(self.wgs84.from_wgs84.convert(wgs84_coord)?))
+    }
+
+    /// Convert a [Polygon] in WGS84 degrees to map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84_polygon(&self, wgs84_polygon: Polygon) -> Result<Polygon> {
+        let projected = self.wgs84.from_wgs84.convert_geometry(wgs84_polygon)?;
+
+        Ok(self.to_map_polygon(projected))
+    }
+
+    /// Convert a [`BezierPolygon`] in WGS84 degrees to map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84_bezierpolygon(
+        &self,
+        wgs84_bezierpolygon: BezierPolygon,
+    ) -> Result<BezierPolygon> {
+        let mut interiors = Vec::with_capacity(wgs84_bezierpolygon.interiors.len());
+        for ring in wgs84_bezierpolygon.interiors {
+            interiors.push(self.from_wgs84_bezierpath(ring)?);
+        }
+
+        Ok(BezierPolygon {
+            exterior: self.from_wgs84_bezierpath(wgs84_bezierpolygon.exterior)?,
+            interiors,
+        })
+    }
+
+    /// Convert a [`BezierPath`] in WGS84 degrees to map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84_bezierpath(&self, wgs84_bezierpath: BezierPath) -> Result<BezierPath> {
+        try_transform_bezierpath(wgs84_bezierpath, |coord| {
+            Ok(self.to_map(self.wgs84.from_wgs84.convert(coord)?))
+        })
+    }
+
+    /// Convert a [`LineString`] in WGS84 degrees to map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84_linestring(&self, wgs84_linestring: LineString) -> Result<LineString> {
+        let projected = self.wgs84.from_wgs84.convert_geometry(wgs84_linestring)?;
+
+        Ok(self.to_map_linestring(projected))
+    }
+
+    /// Convert a [`BezierString`] in WGS84 degrees to map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84_bezierstring(
+        &self,
+        wgs84_bezierstring: BezierString,
+    ) -> Result<BezierString> {
+        try_transform_bezierstring(wgs84_bezierstring, |coord| {
+            Ok(self.to_map(self.wgs84.from_wgs84.convert(coord)?))
+        })
+    }
+
+    /// Convert a [Point] in WGS84 degrees to map coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the map's CRS cannot be related to WGS84, or if a
+    /// coordinate falls outside the transform's domain.
+    pub fn from_wgs84_point(&self, wgs84_point: Point) -> Result<Point> {
+        Ok(self.from_wgs84(wgs84_point.0)?.into())
+    }
+}
+
+/// Apply a fallible coordinate transform to a [`BezierPath`].
+///
+/// [`BezierPath::map_coords`] upholds the path's invariants but takes an
+/// infallible transform, so a failure is carried out of the closure instead of
+/// returned from it. Later coordinates are still visited; the reported failure
+/// is the last one.
+#[cfg(feature = "geo_ref")]
+fn try_transform_bezierpath(
+    bezierpath: BezierPath,
+    transform: impl Fn(Coord) -> Result<Coord>,
+) -> Result<BezierPath> {
+    let failure = Cell::new(None);
+
+    let transformed = bezierpath.map_coords(|coord| match transform(coord) {
+        Ok(transformed) => transformed,
+        Err(error) => {
+            failure.set(Some(error));
+            coord
+        }
+    });
+
+    match failure.into_inner() {
+        Some(error) => Err(error),
+        None => Ok(transformed),
+    }
+}
+
+/// Apply a fallible coordinate transform to a [`BezierString`], stopping at the
+/// first failure.
+#[cfg(feature = "geo_ref")]
+fn try_transform_bezierstring(
+    mut bezierstring: BezierString,
+    transform: impl Fn(Coord) -> Result<Coord>,
+) -> Result<BezierString> {
+    for segment in bezierstring.segments_mut() {
+        match segment {
+            BezierSegment::Bezier(curve) => {
+                curve.start = transform(curve.start)?;
+                curve.handle1 = transform(curve.handle1)?;
+                curve.handle2 = transform(curve.handle2)?;
+                curve.end = transform(curve.end)?;
+            }
+            BezierSegment::Line(line) => {
+                line.start = transform(line.start)?;
+                line.end = transform(line.end)?;
+            }
+        }
+    }
+    Ok(bezierstring)
 }
 
 fn transform_bezierstring(

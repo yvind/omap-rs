@@ -239,9 +239,10 @@ impl CombinedLineSymbol {
                         }
                     }
                     (WeakLinePathSymbol::Line(weak), WeakSymbol::Line(other_weak))
-                        if weak.ptr_eq(other_weak) => {
-                            return Ok(true);
-                        }
+                        if weak.ptr_eq(other_weak) =>
+                    {
+                        return Ok(true);
+                    }
                     _ => (),
                 }
             }
