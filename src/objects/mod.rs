@@ -49,6 +49,10 @@ const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT;
 /// by one entry for every segment end, so its length is always
 /// `geometry.num_segments() + 1`. For a closed path, its first and final
 /// entries describe the same seam vertex and therefore have the same value.
+///
+/// Paths come from parsed objects, but [`Self::new`] builds one directly and
+/// enforces both invariants, so a hand-built path is as trustworthy as a
+/// parsed one.
 #[derive(Debug, Clone)]
 pub struct BezierPath {
     /// The straight and cubic segments forming the path.
@@ -58,7 +62,13 @@ pub struct BezierPath {
 }
 
 impl BezierPath {
-    fn new(geometry: BezierString, vertex_is_dash_point: Vec<bool>) -> Option<Self> {
+    /// Build a path from its geometry and per-vertex dash flags.
+    ///
+    /// Returns [`None`] unless the arguments uphold the type's invariants:
+    /// `geometry` must hold at least one segment, `vertex_is_dash_point` must
+    /// hold one entry per path vertex, and a closed path's first and final
+    /// entries, which describe the same seam vertex, must agree.
+    pub fn new(geometry: BezierString, vertex_is_dash_point: Vec<bool>) -> Option<Self> {
         let segments = geometry.num_segments();
         if segments == 0 {
             return None;
@@ -365,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn internal_bezier_path_construction_enforces_invariants() {
+    fn bezier_path_construction_enforces_invariants() {
         assert!(BezierPath::new(BezierString::empty(), Vec::new()).is_none());
 
         let open_geometry = BezierString::new(vec![BezierSegment::new(
@@ -373,13 +383,15 @@ mod tests {
             None,
             Coord { x: 1.0, y: 0.0 },
         )]);
-        assert!(BezierPath::new(open_geometry, vec![false]).is_none());
+        assert!(BezierPath::new(open_geometry.clone(), vec![false]).is_none());
+        assert!(BezierPath::new(open_geometry, vec![false, true]).is_some());
 
         let closed_geometry = BezierString::new(vec![
             BezierSegment::new(Coord { x: 0.0, y: 0.0 }, None, Coord { x: 1.0, y: 0.0 }),
             BezierSegment::new(Coord { x: 1.0, y: 0.0 }, None, Coord { x: 0.0, y: 0.0 }),
         ]);
-        assert!(BezierPath::new(closed_geometry, vec![false, false, true]).is_none());
+        assert!(BezierPath::new(closed_geometry.clone(), vec![false, false, true]).is_none());
+        assert!(BezierPath::new(closed_geometry, vec![true, false, true]).is_some());
     }
 
     #[test]
