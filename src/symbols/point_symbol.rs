@@ -92,10 +92,6 @@ impl Element {
     }
 
     /// Parse a single element inside `point_symbol`
-    #[expect(
-        clippy::too_many_lines,
-        reason = "point-element parsing validates paired symbol and object records"
-    )]
     fn parse_element<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,

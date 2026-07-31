@@ -9,7 +9,7 @@ use proj_core::Transform;
 
 use crate::objects::{BezierPath, BezierPolygon};
 #[cfg(feature = "geo_ref")]
-use crate::{Result, geo_referencing::CrsType};
+use crate::{Error, Result, geo_referencing::CrsType};
 
 use super::GeoRef;
 
@@ -90,7 +90,7 @@ pub struct MapTransform {
     crs_hash: u64,
     /// The WGS84 transform pair
     #[cfg(feature = "geo_ref")]
-    wgs84: Wgs84Transforms,
+    wgs84_transform: Option<Wgs84Transforms>,
 }
 
 /// The compiled projections between the map's CRS and WGS84.
@@ -235,8 +235,7 @@ impl MapTransform {
                 / 1000.,
             crs_hash,
             #[cfg(feature = "geo_ref")]
-            wgs84: MapTransform::wgs84_transforms(&geo_ref.crs_type)
-                .expect("Unable to create wgs84 tranform from crs"),
+            wgs84_transform: Self::wgs84_transforms(&geo_ref.crs_type).ok(),
         }
     }
 
@@ -327,7 +326,12 @@ impl MapTransform {
     /// Returns an error if the map's CRS cannot be related to WGS84, or if a
     /// coordinate falls outside the transform's domain.
     pub fn to_wgs84(&self, map_coord: Coord) -> Result<Coord> {
-        Ok(self.wgs84.to_wgs84.convert(self.to_projected(map_coord))?)
+        Ok(self
+            .wgs84_transform
+            .as_ref()
+            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .to_wgs84
+            .convert(self.to_projected(map_coord))?)
     }
 
     /// Convert a [Polygon] in map coordinates to WGS84 degrees.
@@ -338,7 +342,9 @@ impl MapTransform {
     /// coordinate falls outside the transform's domain.
     pub fn to_wgs84_polygon(&self, map_polygon: Polygon) -> Result<Polygon> {
         Ok(self
-            .wgs84
+            .wgs84_transform
+            .as_ref()
+            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
             .to_wgs84
             .convert_geometry(self.to_projected_polygon(map_polygon))?)
     }
@@ -372,7 +378,12 @@ impl MapTransform {
     /// coordinate falls outside the transform's domain.
     pub fn to_wgs84_bezierpath(&self, map_bezierpath: BezierPath) -> Result<BezierPath> {
         try_transform_bezierpath(map_bezierpath, |coord| {
-            Ok(self.wgs84.to_wgs84.convert(self.to_projected(coord))?)
+            Ok(self
+                .wgs84_transform
+                .as_ref()
+                .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                .to_wgs84
+                .convert(self.to_projected(coord))?)
         })
     }
 
@@ -384,7 +395,9 @@ impl MapTransform {
     /// coordinate falls outside the transform's domain.
     pub fn to_wgs84_linestring(&self, map_linestring: LineString) -> Result<LineString> {
         Ok(self
-            .wgs84
+            .wgs84_transform
+            .as_ref()
+            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
             .to_wgs84
             .convert_geometry(self.to_projected_linestring(map_linestring))?)
     }
@@ -397,7 +410,12 @@ impl MapTransform {
     /// coordinate falls outside the transform's domain.
     pub fn to_wgs84_bezierstring(&self, map_bezierstring: BezierString) -> Result<BezierString> {
         try_transform_bezierstring(map_bezierstring, |coord| {
-            Ok(self.wgs84.to_wgs84.convert(self.to_projected(coord))?)
+            Ok(self
+                .wgs84_transform
+                .as_ref()
+                .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                .to_wgs84
+                .convert(self.to_projected(coord))?)
         })
     }
 
@@ -419,7 +437,13 @@ impl MapTransform {
     /// Returns an error if the map's CRS cannot be related to WGS84, or if a
     /// coordinate falls outside the transform's domain.
     pub fn from_wgs84(&self, wgs84_coord: Coord) -> Result<Coord> {
-        Ok(self.to_map(self.wgs84.from_wgs84.convert(wgs84_coord)?))
+        Ok(self.to_map(
+            self.wgs84_transform
+                .as_ref()
+                .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                .from_wgs84
+                .convert(wgs84_coord)?,
+        ))
     }
 
     /// Convert a [Polygon] in WGS84 degrees to map coordinates.
@@ -429,7 +453,12 @@ impl MapTransform {
     /// Returns an error if the map's CRS cannot be related to WGS84, or if a
     /// coordinate falls outside the transform's domain.
     pub fn from_wgs84_polygon(&self, wgs84_polygon: Polygon) -> Result<Polygon> {
-        let projected = self.wgs84.from_wgs84.convert_geometry(wgs84_polygon)?;
+        let projected = self
+            .wgs84_transform
+            .as_ref()
+            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .from_wgs84
+            .convert_geometry(wgs84_polygon)?;
 
         Ok(self.to_map_polygon(projected))
     }
@@ -463,7 +492,13 @@ impl MapTransform {
     /// coordinate falls outside the transform's domain.
     pub fn from_wgs84_bezierpath(&self, wgs84_bezierpath: BezierPath) -> Result<BezierPath> {
         try_transform_bezierpath(wgs84_bezierpath, |coord| {
-            Ok(self.to_map(self.wgs84.from_wgs84.convert(coord)?))
+            Ok(self.to_map(
+                self.wgs84_transform
+                    .as_ref()
+                    .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                    .from_wgs84
+                    .convert(coord)?,
+            ))
         })
     }
 
@@ -474,7 +509,12 @@ impl MapTransform {
     /// Returns an error if the map's CRS cannot be related to WGS84, or if a
     /// coordinate falls outside the transform's domain.
     pub fn from_wgs84_linestring(&self, wgs84_linestring: LineString) -> Result<LineString> {
-        let projected = self.wgs84.from_wgs84.convert_geometry(wgs84_linestring)?;
+        let projected = self
+            .wgs84_transform
+            .as_ref()
+            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .from_wgs84
+            .convert_geometry(wgs84_linestring)?;
 
         Ok(self.to_map_linestring(projected))
     }
@@ -490,7 +530,13 @@ impl MapTransform {
         wgs84_bezierstring: BezierString,
     ) -> Result<BezierString> {
         try_transform_bezierstring(wgs84_bezierstring, |coord| {
-            Ok(self.to_map(self.wgs84.from_wgs84.convert(coord)?))
+            Ok(self.to_map(
+                self.wgs84_transform
+                    .as_ref()
+                    .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                    .from_wgs84
+                    .convert(coord)?,
+            ))
         })
     }
 
