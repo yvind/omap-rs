@@ -17,7 +17,7 @@ pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Strin
             Event::GeneralRef(bytes_ref) => {
                 notes.push_str(&quick_xml::escape::unescape(&format!(
                     "&{};",
-                    &bytes_ref.xml_content(XmlVersion::Explicit1_0)?
+                    bytes_ref.xml_content(XmlVersion::Explicit1_0)?
                 ))?);
             }
             _ => break,
