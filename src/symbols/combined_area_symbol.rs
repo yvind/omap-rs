@@ -252,16 +252,14 @@ impl CombinedAreaSymbol {
                             return Ok(true);
                         }
                     }
-                    (WeakPathSymbol::Area(weak), WeakSymbol::Area(other_weak)) => {
-                        if weak.ptr_eq(other_weak) {
+                    (WeakPathSymbol::Area(weak), WeakSymbol::Area(other_weak))
+                        if weak.ptr_eq(other_weak) => {
                             return Ok(true);
                         }
-                    }
-                    (WeakPathSymbol::Line(weak), WeakSymbol::Line(other_weak)) => {
-                        if weak.ptr_eq(other_weak) {
+                    (WeakPathSymbol::Line(weak), WeakSymbol::Line(other_weak))
+                        if weak.ptr_eq(other_weak) => {
                             return Ok(true);
                         }
-                    }
                     _ => (),
                 }
             }
@@ -309,11 +307,10 @@ impl CombinedAreaSymbol {
                     b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e) => {
-                    if e.local_name().as_ref() == b"symbol" {
+                Event::End(e)
+                    if e.local_name().as_ref() == b"symbol" => {
                         break;
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::CombinedAreaSymbol));
                 }
@@ -331,8 +328,8 @@ impl CombinedAreaSymbol {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) => {
-                    if e.local_name().as_ref() == b"symbol" {
+                Event::Start(e)
+                    if e.local_name().as_ref() == b"symbol" => {
                         let sym_type: u8 = try_get_attr_raw(&e, "type")?.unwrap_or(0);
                         let mut sub_common = SymbolCommon::default();
                         for attr in e.attributes().filter_map(std::result::Result::ok) {
@@ -365,12 +362,10 @@ impl CombinedAreaSymbol {
                             }
                         }
                     }
-                }
-                Event::End(e) => {
-                    if e.local_name().as_ref() == b"part" {
+                Event::End(e)
+                    if e.local_name().as_ref() == b"part" => {
                         return Err(Error::EmptyPrivatePart);
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::PrivatePart));
                 }
@@ -383,11 +378,10 @@ impl CombinedAreaSymbol {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::End(e) => {
-                    if e.local_name().as_ref() == b"part" {
+                Event::End(e)
+                    if e.local_name().as_ref() == b"part" => {
                         return Ok(());
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::SkippedPart));
                 }

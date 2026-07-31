@@ -525,11 +525,10 @@ impl LineSymbol {
                     b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e) => {
-                    if e.local_name().as_ref() == b"symbol" {
+                Event::End(e)
+                    if e.local_name().as_ref() == b"symbol" => {
                         break;
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::LineSymbol));
                 }
@@ -601,8 +600,8 @@ impl LineSymbol {
         let mut result = None;
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) => {
-                    if e.local_name().as_ref() == b"symbol" {
+                Event::Start(e)
+                    if e.local_name().as_ref() == b"symbol" => {
                         let mut sub_common = SymbolCommon::default();
                         for attr in e.attributes().filter_map(std::result::Result::ok) {
                             match attr.key.local_name().as_ref() {
@@ -619,7 +618,6 @@ impl LineSymbol {
                         }
                         result = Some(PointSymbol::parse(reader, color_set, sub_common)?);
                     }
-                }
                 Event::End(e) => match e.local_name().as_ref() {
                     b"start_symbol" | b"mid_symbol" | b"end_symbol" | b"dash_symbol" => break,
                     _ => (),
@@ -653,8 +651,8 @@ impl LineSymbol {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) => {
-                    if e.local_name().as_ref() == b"border" {
+                Event::Start(e)
+                    if e.local_name().as_ref() == b"border" => {
                         let b = LineSymbolBorder::parse(&e, color_set)?;
                         if left.is_none() {
                             left = Some(b);
@@ -662,12 +660,10 @@ impl LineSymbol {
                             right = Some(b);
                         }
                     }
-                }
-                Event::End(e) => {
-                    if e.local_name().as_ref() == b"borders" {
+                Event::End(e)
+                    if e.local_name().as_ref() == b"borders" => {
                         break;
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::LineSymbol));
                 }

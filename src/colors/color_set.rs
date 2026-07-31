@@ -176,7 +176,7 @@ impl ColorSet {
                 .into_iter()
                 .map(|(s, p)| (Color::SpotColor(s), p)),
         );
-        parsed_colors.sort_by(|a, b| a.1.cmp(&b.1));
+        parsed_colors.sort_by_key(|a| a.1);
 
         Ok(Self(parsed_colors.into_iter().map(|(c, _)| c).collect()))
     }

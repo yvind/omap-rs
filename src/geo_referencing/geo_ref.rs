@@ -328,11 +328,10 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(bytes_start) => {
-                if bytes_start.local_name().as_ref() == event_name {
+            Event::Start(bytes_start)
+                if bytes_start.local_name().as_ref() == event_name => {
                     return notes::parse(reader);
                 }
-            }
             Event::Eof => {
                 return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
             }

@@ -130,16 +130,14 @@ impl TemplateTransformations {
 
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"adjusted" => {
-                    if attr.as_bool().unwrap_or(false) {
+                b"adjusted"
+                    if attr.as_bool().unwrap_or(false) => {
                         adjustment = AdjustmentState::Adjusted;
                     }
-                }
-                b"adjustment_dirty" => {
-                    if attr.as_bool().unwrap_or(false) {
+                b"adjustment_dirty"
+                    if attr.as_bool().unwrap_or(false) => {
                         adjustment = AdjustmentState::AdjustmentDirty;
                     }
-                }
                 _ => {}
             }
         }
@@ -188,11 +186,10 @@ impl TemplateTransformations {
                     }
                     _ => {}
                 },
-                Event::End(be) => {
-                    if be.local_name().as_ref() == b"transformations" {
+                Event::End(be)
+                    if be.local_name().as_ref() == b"transformations" => {
                         break;
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::TemplateTransformations));
                 }
@@ -283,11 +280,10 @@ impl PassPoint {
                     b"calculated" => calc = parse_inner_coord(reader).ok(),
                     _ => {}
                 },
-                Event::End(be) => {
-                    if be.local_name().as_ref() == b"passpoint" {
+                Event::End(be)
+                    if be.local_name().as_ref() == b"passpoint" => {
                         break;
                     }
-                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::PassPoint));
                 }
