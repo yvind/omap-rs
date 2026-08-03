@@ -12,9 +12,8 @@ use super::{
 };
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
     symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
-    utils::{from_file_coords, to_file_coords, try_get_attr_raw},
+    utils::{from_file_coords, to_file_coords, transform_position, try_get_attr_raw},
 };
 
 /// A polygon whose exterior and interior rings retain straight and cubic
@@ -199,38 +198,66 @@ impl AreaObject {
             })
     }
 
-    /// Apply an affine coordinate transform to both the geometry and the raw
+    /// Apply a coordinate transform to both the geometry and the raw
     /// control points, preserving Bézier structure without re-approximation.
     ///
-    /// This does **not** mark the coordinates as touched, so the raw (affine transformed) control
+    /// This does **not** mark the coordinates as touched, so the raw (transformed) control
     /// points (with Bézier flags) will still be used on write.
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`, or an error if a transformed
+    /// raw coordinate is outside the file-format range.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
         // Transform the discretized geometry if it has been initialized.
         if let Some(geometry) = self.geometry.get_mut() {
+            let mut error = None;
             geometry.exterior_mut(|ext| {
                 for coord in &mut ext.0 {
-                    *coord = transform.apply(*coord);
-                }
-            });
-            geometry.interiors_mut(|interiors| {
-                for interior in interiors.iter_mut() {
-                    for coord in &mut interior.0 {
-                        *coord = transform.apply(*coord);
+                    match transform(*coord) {
+                        Ok(transformed) => *coord = transformed,
+                        Err(err) => {
+                            error = Some(err);
+                            break;
+                        }
                     }
                 }
             });
+            if let Some(error) = error {
+                return Err(error);
+            }
+            geometry.interiors_mut(|interiors| {
+                for interior in interiors.iter_mut() {
+                    for coord in &mut interior.0 {
+                        match transform(*coord) {
+                            Ok(transformed) => *coord = transformed,
+                            Err(err) => {
+                                error = Some(err);
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
+            if let Some(error) = error {
+                return Err(error);
+            }
         }
-        // Transform the pattern rotation origin
-        self.pattern_rotation.coord = transform.apply(self.pattern_rotation.coord);
+        // Transform the pattern rotation origin and its local orientation.
+        let (pattern_coord, pattern_rotation, _) =
+            transform_position(self.pattern_rotation.coord, transform)?;
+        self.pattern_rotation.coord = pattern_coord;
+        self.pattern_rotation.rotation += pattern_rotation;
         // Transform raw control points — flags stay unchanged
         for (file_coord, _flag) in &mut self.raw_map_coords {
             let map_coord = from_file_coords(*file_coord);
-            let transformed = transform.apply(map_coord);
-            if let Ok(fc) = to_file_coords(transformed) {
-                *file_coord = fc;
-            }
+            *file_coord = to_file_coords(transform(map_coord)?)?;
         }
         // Do NOT set is_coords_touched = true
+        Ok(())
     }
 
     /// Reverse the winding order of all rings.

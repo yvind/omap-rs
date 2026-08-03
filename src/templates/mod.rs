@@ -15,7 +15,6 @@ use quick_xml::{
 
 use crate::{
     Error, NonNegativeF64, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
     utils::{parse_attr_raw, try_get_attr_raw},
     view::TemplateVisibility,
 };
@@ -133,11 +132,19 @@ impl Templates {
         self.template_entries.is_empty()
     }
 
-    /// Apply an affine map-coordinate transform to all non-georeferenced templates.
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+    /// Apply a map-coordinate transform to all non-georeferenced templates.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
         for entry in &mut self.template_entries {
-            entry.template.apply_affine(transform);
+            entry.template.apply_transform(transform)?;
         }
+        Ok(())
     }
 
     pub(crate) fn parse<R: std::io::BufRead>(

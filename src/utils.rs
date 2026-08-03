@@ -216,3 +216,29 @@ pub(crate) fn from_file_coords(file_coord: Coord<i32>) -> Coord {
         y: -from_file_value(file_coord.y),
     }
 }
+
+/// Transform a position and estimate the transform's local rotation and scale.
+pub(crate) fn transform_position<F>(position: Coord, transform: &F) -> Result<(Coord, f64, f64)>
+where
+    F: Fn(Coord) -> Result<Coord> + ?Sized,
+{
+    const D: f64 = 1.;
+    let meridian = (
+        position + Coord { x: 0., y: -D / 2. },
+        position + Coord { x: 0., y: D / 2. },
+    );
+    let parallel = (
+        position + Coord { x: -D / 2., y: 0. },
+        position + Coord { x: D / 2., y: 0. },
+    );
+
+    let transformed_position = transform(position)?;
+    let transformed_meridian = (transform(meridian.0)?, transform(meridian.1)?);
+    let transformed_parallel = (transform(parallel.0)?, transform(parallel.1)?);
+    let meridian_delta = (transformed_meridian.1 - transformed_meridian.0) / D;
+    let parallel_delta = (transformed_parallel.1 - transformed_parallel.0) / D;
+    let determinant = parallel_delta.x * meridian_delta.y - parallel_delta.y * meridian_delta.x;
+    let rotation = (parallel_delta.y - meridian_delta.x).atan2(parallel_delta.x + meridian_delta.y);
+
+    Ok((transformed_position, rotation, determinant.sqrt()))
+}

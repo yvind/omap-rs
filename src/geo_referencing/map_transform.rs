@@ -1,68 +1,20 @@
 #[cfg(feature = "geo_ref")]
 use std::cell::Cell;
-use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
 #[cfg(feature = "geo_ref")]
 use proj_core::Transform;
 
-use crate::objects::{BezierPath, BezierPolygon};
 #[cfg(feature = "geo_ref")]
-use crate::{Error, Result, geo_referencing::CrsType};
+use crate::Error;
+use crate::{
+    Result,
+    geo_referencing::CrsType,
+    objects::{BezierPath, BezierPolygon},
+};
 
 use super::GeoRef;
-
-/// A 2D affine coordinate transform (rotation + uniform scale + translation).
-///
-/// Represents the function `f(c) = scale * rotate(c) + translation`.
-/// Obtained via [`MapTransform::affine_between`] to re-project all map
-/// objects and non-georeferenced templates when the georeferencing changes
-/// within a projected CRS.
-#[derive(Debug, Clone)]
-pub struct AffineMapTransform {
-    /// Cosine component of the rotation.
-    cos: f64,
-    /// Sine component of the rotation.
-    sin: f64,
-    /// Uniform scale factor.
-    scale: f64,
-    /// Translation applied after rotation and scale.
-    translation: Coord,
-}
-
-impl AffineMapTransform {
-    /// Apply the affine transform to a single coordinate.
-    pub fn apply(&self, coord: Coord) -> Coord {
-        let x =
-            coord.x * self.scale * self.cos - coord.y * self.scale * self.sin + self.translation.x;
-        let y =
-            coord.x * self.scale * self.sin + coord.y * self.scale * self.cos + self.translation.y;
-        Coord { x, y }
-    }
-
-    pub(crate) fn rotation_radians(&self) -> f64 {
-        self.sin.atan2(self.cos)
-    }
-
-    pub(crate) fn scale_factor(&self) -> f64 {
-        self.scale
-    }
-
-    pub(crate) fn file_coord_matrix(&self) -> [f64; 9] {
-        [
-            self.scale * self.cos,
-            self.scale * self.sin,
-            self.translation.x,
-            -self.scale * self.sin,
-            self.scale * self.cos,
-            -self.translation.y,
-            0.,
-            0.,
-            1.,
-        ]
-    }
-}
 
 /// Coordinate transform between map and projected (CRS) coordinates.
 #[cfg_attr(
@@ -81,13 +33,8 @@ pub struct MapTransform {
     scale_factor: f64,
     sin: f64,
     cos: f64,
-    /// Lightweight fingerprint of the CRS definition.
-    ///
-    /// This is a conservative guard for [`MapTransform::affine_between`]: affine
-    /// transforms are only attempted when both transforms were built from the
-    /// same CRS representation. This crate does not try to normalize equivalent
-    /// CRS definitions.
-    crs_hash: u64,
+    /// The CRS definition used by this transform.
+    crs_type: CrsType,
     /// The WGS84 transform pair
     #[cfg(feature = "geo_ref")]
     wgs84_transform: Option<Wgs84Transforms>,
@@ -222,10 +169,6 @@ impl MapTransform {
     }
 
     pub(super) fn from_geo_ref(geo_ref: &GeoRef) -> Self {
-        let mut hasher = DefaultHasher::new();
-        geo_ref.crs_type.hash(&mut hasher);
-        let crs_hash = hasher.finish();
-
         Self {
             map_center: geo_ref.map_ref_point,
             proj_center: geo_ref.projected_ref_point,
@@ -233,74 +176,55 @@ impl MapTransform {
             cos: geo_ref.grivation_deg().to_radians().cos(),
             scale_factor: geo_ref.combined_scale_factor() * geo_ref.scale_denominator as f64
                 / 1000.,
-            crs_hash,
+            crs_type: geo_ref.crs_type.clone(),
             #[cfg(feature = "geo_ref")]
             wgs84_transform: Self::wgs84_transforms(&geo_ref.crs_type).ok(),
         }
     }
 
-    /// Compute the affine transform that maps coordinates from the `old`
-    /// coordinate frame to the `new` one, preserving projected (geographic)
-    /// positions.
+    /// Compute a transform from the `old` map coordinate frame to the `new`
+    /// one, preserving real-world positions.
     ///
     /// Use this when changing the map's georeferencing and you need to
     /// transform all existing map objects and non-georeferenced templates so
     /// they remain at the same real-world locations.
     ///
-    /// This is intentionally conservative: the two transforms must have matching
-    /// CRS fingerprints. Equivalent CRS definitions written in different forms
-    /// may be rejected, because `omap-rs` does not act as a projection library.
-    ///
-    /// The returned [`AffineMapTransform`] can be applied to every object via [`crate::Omap::apply_affine`].
+    /// Without the `geo_ref` feature, the coordinate reference systems must be
+    /// identical. With `geo_ref`, differing coordinate reference systems are
+    /// converted using `proj-core`.
     ///
     /// # Errors
     ///
-    /// Returns
-    /// [`crate::Error::CannotGetAffineTransformBetweenDifferentProjections`]
-    /// if the transforms have different CRS fingerprints.
-    pub fn affine_between(old: &Self, new: &Self) -> crate::Result<AffineMapTransform> {
-        if old.crs_hash != new.crs_hash {
-            return Err(crate::Error::CannotGetAffineTransformBetweenDifferentProjections);
+    /// Returns an error if the coordinate reference systems cannot be related.
+    pub fn transform_between(
+        old: &Self,
+        new: &Self,
+    ) -> crate::Result<Box<dyn Fn(geo_types::Coord) -> Result<geo_types::Coord>>> {
+        if old.crs_type == new.crs_type {
+            let old = old.clone();
+            let new = new.clone();
+            return Ok(Box::new(move |coord| {
+                Ok(new.to_map(old.to_projected(coord)))
+            }));
         }
 
-        // The composition is: new.to_map(old.to_projected(coord))
-        // old.to_projected: rotate by (-old.cos, old.sin), scale by old.scale_factor, translate by old.proj_center
-        // new.to_map: translate by -new.proj_center, scale by 1/new.scale_factor, rotate by (new.cos, new.sin), translate by new.map_center
-        //
-        // Combined rotation: angle = new_grivation - old_grivation (but we compose the sin/cos directly)
-        // Combined scale: old.scale_factor / new.scale_factor
+        #[cfg(feature = "geo_ref")]
+        {
+            let projection = Transform::from_horizontal_components(
+                &old.crs_type.to_crs_def()?,
+                &new.crs_type.to_crs_def()?,
+            )?;
+            let old = old.clone();
+            let new = new.clone();
 
-        let scale = old.scale_factor / new.scale_factor;
+            Ok(Box::new(move |coord| {
+                let projected = projection.convert(old.to_projected(coord))?;
+                Ok(new.to_map(projected))
+            }))
+        }
 
-        let cos = new.cos * old.cos + new.sin * old.sin;
-        let sin = new.sin * old.cos - new.cos * old.sin;
-
-        let diff = old.proj_center - new.proj_center;
-        let inv_scale = 1.0 / new.scale_factor;
-        let rotated_diff = Coord {
-            x: diff.x * new.cos - diff.y * new.sin,
-            y: diff.x * new.sin + diff.y * new.cos,
-        };
-        let new_origin = Coord {
-            x: rotated_diff.x * inv_scale + new.map_center.x,
-            y: rotated_diff.y * inv_scale + new.map_center.y,
-        };
-
-        let rot_old_center = Coord {
-            x: old.map_center.x * cos - old.map_center.y * sin,
-            y: old.map_center.x * sin + old.map_center.y * cos,
-        };
-        let translation = Coord {
-            x: new_origin.x - scale * rot_old_center.x,
-            y: new_origin.y - scale * rot_old_center.y,
-        };
-
-        Ok(AffineMapTransform {
-            cos,
-            sin,
-            scale,
-            translation,
-        })
+        #[cfg(not(feature = "geo_ref"))]
+        Err(crate::Error::CannotGetTransformBetweenDifferentGeoRef)
     }
 }
 
@@ -309,7 +233,8 @@ impl MapTransform {
     /// Build the projections between the map's CRS and WGS84
     fn wgs84_transforms(crs_type: &CrsType) -> Result<Wgs84Transforms> {
         let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
-        let to_wgs84 = Transform::from_crs_defs(&crs_type.to_crs_def()?, &geographic_crs)?;
+        let to_wgs84 =
+            Transform::from_horizontal_components(&crs_type.to_crs_def()?, &geographic_crs)?;
         let from_wgs84 = to_wgs84.inverse()?;
 
         Ok(Wgs84Transforms {
@@ -329,7 +254,7 @@ impl MapTransform {
         Ok(self
             .wgs84_transform
             .as_ref()
-            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .ok_or(Error::NoWGS84TransformAvailable)?
             .to_wgs84
             .convert(self.to_projected(map_coord))?)
     }
@@ -344,7 +269,7 @@ impl MapTransform {
         Ok(self
             .wgs84_transform
             .as_ref()
-            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .ok_or(Error::NoWGS84TransformAvailable)?
             .to_wgs84
             .convert_geometry(self.to_projected_polygon(map_polygon))?)
     }
@@ -381,7 +306,7 @@ impl MapTransform {
             Ok(self
                 .wgs84_transform
                 .as_ref()
-                .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                .ok_or(Error::NoWGS84TransformAvailable)?
                 .to_wgs84
                 .convert(self.to_projected(coord))?)
         })
@@ -397,7 +322,7 @@ impl MapTransform {
         Ok(self
             .wgs84_transform
             .as_ref()
-            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .ok_or(Error::NoWGS84TransformAvailable)?
             .to_wgs84
             .convert_geometry(self.to_projected_linestring(map_linestring))?)
     }
@@ -413,7 +338,7 @@ impl MapTransform {
             Ok(self
                 .wgs84_transform
                 .as_ref()
-                .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                .ok_or(Error::NoWGS84TransformAvailable)?
                 .to_wgs84
                 .convert(self.to_projected(coord))?)
         })
@@ -440,7 +365,7 @@ impl MapTransform {
         Ok(self.to_map(
             self.wgs84_transform
                 .as_ref()
-                .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                .ok_or(Error::NoWGS84TransformAvailable)?
                 .from_wgs84
                 .convert(wgs84_coord)?,
         ))
@@ -456,7 +381,7 @@ impl MapTransform {
         let projected = self
             .wgs84_transform
             .as_ref()
-            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .ok_or(Error::NoWGS84TransformAvailable)?
             .from_wgs84
             .convert_geometry(wgs84_polygon)?;
 
@@ -495,7 +420,7 @@ impl MapTransform {
             Ok(self.to_map(
                 self.wgs84_transform
                     .as_ref()
-                    .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                    .ok_or(Error::NoWGS84TransformAvailable)?
                     .from_wgs84
                     .convert(coord)?,
             ))
@@ -512,7 +437,7 @@ impl MapTransform {
         let projected = self
             .wgs84_transform
             .as_ref()
-            .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+            .ok_or(Error::NoWGS84TransformAvailable)?
             .from_wgs84
             .convert_geometry(wgs84_linestring)?;
 
@@ -533,7 +458,7 @@ impl MapTransform {
             Ok(self.to_map(
                 self.wgs84_transform
                     .as_ref()
-                    .ok_or(Error::CombinedLineSymbolContainsNonLine)?
+                    .ok_or(Error::NoWGS84TransformAvailable)?
                     .from_wgs84
                     .convert(coord)?,
             ))
@@ -621,4 +546,87 @@ fn transform_bezierstring(
         }
     }
     bezierstring
+}
+
+#[cfg(test)]
+mod tests {
+    use geo_types::{Coord, coord};
+
+    use super::MapTransform;
+    use crate::geo_referencing::{CrsType, GeoRef};
+
+    fn map_transform(crs_type: CrsType, projected_ref_point: Coord) -> MapTransform {
+        GeoRef {
+            scale_denominator: 15_000,
+            grid_scale_factor: 1.,
+            auxiliary_scale_factor: 1.,
+            declination_deg: 2.,
+            convergence_deg: -1.,
+            crs_type,
+            map_ref_point: coord! { x: 25., y: -50. },
+            projected_ref_point,
+            geographic_ref_point_deg: Coord::zero(),
+        }
+        .get_transform()
+    }
+
+    #[test]
+    fn transform_between_preserves_coordinates_in_the_same_projection() -> crate::Result<()> {
+        let old = map_transform(CrsType::Utm(33), coord! { x: 500_000., y: 6_600_000. });
+        let mut new_geo_ref = GeoRef {
+            scale_denominator: 10_000,
+            grid_scale_factor: 0.9998,
+            auxiliary_scale_factor: 1.0001,
+            declination_deg: -3.,
+            convergence_deg: 1.,
+            crs_type: CrsType::Utm(33),
+            map_ref_point: coord! { x: -100., y: 75. },
+            projected_ref_point: coord! { x: 500_250., y: 6_599_800. },
+            geographic_ref_point_deg: Coord::zero(),
+        };
+        let new = new_geo_ref.get_transform();
+        let input = coord! { x: 12.5, y: -8.25 };
+
+        let transform = MapTransform::transform_between(&old, &new)?;
+        let transformed = transform(input)?;
+        let expected = old.to_projected(input);
+        let actual = new.to_projected(transformed);
+
+        assert!((expected.x - actual.x).abs() < 1e-8);
+        assert!((expected.y - actual.y).abs() < 1e-8);
+
+        // The returned transform owns everything it needs.
+        new_geo_ref.projected_ref_point = Coord::zero();
+        assert_eq!(transform(input)?, transformed);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "geo_ref"))]
+    #[test]
+    fn transform_between_rejects_different_projections_without_geo_ref() {
+        let old = map_transform(CrsType::Utm(33), coord! { x: 500_000., y: 6_600_000. });
+        let new = map_transform(CrsType::Utm(32), coord! { x: 500_000., y: 6_600_000. });
+
+        assert!(matches!(
+            MapTransform::transform_between(&old, &new),
+            Err(crate::Error::CannotGetTransformBetweenDifferentGeoRef)
+        ));
+    }
+
+    #[cfg(feature = "geo_ref")]
+    #[test]
+    fn transform_between_converts_different_projections_with_geo_ref() -> crate::Result<()> {
+        let old = map_transform(CrsType::Utm(33), coord! { x: 500_000., y: 6_600_000. });
+        let new = map_transform(CrsType::Utm(32), coord! { x: 500_000., y: 6_600_000. });
+        let input = coord! { x: 12.5, y: -8.25 };
+
+        let transform = MapTransform::transform_between(&old, &new)?;
+        let transformed = transform(input)?;
+        let expected = old.to_wgs84(input)?;
+        let actual = new.to_wgs84(transformed)?;
+
+        assert!((expected.x - actual.x).abs() < 1e-9);
+        assert!((expected.y - actual.y).abs() < 1e-9);
+        Ok(())
+    }
 }

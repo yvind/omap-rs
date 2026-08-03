@@ -14,7 +14,7 @@ use quick_xml::{
 use crate::{
     colors::ColorSet,
     format_info::{OmapVersion, XmlDeclaration},
-    geo_referencing::{AffineMapTransform, GeoRef, MapTransform},
+    geo_referencing::{GeoRef, MapTransform},
     notes,
     objects::MapObject,
     parts::MapPart,
@@ -313,30 +313,41 @@ impl Omap {
             .flat_map(MapPart::iter_all_objects_mut)
     }
 
-    /// Apply an [`AffineMapTransform`] to every object and non-georeferenced
+    /// Apply a coordinate transform to every object and non-georeferenced
     /// template in the map.
     ///
-    /// Use this after changing the georeferencing (within the same projection)
+    /// Use this after changing the georeferencing
     /// to keep objects and non-georeferenced templates at the same real-world
     /// positions. Obtain the transform with
-    /// [`MapTransform::affine_between`].
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        for object in self.iter_all_objects_mut() {
-            object.apply_affine(transform);
-        }
-        self.templates.apply_affine(transform);
-    }
-
-    /// Compute the affine transform between two [`MapTransform`]s and apply it
-    /// to every object and non-georeferenced template. This is a convenience
-    /// wrapper around [`MapTransform::affine_between`] + [`Omap::apply_affine`].
+    /// [`MapTransform::transform_between`].
     ///
     /// # Errors
     ///
-    /// Returns an error if `old` and `new` use different projections.
-    pub fn apply_affine_between(&mut self, old: &MapTransform, new: &MapTransform) -> Result<()> {
-        let affine = MapTransform::affine_between(old, new)?;
-        self.apply_affine(&affine);
+    /// Returns any error produced while transforming an object or template.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
+        for object in self.iter_all_objects_mut() {
+            object.apply_transform(transform)?;
+        }
+        self.templates.apply_transform(transform)?;
         Ok(())
+    }
+
+    /// Compute the transform between two [`MapTransform`]s and apply it
+    /// to every object and non-georeferenced template. This is a convenience
+    /// wrapper around [`MapTransform::transform_between`] + [`Omap::apply_transform`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no transform between `old` and `new` can be found.
+    pub fn apply_transform_between(
+        &mut self,
+        old: &MapTransform,
+        new: &MapTransform,
+    ) -> Result<()> {
+        let transform = MapTransform::transform_between(old, new)?;
+        self.apply_transform(&transform)
     }
 }

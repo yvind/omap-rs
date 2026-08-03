@@ -13,7 +13,6 @@ use super::{
 };
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
     symbols::{Symbol, SymbolSet, WeakLinePathSymbol},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw},
 };
@@ -186,27 +185,33 @@ impl LineObject {
             })
     }
 
-    /// Apply an affine coordinate transform to both the geometry and the raw
+    /// Apply a coordinate transform to both the geometry and the raw
     /// control points, preserving Bézier structure without re-approximation.
     ///
-    /// This does **not** mark the coordinates as touched, so the raw (affine transformed) control
+    /// This does **not** mark the coordinates as touched, so the raw transformed control
     /// points (with Bézier flags) will still be used on write.
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`, or an error if a transformed
+    /// raw coordinate is outside the file-format range.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
         // Transform the discretized geometry if it has been initialized.
         if let Some(geometry) = self.geometry.get_mut() {
             for coord in &mut geometry.0 {
-                *coord = transform.apply(*coord);
+                *coord = transform(*coord)?;
             }
         }
         // Transform raw control points — flags stay unchanged
         for (file_coord, _flag) in &mut self.raw_map_coords {
             let map_coord = from_file_coords(*file_coord);
-            let transformed = transform.apply(map_coord);
-            if let Ok(fc) = to_file_coords(transformed) {
-                *file_coord = fc;
-            }
+            *file_coord = to_file_coords(transform(map_coord)?)?;
         }
         // Do NOT set is_coords_touched = true
+        Ok(())
     }
 
     /// Reverses a geometry and the input xml without marking it as touched

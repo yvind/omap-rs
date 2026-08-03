@@ -8,9 +8,8 @@ use quick_xml::{
 
 use crate::{
     CoordinateComponent, Error, ObjectKind, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
     symbols::{PointSymbol, Symbol, SymbolSet},
-    utils::{from_file_coords, to_file_coords},
+    utils::{from_file_coords, to_file_coords, transform_position},
 };
 
 /// A point object placed at a single location on the map.
@@ -46,9 +45,19 @@ impl PointObject {
         &mut self.geometry
     }
 
-    /// Apply an affine coordinate transform to the point position.
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        self.geometry.0 = transform.apply(self.geometry.0);
+    /// Apply a coordinate transform to the point position and symbol rotation.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
+        let (position, rotation, _) = transform_position(self.geometry.0, transform)?;
+        self.geometry.0 = position;
+        self.rotation += rotation;
+        Ok(())
     }
 
     /// Consume this object and return its geometry.

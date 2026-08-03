@@ -346,12 +346,14 @@ pub enum Error {
     #[cfg(feature = "geo_ref")]
     #[error("The local CRS type has no CRS definition")]
     LocalCrsHasNoDefinition,
-    /// Affine transforms are only available between changed geo referencing within the same projection
-    #[error(
-        "Affine transforms are only available between changed geo referencing within the same projection"
-    )]
-    CannotGetAffineTransformBetweenDifferentProjections,
+    /// Only affine transforms within the same projection are available without the `geo_ref` feature
+    #[error("Failed to get a coordinate transform between the old and new GeoRef")]
+    CannotGetTransformBetweenDifferentGeoRef,
     /// Tried to call try into on non-compatible symbols
     #[error("Tried to call try into on non-compatible symbols")]
     SymbolConversionError,
+    /// Tried to do a transform to WGS84, but the transform could not be done as no there were no available transform between the map coordinates and WGS84
+    #[cfg(feature = "geo_ref")]
+    #[error("Tried a conversion to WGS84, but no transform to WGS84 is available")]
+    NoWGS84TransformAvailable,
 }

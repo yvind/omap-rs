@@ -2,7 +2,7 @@ mod geo_ref;
 mod map_transform;
 
 pub use geo_ref::GeoRef;
-pub use map_transform::{AffineMapTransform, MapTransform};
+pub use map_transform::MapTransform;
 
 #[cfg(feature = "geo_ref")]
 use proj_core::CrsDef;

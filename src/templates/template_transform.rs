@@ -6,8 +6,9 @@ use quick_xml::{
 
 use crate::{
     Error, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
-    utils::{from_file_coords, parse_attr_raw, to_file_coords, try_get_attr_raw},
+    utils::{
+        from_file_coords, parse_attr_raw, to_file_coords, transform_position, try_get_attr_raw,
+    },
 };
 
 /// A 3×3 matrix stored in row-major order.
@@ -93,33 +94,21 @@ impl PassPoint {
 }
 
 impl TemplateTransformations {
-    pub(crate) fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        self.active_transform.apply_affine(transform);
-        self.other_transform.apply_affine(transform);
+    pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
+        self.active_transform.apply_transform(transform)?;
+        self.other_transform.apply_transform(transform)?;
         for passpoint in &mut self.passpoints {
-            passpoint.apply_affine(transform);
+            passpoint.apply_transform(transform)?;
         }
 
-        let file_transform = Matrix3x3(transform.file_coord_matrix());
-        if let Some(inverse_file_transform) = file_transform.inverse_affine() {
-            self.map_to_template = self
-                .map_to_template
-                .as_ref()
-                .map(|matrix| matrix.multiply(&inverse_file_transform));
-            self.template_to_map = self
-                .template_to_map
-                .as_ref()
-                .map(|matrix| file_transform.multiply(matrix));
-            self.template_to_map_other = self
-                .template_to_map_other
-                .as_ref()
-                .map(|matrix| file_transform.multiply(matrix));
-        } else {
-            self.map_to_template = None;
-            self.template_to_map = None;
-            self.template_to_map_other = None;
-            self.adjustment = AdjustmentState::AdjustmentDirty;
-        }
+        self.map_to_template = None;
+        self.template_to_map = None;
+        self.template_to_map_other = None;
+        self.adjustment = AdjustmentState::AdjustmentDirty;
+        Ok(())
     }
 
     pub(crate) fn parse<R: std::io::BufRead>(
@@ -207,11 +196,16 @@ impl TemplateTransformations {
 }
 
 impl TemplateTransform {
-    pub(crate) fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        self.template_pos = transform.apply(self.template_pos);
-        self.template_rotation += transform.rotation_radians();
-        self.template_scale.x *= transform.scale_factor();
-        self.template_scale.y *= transform.scale_factor();
+    pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
+        let (position, rotation, scale_factor) = transform_position(self.template_pos, transform)?;
+        self.template_pos = position;
+        self.template_rotation += rotation;
+        self.template_scale.x *= scale_factor;
+        self.template_scale.y *= scale_factor;
+        Ok(())
     }
 
     pub(crate) fn parse(bs: &BytesStart<'_>) -> Self {
@@ -255,12 +249,16 @@ impl TemplateTransform {
 }
 
 impl PassPoint {
-    pub(crate) fn apply_affine(&mut self, transform: &AffineMapTransform) {
-        self.src_coord = transform.apply(self.src_coord);
-        self.dest_coord = transform.apply(self.dest_coord);
+    pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
+        self.src_coord = transform(self.src_coord)?;
+        self.dest_coord = transform(self.dest_coord)?;
         if self.calculated_coord != Coord::zero() {
-            self.calculated_coord = transform.apply(self.calculated_coord);
+            self.calculated_coord = transform(self.calculated_coord)?;
         }
+        Ok(())
     }
 
     pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
@@ -316,43 +314,6 @@ impl PassPoint {
 }
 
 impl Matrix3x3 {
-    fn multiply(&self, rhs: &Self) -> Self {
-        let mut values = [0.; 9];
-        for row in 0..3 {
-            for col in 0..3 {
-                values[row * 3 + col] = self.0[row * 3] * rhs.0[col]
-                    + self.0[row * 3 + 1] * rhs.0[3 + col]
-                    + self.0[row * 3 + 2] * rhs.0[6 + col];
-            }
-        }
-        Self(values)
-    }
-
-    fn inverse_affine(&self) -> Option<Self> {
-        let [a, b, tx, c, d, ty, _, _, _] = self.0;
-        let det = a * d - b * c;
-        if det == 0. {
-            return None;
-        }
-
-        let inv_a = d / det;
-        let inv_b = -b / det;
-        let inv_c = -c / det;
-        let inv_d = a / det;
-
-        Some(Self([
-            inv_a,
-            inv_b,
-            -(inv_a * tx + inv_b * ty),
-            inv_c,
-            inv_d,
-            -(inv_c * tx + inv_d * ty),
-            0.,
-            0.,
-            1.,
-        ]))
-    }
-
     pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
         let mut values = [0.; 9];
         let mut i = 0;
