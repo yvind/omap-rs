@@ -90,10 +90,9 @@ fn main() -> Result<(), Error> {
 
         // transfrom every object out of the old map space to projected coords
         // and from projected coord to the new map space
-        // NB! If the new projection were different than the old,
-        // a transfrom between projections using a proj library like proj-core would be needed
-        // and this function would return Err
-        map.apply_affine_between(&old_transform, &new_transform)
+        // NB! If the new projection were different than the old (not just an affine transformation),
+        // the geo_ref feature must be activated
+        map.apply_transform_between(&old_transform, &new_transform)
             .unwrap();
     };
 

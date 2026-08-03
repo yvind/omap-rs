@@ -47,6 +47,12 @@ pub struct GeoRef {
 
 impl GeoRef {
     /// The transform is used to go from map coordinates to projected coordinates or back
+    #[cfg_attr(
+        feature = "geo_ref",
+        doc = "",
+        doc = "The returned transform compiles its WGS84 operation once and reuses it,",
+        doc = "so keep it around instead of asking for a new one per object."
+    )]
     pub fn get_transform(&self) -> MapTransform {
         MapTransform::from_geo_ref(self)
     }
@@ -328,10 +334,9 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(bytes_start)
-                if bytes_start.local_name().as_ref() == event_name => {
-                    return notes::parse(reader);
-                }
+            Event::Start(bytes_start) if bytes_start.local_name().as_ref() == event_name => {
+                return notes::parse(reader);
+            }
             Event::Eof => {
                 return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
             }
@@ -357,19 +362,13 @@ impl GeoRef {
         meters_above_sea: f64,
         scale: u32,
     ) -> Result<Self> {
-        let local_crs = match &crs {
-            CrsType::Local => {
-                let mut gr = Self::new(scale);
-                gr.projected_ref_point = projected_ref_point;
-                return Ok(gr);
-            }
-            CrsType::Epsg(e) => proj_wkt::parse_crs(e.to_string().as_str())?,
-            c => proj_wkt::parse_crs(
-                c.get_proj_string()
-                    .ok_or(Error::InvalidGeoreferencing)?
-                    .as_str(),
-            )?,
-        };
+        if matches!(crs, CrsType::Local) {
+            let mut gr = Self::new(scale);
+            gr.projected_ref_point = projected_ref_point;
+            return Ok(gr);
+        }
+
+        let local_crs = crs.to_crs_def()?;
         let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
 
         let transform = Transform::from_crs_defs(&local_crs, &geographic_crs)?;

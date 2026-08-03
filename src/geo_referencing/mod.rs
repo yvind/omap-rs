@@ -2,13 +2,17 @@ mod geo_ref;
 mod map_transform;
 
 pub use geo_ref::GeoRef;
-pub use map_transform::{AffineMapTransform, MapTransform};
+pub use map_transform::MapTransform;
 
+#[cfg(feature = "geo_ref")]
+use proj_core::CrsDef;
 use quick_xml::{
     Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 
+#[cfg(feature = "geo_ref")]
+use crate::Error;
 use crate::Result;
 
 /// The coordinate reference system type.
@@ -133,5 +137,35 @@ impl CrsType {
         writer.write_event(Event::End(BytesEnd::new("parameter")))?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "geo_ref")]
+impl CrsType {
+    /// The CRS definition this type denotes.
+    ///
+    /// [`CrsType::Epsg`] resolves through the EPSG registry, every other
+    /// georeferenced variant through its [PROJ.4 string][Self::get_proj_string]
+    /// — the same precedence [`GeoRef::initialize`] applies internally, so a
+    /// consumer projecting map coordinates itself resolves the CRS exactly as
+    /// this crate does.
+    ///
+    /// Requires the `geo_ref` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::LocalCrsHasNoDefinition`] for [`CrsType::Local`],
+    /// which denotes the absence of a CRS, and a parse error if the definition
+    /// is not one `proj-wkt` recognises.
+    pub fn to_crs_def(&self) -> Result<CrsDef> {
+        let definition = match self {
+            Self::Local => return Err(Error::LocalCrsHasNoDefinition),
+            Self::Epsg(code) => format!("EPSG:{code}"),
+            other => other
+                .get_proj_string()
+                .ok_or(Error::InvalidGeoreferencing)?,
+        };
+
+        Ok(proj_wkt::parse_crs(definition.as_str())?)
     }
 }

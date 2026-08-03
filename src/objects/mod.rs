@@ -252,10 +252,9 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
                     }
                 }
             }
-            Event::End(bytes_end)
-                if bytes_end.local_name().as_ref() == b"tags" => {
-                    break;
-                }
+            Event::End(bytes_end) if bytes_end.local_name().as_ref() == b"tags" => {
+                break;
+            }
             Event::Eof => {
                 return Err(Error::UnexpectedEof(OmapSection::Tags));
             }

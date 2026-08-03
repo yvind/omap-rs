@@ -394,10 +394,9 @@ impl View {
                     b"map" => {
                         self.map_visibility = TemplateVisibility::parse_map_attrs(&bs);
                     }
-                    b"templates"
-                        if !templates.is_empty() => {
-                            Self::parse_template_visibilities(reader, templates)?;
-                        }
+                    b"templates" if !templates.is_empty() => {
+                        Self::parse_template_visibilities(reader, templates)?;
+                    }
                     _ => {}
                 },
                 Event::End(be) if be.local_name().as_ref() == b"map_view" => break,

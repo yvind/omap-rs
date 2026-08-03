@@ -5,7 +5,6 @@ use quick_xml::{Reader, Writer, events::BytesStart};
 use super::{AreaObject, LineObject, PointObject, TextObject};
 use crate::{
     Error, Result,
-    geo_referencing::AffineMapTransform,
     objects::{HorizontalAlign, VerticalAlign},
     symbols::{SymbolSet, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol},
     utils::parse_attr_raw,
@@ -111,14 +110,21 @@ impl MapObject {
         }
     }
 
-    /// Apply an affine coordinate transform to this object, preserving
+    /// Apply a coordinate transform to this object, preserving
     /// Bézier control points for line and area objects.
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced while transforming the object.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
         match self {
-            Self::Point(o) => o.apply_affine(transform),
-            Self::Line(o) => o.apply_affine(transform),
-            Self::Area(o) => o.apply_affine(transform),
-            Self::Text(o) => o.apply_affine(transform),
+            Self::Point(o) => o.apply_transform(transform),
+            Self::Line(o) => o.apply_transform(transform),
+            Self::Area(o) => o.apply_transform(transform),
+            Self::Text(o) => o.apply_transform(transform),
         }
     }
 }
@@ -241,7 +247,64 @@ impl MapObject {
 
 #[cfg(test)]
 mod tests {
-    use geo_types::coord;
+    use std::f64::consts::FRAC_PI_2;
+
+    use geo_types::{LineString, Point, Polygon, coord};
+
+    use super::MapObject;
+    use crate::{
+        Result,
+        objects::{AreaObject, PointObject, TextGeometry, TextObject},
+        symbols::WeakAreaPathSymbol,
+    };
+
+    #[test]
+    fn rotatable_objects_follow_transform_rotation() -> Result<()> {
+        let transform = |coord: geo_types::Coord| Ok(coord! { x: -coord.y + 10., y: coord.x - 5. });
+
+        let mut point = PointObject::new(std::rc::Weak::new(), Point::new(1., 2.));
+        point.rotation = 0.1;
+        let mut point = MapObject::Point(point);
+        point.apply_transform(&transform)?;
+        let MapObject::Point(point) = point else {
+            return Err(crate::Error::ObjectError);
+        };
+        assert!((point.rotation - (0.1 + FRAC_PI_2)).abs() < 1e-12);
+
+        let mut text = TextObject::new(
+            std::rc::Weak::new(),
+            TextGeometry::SingleAnchor(coord! { x: 1., y: 2. }),
+            String::new(),
+        );
+        text.rotation = -0.2;
+        let mut text = MapObject::Text(text);
+        text.apply_transform(&transform)?;
+        let MapObject::Text(text) = text else {
+            return Err(crate::Error::ObjectError);
+        };
+        assert!((text.rotation - (-0.2 + FRAC_PI_2)).abs() < 1e-12);
+
+        let ring = LineString::from(vec![
+            coord! { x: 0., y: 0. },
+            coord! { x: 1., y: 0. },
+            coord! { x: 0., y: 1. },
+            coord! { x: 0., y: 0. },
+        ]);
+        let mut area = AreaObject::new(
+            WeakAreaPathSymbol::Area(std::rc::Weak::new()),
+            Polygon::new(ring, Vec::new()),
+        );
+        area.pattern_rotation.coord = coord! { x: 1., y: 2. };
+        area.pattern_rotation.rotation = 0.3;
+        let mut area = MapObject::Area(area);
+        area.apply_transform(&transform)?;
+        let MapObject::Area(area) = area else {
+            return Err(crate::Error::ObjectError);
+        };
+        assert!((area.pattern_rotation.rotation - (0.3 + FRAC_PI_2)).abs() < 1e-12);
+
+        Ok(())
+    }
 
     #[test]
     fn reverse_line_string_xml() {

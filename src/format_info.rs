@@ -28,14 +28,10 @@ impl<'writer> OmapVersion {
     }
 
     pub(crate) fn write<W: std::io::Write>(writer: &'writer mut Writer<W>) -> Result<()> {
-        writer.write_event(Event::Start(
-            BytesStart::new("map").with_attributes(
-                [
-                    ("xmlns", "http://openorienteering.org/apps/mapper/xml/v2"),
-                    ("version", "9"),
-                ],
-            ),
-        ))?;
+        writer.write_event(Event::Start(BytesStart::new("map").with_attributes([
+            ("xmlns", "http://openorienteering.org/apps/mapper/xml/v2"),
+            ("version", "9"),
+        ])))?;
         Ok(())
     }
 }

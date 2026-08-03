@@ -8,7 +8,6 @@ use quick_xml::{
 use super::template_transform::{AdjustmentState, TemplateTransformations};
 use crate::{
     Error, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
     templates::template_transform::{PassPoint, TemplateTransform},
     utils::parse_attr_raw,
 };
@@ -144,19 +143,27 @@ impl Template {
         }
     }
 
-    /// Apply an affine map-coordinate transform to a non-georeferenced template.
+    /// Apply a map-coordinate transform to a non-georeferenced template.
     ///
     /// Georeferenced templates are left unchanged because their placement is
     /// derived from CRS metadata. For non-georeferenced templates, map-space
     /// transform parameters and passpoint map coordinates are transformed, and
     /// the adjustment state is marked dirty.
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
         if self.get_common().is_georeferenced {
-            return;
+            return Ok(());
         }
         if let Some(transformations) = &mut self.get_common_mut().transformations {
-            transformations.apply_affine(transform);
+            transformations.apply_transform(transform)?;
         }
+        Ok(())
     }
 
     /// Returns the template type name as used in the XML format.

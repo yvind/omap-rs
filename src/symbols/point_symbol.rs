@@ -92,10 +92,6 @@ impl Element {
     }
 
     /// Parse a single element inside `point_symbol`
-    #[expect(
-        clippy::too_many_lines,
-        reason = "point-element parsing validates paired symbol and object records"
-    )]
     fn parse_element<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
@@ -161,10 +157,9 @@ impl Element {
                     }
                     _ => {}
                 },
-                Event::End(e)
-                    if e.local_name().as_ref() == b"element" => {
-                        break;
-                    }
+                Event::End(e) if e.local_name().as_ref() == b"element" => {
+                    break;
+                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::Element));
                 }
@@ -336,10 +331,9 @@ impl PointSymbol {
                     b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e)
-                    if e.local_name().as_ref() == b"symbol" => {
-                        break;
-                    }
+                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                    break;
+                }
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::PointSymbol));
                 }

@@ -1,11 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 
 use crate::{
-    CoordinateComponent, Error, NonNegativeF64, OmapSection, Result,
-    geo_referencing::AffineMapTransform,
-    notes,
+    CoordinateComponent, Error, NonNegativeF64, OmapSection, Result, notes,
     symbols::{Symbol, SymbolSet, TextSymbol},
-    utils::{from_file_coords, to_file_coords, try_get_attr_raw},
+    utils::{from_file_coords, to_file_coords, transform_position, try_get_attr_raw},
 };
 use geo_types::Coord;
 use quick_xml::{
@@ -150,12 +148,27 @@ impl TextObject {
         &mut self.geometry
     }
 
-    /// Apply an affine coordinate transform to the text anchor (and box anchor).
-    pub fn apply_affine(&mut self, transform: &AffineMapTransform) {
+    /// Apply a coordinate transform to the text anchor and rotation.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`.
+    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    where
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+    {
+        let anchor = match &self.geometry {
+            TextGeometry::SingleAnchor(coord) => *coord,
+            TextGeometry::WrapBox(wrap_box) => wrap_box.anchor,
+        };
+        let (anchor, rotation, _) = transform_position(anchor, transform)?;
+
         match &mut self.geometry {
-            TextGeometry::SingleAnchor(coord) => *coord = transform.apply(*coord),
-            TextGeometry::WrapBox(wrap_box) => wrap_box.anchor = transform.apply(wrap_box.anchor),
+            TextGeometry::SingleAnchor(coord) => *coord = anchor,
+            TextGeometry::WrapBox(wrap_box) => wrap_box.anchor = anchor,
         }
+        self.rotation += rotation;
+        Ok(())
     }
 
     /// Consume this object and return its geometry.
