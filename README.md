@@ -24,14 +24,31 @@ That projection is compiled on first use and kept, so hold on to the transform i
 
 ## Dash-points and beziers
 
-Line and area objects expose their exact mixed straight/cubic geometry through
-`bezier_geometry()`. Its per-vertex metadata includes forced dash points,
-including both endpoints of an open path. The ordinary `get_geometry(error)`
-API lazily provides and caches a flattened `LineString` or `Polygon`.
+Line and area objects store their exact mixed straight/cubic geometry as a `BezierPath` or `BezierPolygon`. Per-vertex metadata includes forced dash points, including both endpoints of an open path, and this geometry
+is always used when writing.
 
-Objects that are not edited are written back using their original coordinates
-and flags. Added or edited line and area objects can be fitted to Bézier curves
-on write by setting `bezier_write_error`.
+Use `BezierPath::fit_line_string(line_string, error)` or
+`BezierPolygon::fit_polygon(polygon, error)` to fit smooth cubic geometry
+without depending directly on `linestring2bezier`:
+
+```rust
+let line = LineObject::new(
+    line_symbol,
+    BezierPath::fit_line_string(line_string, error)?,
+);
+let area = AreaObject::new(
+    area_symbol,
+    BezierPolygon::fit_polygon(polygon, error)?,
+);
+```
+
+Passing a `LineString` or `Polygon` directly to `LineObject::new` or
+`AreaObject::new` instead preserves the input as straight segments.
+
+`flatten(error)` returns an owned `FlattenedPath` or `FlattenedPolygon` with
+dash-point metadata aligned to every flattened coordinate. Flattened geometry
+is not cached by the crate. `replace_with_flattened` and `flatten_in_place`
+explicitly discard curves by replacing them with straight segments.
 
 ## Example
 
@@ -74,14 +91,13 @@ fn main() {
         .unwrap()
         .downgrade();
 
-    // O-mapper makes no difference between line objects and area objects, but we do as we repesent them with LineString and Polygon
+    // O-mapper makes no difference between line objects and area objects, but we do.
     let mut ls = LineObject::new(
         WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
-        // geometry coordinates are always in mm of paper
+        // LineStrings become straight Bézier segments. Geometry
+        // coordinates are always in mm of paper.
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
-    // Fit this LineString to cubic Béziers with at most 0.2 mm error on write.
-    ls.bezier_write_error = Some(omap::NonNegativeF64::clamped_from(0.2));
     // Add some tags to the object
     ls.tags.insert("Some Key".to_string(), "My value".to_string());
 

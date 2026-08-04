@@ -309,6 +309,15 @@ pub enum Error {
     /// An object-related error.
     #[error("Object error")]
     ObjectError,
+    /// A Bézier path has disconnected segments or mismatched dash-point metadata.
+    #[error("invalid Bézier path")]
+    InvalidBezierPath,
+    /// A flattened path has mismatched dash-point metadata.
+    #[error("invalid flattened path")]
+    InvalidFlattenedPath,
+    /// A polygon contains a nonempty ring that is not closed.
+    #[error("polygon rings must be closed")]
+    OpenPolygonRing,
     /// The value is not in the unit interval `[0, 1]`.
     #[error("The value is not in the unit interval and cannot be converted to a UnitF64")]
     NotInUnitInterval,

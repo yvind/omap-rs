@@ -15,6 +15,8 @@ use std::{cell::RefCell, rc::Weak};
 
 use geo_types::{Coord, LineString};
 #[cfg(feature = "geo_ref")]
+use omap::NonNegativeF64;
+#[cfg(feature = "geo_ref")]
 use omap::geo_referencing::GeoRef;
 #[cfg(feature = "geo_ref")]
 use omap::objects::MapObject;
@@ -42,22 +44,23 @@ fn main() -> Result<(), Error> {
                     num_coords += 1;
                 }
                 MapObject::Line(object) => {
-                    let geometry = object.get_geometry(0.1)?;
-                    mean_pos =
-                        mean_pos + geometry.0.iter().copied().reduce(|sum, c| sum + c).unwrap();
-                    num_coords += geometry.0.len();
-                }
-                MapObject::Area(object) => {
-                    let geometry = object.get_geometry(0.1)?;
+                    let geometry = object.flatten(NonNegativeF64::clamped_from(0.1))?;
+                    let line_string = geometry.geometry();
                     mean_pos = mean_pos
-                        + geometry
-                            .exterior()
+                        + line_string
                             .0
                             .iter()
                             .copied()
                             .reduce(|sum, c| sum + c)
                             .unwrap();
-                    num_coords += geometry.exterior().0.len();
+                    num_coords += line_string.0.len();
+                }
+                MapObject::Area(object) => {
+                    let geometry = object.flatten(NonNegativeF64::clamped_from(0.1))?;
+                    let exterior = geometry.exterior().geometry();
+                    mean_pos =
+                        mean_pos + exterior.0.iter().copied().reduce(|sum, c| sum + c).unwrap();
+                    num_coords += exterior.0.len();
                 }
                 MapObject::Text(object) => {
                     match object.get_geometry() {
@@ -92,7 +95,7 @@ fn main() -> Result<(), Error> {
         // and from projected coord to the new map space
         // NB! If the new projection were different than the old (not just an affine transformation),
         // the geo_ref feature must be activated
-        map.apply_transform_between(&old_transform, &new_transform)
+        map.try_transform_between(&old_transform, &new_transform)
             .unwrap();
     };
 

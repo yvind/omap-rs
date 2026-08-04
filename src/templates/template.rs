@@ -143,25 +143,41 @@ impl Template {
         }
     }
 
-    /// Apply a map-coordinate transform to a non-georeferenced template.
+    /// Transform a non-georeferenced template in map coordinates.
     ///
     /// Georeferenced templates are left unchanged because their placement is
     /// derived from CRS metadata. For non-georeferenced templates, map-space
     /// transform parameters and passpoint map coordinates are transformed, and
     /// the adjustment state is marked dirty.
+    pub fn transform<F>(&mut self, transform: F)
+    where
+        F: Fn(geo_types::Coord) -> geo_types::Coord,
+    {
+        if self.get_common().is_georeferenced {
+            return;
+        }
+        if let Some(transformations) = &mut self.get_common_mut().transformations {
+            transformations.transform(transform);
+        }
+    }
+
+    /// Try to transform a non-georeferenced template in map coordinates.
+    ///
+    /// Georeferenced templates are left unchanged because their placement is
+    /// derived from CRS metadata. The template is unchanged on failure.
     ///
     /// # Errors
     ///
     /// Returns any error produced by `transform`.
-    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(geo_types::Coord) -> std::result::Result<geo_types::Coord, E>,
     {
         if self.get_common().is_georeferenced {
             return Ok(());
         }
         if let Some(transformations) = &mut self.get_common_mut().transformations {
-            transformations.apply_transform(transform)?;
+            transformations.try_transform(transform)?;
         }
         Ok(())
     }

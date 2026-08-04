@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{convert::Infallible, str::FromStr};
 
 use geo_types::Coord;
 use quick_xml::{
@@ -218,9 +218,23 @@ pub(crate) fn from_file_coords(file_coord: Coord<i32>) -> Coord {
 }
 
 /// Transform a position and estimate the transform's local rotation and scale.
-pub(crate) fn transform_position<F>(position: Coord, transform: &F) -> Result<(Coord, f64, f64)>
+pub(crate) fn transform_position<F>(position: Coord, transform: F) -> (Coord, f64, f64)
 where
-    F: Fn(Coord) -> Result<Coord> + ?Sized,
+    F: Fn(Coord) -> Coord,
+{
+    match try_transform_position(position, |coord| Ok::<_, Infallible>(transform(coord))) {
+        Ok(transformed) => transformed,
+        Err(never) => match never {},
+    }
+}
+
+/// Try to transform a position and estimate the transform's local rotation and scale.
+pub(crate) fn try_transform_position<E, F>(
+    position: Coord,
+    transform: F,
+) -> std::result::Result<(Coord, f64, f64), E>
+where
+    F: Fn(Coord) -> std::result::Result<Coord, E>,
 {
     const D: f64 = 1.;
     let meridian = (

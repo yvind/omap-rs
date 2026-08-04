@@ -9,7 +9,7 @@ use quick_xml::{
 use crate::{
     CoordinateComponent, Error, ObjectKind, OmapSection, Result,
     symbols::{PointSymbol, Symbol, SymbolSet},
-    utils::{from_file_coords, to_file_coords, transform_position},
+    utils::{from_file_coords, to_file_coords, transform_position, try_transform_position},
 };
 
 /// A point object placed at a single location on the map.
@@ -45,16 +45,27 @@ impl PointObject {
         &mut self.geometry
     }
 
-    /// Apply a coordinate transform to the point position and symbol rotation.
+    /// Transform the point position and symbol rotation.
+    pub fn transform<F>(&mut self, transform: F)
+    where
+        F: Fn(Coord) -> Coord,
+    {
+        let (position, rotation, _) = transform_position(self.geometry.0, transform);
+        self.geometry.0 = position;
+        self.rotation += rotation;
+    }
+
+    /// Try to transform the point position and symbol rotation.
     ///
     /// # Errors
     ///
-    /// Returns any error produced by `transform`.
-    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    /// Returns any error produced by `transform`. The object is unchanged on
+    /// failure.
+    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
     where
-        F: Fn(Coord) -> Result<Coord> + ?Sized,
+        F: Fn(Coord) -> std::result::Result<Coord, E>,
     {
-        let (position, rotation, _) = transform_position(self.geometry.0, transform)?;
+        let (position, rotation, _) = try_transform_position(self.geometry.0, transform)?;
         self.geometry.0 = position;
         self.rotation += rotation;
         Ok(())

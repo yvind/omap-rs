@@ -8,6 +8,7 @@ use crate::{
     Error, OmapSection, Result,
     utils::{
         from_file_coords, parse_attr_raw, to_file_coords, transform_position, try_get_attr_raw,
+        try_transform_position,
     },
 };
 
@@ -94,20 +95,38 @@ impl PassPoint {
 }
 
 impl TemplateTransformations {
-    pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    pub(crate) fn transform<F>(&mut self, transform: F)
     where
-        F: Fn(Coord) -> Result<Coord> + ?Sized,
+        F: Fn(Coord) -> Coord,
     {
-        self.active_transform.apply_transform(transform)?;
-        self.other_transform.apply_transform(transform)?;
+        self.active_transform.transform(&transform);
+        self.other_transform.transform(&transform);
         for passpoint in &mut self.passpoints {
-            passpoint.apply_transform(transform)?;
+            passpoint.transform(&transform);
         }
 
         self.map_to_template = None;
         self.template_to_map = None;
         self.template_to_map_other = None;
         self.adjustment = AdjustmentState::AdjustmentDirty;
+    }
+
+    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    where
+        F: Fn(Coord) -> std::result::Result<Coord, E>,
+    {
+        let mut transformed = self.clone();
+        transformed.active_transform.try_transform(&transform)?;
+        transformed.other_transform.try_transform(&transform)?;
+        for passpoint in &mut transformed.passpoints {
+            passpoint.try_transform(&transform)?;
+        }
+
+        transformed.map_to_template = None;
+        transformed.template_to_map = None;
+        transformed.template_to_map_other = None;
+        transformed.adjustment = AdjustmentState::AdjustmentDirty;
+        *self = transformed;
         Ok(())
     }
 
@@ -196,11 +215,23 @@ impl TemplateTransformations {
 }
 
 impl TemplateTransform {
-    pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    pub(crate) fn transform<F>(&mut self, transform: F)
     where
-        F: Fn(Coord) -> Result<Coord> + ?Sized,
+        F: Fn(Coord) -> Coord,
     {
-        let (position, rotation, scale_factor) = transform_position(self.template_pos, transform)?;
+        let (position, rotation, scale_factor) = transform_position(self.template_pos, transform);
+        self.template_pos = position;
+        self.template_rotation += rotation;
+        self.template_scale.x *= scale_factor;
+        self.template_scale.y *= scale_factor;
+    }
+
+    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    where
+        F: Fn(Coord) -> std::result::Result<Coord, E>,
+    {
+        let (position, rotation, scale_factor) =
+            try_transform_position(self.template_pos, transform)?;
         self.template_pos = position;
         self.template_rotation += rotation;
         self.template_scale.x *= scale_factor;
@@ -249,15 +280,32 @@ impl TemplateTransform {
 }
 
 impl PassPoint {
-    pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    pub(crate) fn transform<F>(&mut self, transform: F)
     where
-        F: Fn(Coord) -> Result<Coord> + ?Sized,
+        F: Fn(Coord) -> Coord,
     {
-        self.src_coord = transform(self.src_coord)?;
-        self.dest_coord = transform(self.dest_coord)?;
+        self.src_coord = transform(self.src_coord);
+        self.dest_coord = transform(self.dest_coord);
         if self.calculated_coord != Coord::zero() {
-            self.calculated_coord = transform(self.calculated_coord)?;
+            self.calculated_coord = transform(self.calculated_coord);
         }
+    }
+
+    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    where
+        F: Fn(Coord) -> std::result::Result<Coord, E>,
+    {
+        let src_coord = transform(self.src_coord)?;
+        let dest_coord = transform(self.dest_coord)?;
+        let calculated_coord = if self.calculated_coord == Coord::zero() {
+            self.calculated_coord
+        } else {
+            transform(self.calculated_coord)?
+        };
+
+        self.src_coord = src_coord;
+        self.dest_coord = dest_coord;
+        self.calculated_coord = calculated_coord;
         Ok(())
     }
 

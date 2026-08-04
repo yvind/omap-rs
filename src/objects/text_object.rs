@@ -3,7 +3,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result, notes,
     symbols::{Symbol, SymbolSet, TextSymbol},
-    utils::{from_file_coords, to_file_coords, transform_position, try_get_attr_raw},
+    utils::{
+        from_file_coords, to_file_coords, transform_position, try_get_attr_raw,
+        try_transform_position,
+    },
 };
 use geo_types::Coord;
 use quick_xml::{
@@ -148,20 +151,39 @@ impl TextObject {
         &mut self.geometry
     }
 
-    /// Apply a coordinate transform to the text anchor and rotation.
-    ///
-    /// # Errors
-    ///
-    /// Returns any error produced by `transform`.
-    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    /// Transform the text anchor and rotation.
+    pub fn transform<F>(&mut self, transform: F)
     where
-        F: Fn(Coord) -> Result<Coord> + ?Sized,
+        F: Fn(Coord) -> Coord,
     {
         let anchor = match &self.geometry {
             TextGeometry::SingleAnchor(coord) => *coord,
             TextGeometry::WrapBox(wrap_box) => wrap_box.anchor,
         };
-        let (anchor, rotation, _) = transform_position(anchor, transform)?;
+        let (anchor, rotation, _) = transform_position(anchor, transform);
+
+        match &mut self.geometry {
+            TextGeometry::SingleAnchor(coord) => *coord = anchor,
+            TextGeometry::WrapBox(wrap_box) => wrap_box.anchor = anchor,
+        }
+        self.rotation += rotation;
+    }
+
+    /// Try to transform the text anchor and rotation.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `transform`. The object is unchanged on
+    /// failure.
+    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    where
+        F: Fn(Coord) -> std::result::Result<Coord, E>,
+    {
+        let anchor = match &self.geometry {
+            TextGeometry::SingleAnchor(coord) => *coord,
+            TextGeometry::WrapBox(wrap_box) => wrap_box.anchor,
+        };
+        let (anchor, rotation, _) = try_transform_position(anchor, transform)?;
 
         match &mut self.geometry {
             TextGeometry::SingleAnchor(coord) => *coord = anchor,

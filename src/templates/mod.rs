@@ -132,18 +132,31 @@ impl Templates {
         self.template_entries.is_empty()
     }
 
-    /// Apply a map-coordinate transform to all non-georeferenced templates.
+    /// Transform all non-georeferenced templates in map coordinates.
+    pub fn transform<F>(&mut self, transform: F)
+    where
+        F: Fn(geo_types::Coord) -> geo_types::Coord,
+    {
+        for entry in &mut self.template_entries {
+            entry.template.transform(&transform);
+        }
+    }
+
+    /// Try to transform all non-georeferenced templates in map coordinates.
     ///
     /// # Errors
     ///
-    /// Returns any error produced by `transform`.
-    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    /// Returns any error produced by `transform`. The collection is unchanged
+    /// on failure.
+    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(geo_types::Coord) -> std::result::Result<geo_types::Coord, E>,
     {
-        for entry in &mut self.template_entries {
-            entry.template.apply_transform(transform)?;
+        let mut transformed = self.clone();
+        for entry in &mut transformed.template_entries {
+            entry.template.try_transform(&transform)?;
         }
+        *self = transformed;
         Ok(())
     }
 

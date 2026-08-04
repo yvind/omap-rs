@@ -313,41 +313,106 @@ impl Omap {
             .flat_map(MapPart::iter_all_objects_mut)
     }
 
-    /// Apply a coordinate transform to every object and non-georeferenced
-    /// template in the map.
+    /// Transform every object and non-georeferenced template in the map.
     ///
     /// Use this after changing the georeferencing
     /// to keep objects and non-georeferenced templates at the same real-world
     /// positions. Obtain the transform with
     /// [`MapTransform::transform_between`].
+    pub fn transform<F>(&mut self, transform: F)
+    where
+        F: Fn(Coord) -> Coord,
+    {
+        for object in self.iter_all_objects_mut() {
+            object.transform(&transform);
+        }
+        self.templates.transform(transform);
+    }
+
+    /// Try to transform every object and non-georeferenced template in the map.
+    ///
+    /// Use this after changing the georeferencing to keep objects and
+    /// non-georeferenced templates at the same real-world positions. The map is
+    /// unchanged on failure.
     ///
     /// # Errors
     ///
     /// Returns any error produced while transforming an object or template.
-    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
     where
-        F: Fn(Coord) -> Result<Coord> + ?Sized,
+        F: Fn(Coord) -> std::result::Result<Coord, E>,
     {
-        for object in self.iter_all_objects_mut() {
-            object.apply_transform(transform)?;
+        let mut parts = self.parts.clone();
+        for part in &mut parts {
+            for object in part.iter_all_objects_mut() {
+                object.try_transform(&transform)?;
+            }
         }
-        self.templates.apply_transform(transform)?;
+        let mut templates = self.templates.clone();
+        templates.try_transform(transform)?;
+
+        self.parts = parts;
+        self.templates = templates;
         Ok(())
     }
 
     /// Compute the transform between two [`MapTransform`]s and apply it
     /// to every object and non-georeferenced template. This is a convenience
-    /// wrapper around [`MapTransform::transform_between`] + [`Omap::apply_transform`].
+    /// wrapper around [`MapTransform::transform_between`] + [`Omap::try_transform`].
     ///
     /// # Errors
     ///
-    /// Returns an error if no transform between `old` and `new` can be found.
-    pub fn apply_transform_between(
-        &mut self,
-        old: &MapTransform,
-        new: &MapTransform,
-    ) -> Result<()> {
+    /// Returns an error if the transforms cannot be related or a coordinate
+    /// cannot be transformed. The map is unchanged on failure.
+    pub fn try_transform_between(&mut self, old: &MapTransform, new: &MapTransform) -> Result<()> {
         let transform = MapTransform::transform_between(old, new)?;
-        self.apply_transform(&transform)
+        self.try_transform(transform)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use geo_types::{Coord, Point};
+
+    use super::Omap;
+    use crate::{Error, Result, objects::PointObject};
+
+    fn point_positions(map: &Omap) -> Vec<Coord> {
+        map.iter_all_objects()
+            .filter_map(|object| match object {
+                crate::objects::MapObject::Point(point) => Some(point.get_geometry().0),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn try_transform_is_transactional() -> Result<()> {
+        let mut map = Omap::new(10_000);
+        let part = map
+            .parts
+            .get_map_part_by_index_mut(0)
+            .ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
+        part.add_object(PointObject::new(
+            std::rc::Weak::new(),
+            Point::new(10.0, 20.0),
+        ));
+        let before = point_positions(&map);
+
+        let result = map.try_transform(|coord| {
+            if coord.x > 5.0 {
+                Err(Error::ObjectError)
+            } else {
+                Ok(Coord {
+                    x: coord.x + 100.0,
+                    y: coord.y,
+                })
+            }
+        });
+
+        assert!(matches!(result, Err(Error::ObjectError)));
+        assert_eq!(point_positions(&map), before);
+        Ok(())
     }
 }

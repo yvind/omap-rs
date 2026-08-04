@@ -110,21 +110,36 @@ impl MapObject {
         }
     }
 
-    /// Apply a coordinate transform to this object, preserving
-    /// Bézier control points for line and area objects.
+    /// Transform this object, preserving Bézier control points for line and
+    /// area objects.
+    pub fn transform<F>(&mut self, transform: F)
+    where
+        F: Fn(geo_types::Coord) -> geo_types::Coord,
+    {
+        match self {
+            Self::Point(object) => object.transform(transform),
+            Self::Line(object) => object.transform(transform),
+            Self::Area(object) => object.transform(transform),
+            Self::Text(object) => object.transform(transform),
+        }
+    }
+
+    /// Try to transform this object, preserving Bézier control points for line
+    /// and area objects.
     ///
     /// # Errors
     ///
-    /// Returns any error produced while transforming the object.
-    pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
+    /// Returns any error produced while transforming the object. The object is
+    /// unchanged on failure.
+    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(geo_types::Coord) -> std::result::Result<geo_types::Coord, E>,
     {
         match self {
-            Self::Point(o) => o.apply_transform(transform),
-            Self::Line(o) => o.apply_transform(transform),
-            Self::Area(o) => o.apply_transform(transform),
-            Self::Text(o) => o.apply_transform(transform),
+            Self::Point(object) => object.try_transform(transform),
+            Self::Line(object) => object.try_transform(transform),
+            Self::Area(object) => object.try_transform(transform),
+            Self::Text(object) => object.try_transform(transform),
         }
     }
 }
@@ -260,12 +275,12 @@ mod tests {
 
     #[test]
     fn rotatable_objects_follow_transform_rotation() -> Result<()> {
-        let transform = |coord: geo_types::Coord| Ok(coord! { x: -coord.y + 10., y: coord.x - 5. });
+        let transform = |coord: geo_types::Coord| coord! { x: -coord.y + 10., y: coord.x - 5. };
 
         let mut point = PointObject::new(std::rc::Weak::new(), Point::new(1., 2.));
         point.rotation = 0.1;
         let mut point = MapObject::Point(point);
-        point.apply_transform(&transform)?;
+        point.transform(transform);
         let MapObject::Point(point) = point else {
             return Err(crate::Error::ObjectError);
         };
@@ -278,7 +293,7 @@ mod tests {
         );
         text.rotation = -0.2;
         let mut text = MapObject::Text(text);
-        text.apply_transform(&transform)?;
+        text.transform(transform);
         let MapObject::Text(text) = text else {
             return Err(crate::Error::ObjectError);
         };
@@ -297,148 +312,12 @@ mod tests {
         area.pattern_rotation.coord = coord! { x: 1., y: 2. };
         area.pattern_rotation.rotation = 0.3;
         let mut area = MapObject::Area(area);
-        area.apply_transform(&transform)?;
+        area.transform(transform);
         let MapObject::Area(area) = area else {
             return Err(crate::Error::ObjectError);
         };
         assert!((area.pattern_rotation.rotation - (0.3 + FRAC_PI_2)).abs() < 1e-12);
 
         Ok(())
-    }
-
-    #[test]
-    fn reverse_line_string_xml() {
-        let in_xml = [
-            (coord! {x: -11535, y: -1901}, 1),
-            (coord! {x:-12228, y: -1077}, 0),
-            (coord! {x:-12122,y: 154}, 0),
-            (coord! {x:-11297, y: 847}, 1),
-            (coord! {x:-10473, y: 1541}, 0),
-            (coord! {x:-9242, y: 1435}, 0),
-            (coord! {x:-8549, y: 610}, 4),
-            (coord! {x: -7855, y: -215}, 0),
-            (coord! {x: -7961, y: -1445}, 0),
-            (coord! {x:-8786, y: -2139}, 1),
-            (coord! {x: -9611, y: -2832}, 0),
-            (coord! {x:-10841, y: -2726}, 0),
-            (coord! {x:-11535 , y:-1901}, 18),
-        ]
-        .to_vec();
-        let true_out = [
-            (coord! {x: -11535, y: -1901}, 1),
-            (coord! {x:-10841, y: -2726}, 0),
-            (coord! {x:-9611,y: -2832}, 0),
-            (coord! {x:-8786, y: -2139}, 0),
-            (coord! {x:-7961, y: -1445}, 0),
-            (coord! {x:-7855, y: -215}, 0),
-            (coord! {x:-8549, y: 610}, 5),
-            (coord! {x: -9242, y: 1435}, 0),
-            (coord! {x: -10473, y: 1541}, 0),
-            (coord! {x:-11297, y: 847}, 1),
-            (coord! {x: -12122, y: 154}, 0),
-            (coord! {x:-12228, y: -1077}, 0),
-            (coord! {x:-11535 , y:-1901}, 18),
-        ]
-        .to_vec();
-
-        let result = super::super::line_object::reverse_raw_line_coords(&in_xml);
-        assert_eq!(result, true_out);
-    }
-
-    #[test]
-    fn reverse_weird_flags() {
-        let in_xml = [
-            (coord! {x: 11691, y: -14574}, 32),
-            (coord! {x: 43270, y: -14766}, 32),
-            (coord! {x: 43429, y: 11462}, 0),
-            (coord! {x: 11850, y: 11654}, 32),
-            (coord! {x: 11691, y: -14574}, 50),
-        ]
-        .to_vec();
-        let mut flip_xml = in_xml.clone();
-
-        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
-        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
-        assert_eq!(in_xml, flip_xml);
-    }
-
-    #[test]
-    fn reverse_preserves_dash_flags_on_open_path_vertices() {
-        use crate::objects::{COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT};
-
-        let in_xml = [
-            (coord! { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
-            (
-                coord! { x: 1_000, y: 0 },
-                COORD_FLAG_CURVE_START | COORD_FLAG_DASH_POINT,
-            ),
-            (coord! { x: 1_000, y: 1_000 }, 0),
-            (coord! { x: 2_000, y: 1_000 }, 0),
-            (coord! { x: 2_000, y: 0 }, COORD_FLAG_DASH_POINT),
-            (coord! { x: 3_000, y: 0 }, COORD_FLAG_DASH_POINT),
-        ];
-        let expected = [
-            (coord! { x: 3_000, y: 0 }, COORD_FLAG_DASH_POINT),
-            (
-                coord! { x: 2_000, y: 0 },
-                COORD_FLAG_CURVE_START | COORD_FLAG_DASH_POINT,
-            ),
-            (coord! { x: 2_000, y: 1_000 }, 0),
-            (coord! { x: 1_000, y: 1_000 }, 0),
-            (coord! { x: 1_000, y: 0 }, COORD_FLAG_DASH_POINT),
-            (coord! { x: 0, y: 0 }, COORD_FLAG_DASH_POINT),
-        ];
-
-        let reversed = super::super::line_object::reverse_raw_line_coords(&in_xml);
-        assert_eq!(reversed, expected);
-    }
-
-    #[test]
-    fn reverse_line_string_xml_twice() {
-        let in_xml = [
-            (coord! {x: -11535, y: -1901}, 1),
-            (coord! {x:-12228, y: -1077}, 0),
-            (coord! {x:-12122,y: 154}, 0),
-            (coord! {x:-11297, y: 847}, 1),
-            (coord! {x:-10473, y: 1541}, 0),
-            (coord! {x:-9242, y: 1435}, 0),
-            (coord! {x:-8549, y: 610}, 4),
-            (coord! {x: -7855, y: -215}, 0),
-            (coord! {x: -7961, y: -1445}, 0),
-            (coord! {x:-8786, y: -2139}, 1),
-            (coord! {x: -9611, y: -2832}, 0),
-            (coord! {x:-10841, y: -2726}, 0),
-            (coord! {x:-11535 , y:-1901}, 18),
-        ]
-        .to_vec();
-        let mut flip_xml = in_xml.clone();
-
-        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
-        flip_xml = super::super::line_object::reverse_raw_line_coords(&flip_xml);
-        assert_eq!(in_xml, flip_xml);
-    }
-
-    #[test]
-    fn reverse_polygon_xml_twice() {
-        let in_xml = [
-            (coord! { x: -3868, y: 10122}, 1),
-            (coord! { x: -10892, y: 7576}, 0),
-            (coord! { x: -10555, y: 5582}, 4),
-            (coord! { x: -9266, y: 5214}, 4),
-            (coord! { x: -7671, y: 3987}, 32),
-            (coord! { x: -6291, y: -890}, 0),
-            (coord! { x: -4359, y: -1289}, 0),
-            (coord! { x: -3868, y: 10122}, 18),
-            (coord! { x: -8286, y: 6799}, 0),
-            (coord! { x: -5446, y: 7881}, 32),
-            (coord! { x: -5968, y: 4055}, 4),
-            (coord! { x: -8286, y: 6799}, 18),
-        ]
-        .to_vec();
-        let mut flip_xml = in_xml.clone();
-
-        flip_xml = super::super::area_object::reverse_raw_polygon_coords(&flip_xml);
-        flip_xml = super::super::area_object::reverse_raw_polygon_coords(&flip_xml);
-        assert_eq!(in_xml, flip_xml);
     }
 }

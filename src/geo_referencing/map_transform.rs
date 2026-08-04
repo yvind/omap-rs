@@ -1,6 +1,3 @@
-#[cfg(feature = "geo_ref")]
-use std::cell::Cell;
-
 use geo_types::{Coord, LineString, Point, Polygon};
 use linestring2bezier::{BezierSegment, BezierString};
 #[cfg(feature = "geo_ref")]
@@ -20,10 +17,10 @@ use super::GeoRef;
 #[cfg_attr(
     feature = "geo_ref",
     doc = "",
-    doc = "With the `geo_ref` feature the same transform also reaches WGS84 —",
-    doc = "`x` longitude and `y` latitude, in degrees — through the",
+    doc = "With the `geo_ref` feature the same transform also reaches WGS84,",
+    doc = "`x` longitude and `y` latitude in degrees, through the",
     doc = "[`to_wgs84`](Self::to_wgs84) and [`from_wgs84`](Self::from_wgs84)",
-    doc = "families, which chain the paper ↔ projected step with a projection",
+    doc = "families, which chain the paper to projected step with a projection",
     doc = "between the map's CRS and WGS84."
 )]
 #[derive(Debug, Clone)]
@@ -74,19 +71,12 @@ impl MapTransform {
 
     /// Convert a [`BezierPolygon`] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_bezierpolygon(&self, proj_bezierpolygon: BezierPolygon) -> BezierPolygon {
-        BezierPolygon {
-            exterior: self.to_map_bezierpath(proj_bezierpolygon.exterior),
-            interiors: proj_bezierpolygon
-                .interiors
-                .into_iter()
-                .map(|ring| self.to_map_bezierpath(ring))
-                .collect(),
-        }
+        proj_bezierpolygon.transform(|coord| self.to_map(coord))
     }
 
     /// Convert a [`BezierPath`] in projected (CRS) coordinates to map coordinates.
     pub fn to_map_bezierpath(&self, proj_bezierpath: BezierPath) -> BezierPath {
-        proj_bezierpath.map_coords(|coord| self.to_map(coord))
+        proj_bezierpath.transform(|coord| self.to_map(coord))
     }
 
     /// Convert a [`LineString`] in projected (CRS) coordinates to map coordinates.
@@ -134,19 +124,12 @@ impl MapTransform {
 
     /// Convert a [`BezierPolygon`] in map coordinates to projected (CRS) coordinates.
     pub fn to_projected_bezierpolygon(&self, map_bezierpolygon: BezierPolygon) -> BezierPolygon {
-        BezierPolygon {
-            exterior: self.to_projected_bezierpath(map_bezierpolygon.exterior),
-            interiors: map_bezierpolygon
-                .interiors
-                .into_iter()
-                .map(|ring| self.to_projected_bezierpath(ring))
-                .collect(),
-        }
+        map_bezierpolygon.transform(|coord| self.to_projected(coord))
     }
 
     /// Convert a [`BezierPath`] in map coordinates to projected (CRS) coordinates.
     pub fn to_projected_bezierpath(&self, map_bezierpath: BezierPath) -> BezierPath {
-        map_bezierpath.map_coords(|coord| self.to_projected(coord))
+        map_bezierpath.transform(|coord| self.to_projected(coord))
     }
 
     /// Convert a [`LineString`] in map coordinates to projected (CRS) coordinates.
@@ -284,15 +267,7 @@ impl MapTransform {
         &self,
         map_bezierpolygon: BezierPolygon,
     ) -> Result<BezierPolygon> {
-        let mut interiors = Vec::with_capacity(map_bezierpolygon.interiors.len());
-        for ring in map_bezierpolygon.interiors {
-            interiors.push(self.to_wgs84_bezierpath(ring)?);
-        }
-
-        Ok(BezierPolygon {
-            exterior: self.to_wgs84_bezierpath(map_bezierpolygon.exterior)?,
-            interiors,
-        })
+        map_bezierpolygon.try_transform(|coord| self.to_wgs84(coord))
     }
 
     /// Convert a [`BezierPath`] in map coordinates to WGS84 degrees.
@@ -302,7 +277,7 @@ impl MapTransform {
     /// Returns an error if the map's CRS cannot be related to WGS84, or if a
     /// coordinate falls outside the transform's domain.
     pub fn to_wgs84_bezierpath(&self, map_bezierpath: BezierPath) -> Result<BezierPath> {
-        try_transform_bezierpath(map_bezierpath, |coord| {
+        map_bezierpath.try_transform(|coord| {
             Ok(self
                 .wgs84_transform
                 .as_ref()
@@ -398,15 +373,7 @@ impl MapTransform {
         &self,
         wgs84_bezierpolygon: BezierPolygon,
     ) -> Result<BezierPolygon> {
-        let mut interiors = Vec::with_capacity(wgs84_bezierpolygon.interiors.len());
-        for ring in wgs84_bezierpolygon.interiors {
-            interiors.push(self.from_wgs84_bezierpath(ring)?);
-        }
-
-        Ok(BezierPolygon {
-            exterior: self.from_wgs84_bezierpath(wgs84_bezierpolygon.exterior)?,
-            interiors,
-        })
+        wgs84_bezierpolygon.try_transform(|coord| self.from_wgs84(coord))
     }
 
     /// Convert a [`BezierPath`] in WGS84 degrees to map coordinates.
@@ -416,7 +383,7 @@ impl MapTransform {
     /// Returns an error if the map's CRS cannot be related to WGS84, or if a
     /// coordinate falls outside the transform's domain.
     pub fn from_wgs84_bezierpath(&self, wgs84_bezierpath: BezierPath) -> Result<BezierPath> {
-        try_transform_bezierpath(wgs84_bezierpath, |coord| {
+        wgs84_bezierpath.try_transform(|coord| {
             Ok(self.to_map(
                 self.wgs84_transform
                     .as_ref()
@@ -473,33 +440,6 @@ impl MapTransform {
     /// coordinate falls outside the transform's domain.
     pub fn from_wgs84_point(&self, wgs84_point: Point) -> Result<Point> {
         Ok(self.from_wgs84(wgs84_point.0)?.into())
-    }
-}
-
-/// Apply a fallible coordinate transform to a [`BezierPath`].
-///
-/// [`BezierPath::map_coords`] upholds the path's invariants but takes an
-/// infallible transform, so a failure is carried out of the closure instead of
-/// returned from it. Later coordinates are still visited; the reported failure
-/// is the last one.
-#[cfg(feature = "geo_ref")]
-fn try_transform_bezierpath(
-    bezierpath: BezierPath,
-    transform: impl Fn(Coord) -> Result<Coord>,
-) -> Result<BezierPath> {
-    let failure = Cell::new(None);
-
-    let transformed = bezierpath.map_coords(|coord| match transform(coord) {
-        Ok(transformed) => transformed,
-        Err(error) => {
-            failure.set(Some(error));
-            coord
-        }
-    });
-
-    match failure.into_inner() {
-        Some(error) => Err(error),
-        None => Ok(transformed),
     }
 }
 

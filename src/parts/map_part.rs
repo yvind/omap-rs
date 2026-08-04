@@ -285,7 +285,7 @@ mod tests {
         let Some(MapObject::Line(line)) = part.iter_all_objects_mut().next() else {
             panic!("expected line object");
         };
-        line.get_geometry_mut(0.1)?.0.clear();
+        *line.geometry_mut() = crate::objects::BezierPath::empty();
 
         let mut writer = Writer::new(Vec::new());
         part.write(&mut writer, &empty_symbol_set())?;
