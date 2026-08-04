@@ -96,7 +96,7 @@ impl PassPoint {
 impl TemplateTransformations {
     pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         self.active_transform.apply_transform(transform)?;
         self.other_transform.apply_transform(transform)?;
@@ -198,7 +198,7 @@ impl TemplateTransformations {
 impl TemplateTransform {
     pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         let (position, rotation, scale_factor) = transform_position(self.template_pos, transform)?;
         self.template_pos = position;
@@ -251,7 +251,7 @@ impl TemplateTransform {
 impl PassPoint {
     pub(crate) fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         self.src_coord = transform(self.src_coord)?;
         self.dest_coord = transform(self.dest_coord)?;

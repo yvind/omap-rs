@@ -52,7 +52,7 @@ impl PointObject {
     /// Returns any error produced by `transform`.
     pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         let (position, rotation, _) = transform_position(self.geometry.0, transform)?;
         self.geometry.0 = position;

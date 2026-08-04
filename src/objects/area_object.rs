@@ -135,16 +135,6 @@ impl AreaObject {
         bezier_polygon_from_raw_coords(&self.raw_map_coords)
     }
 
-    /// Rebuild the original area geometry as mixed straight/cubic Bézier
-    /// rings.
-    ///
-    /// Prefer [`Self::bezier_geometry`], whose name makes the reconstruction
-    /// cost explicit.
-    #[deprecated(note = "renamed to bezier_geometry")]
-    pub fn get_geometry_bezier(&self) -> Option<BezierPolygon> {
-        self.bezier_geometry()
-    }
-
     /// Get a mutable reference to the polygon geometry, flattening it first
     /// when needed, and mark the coordinates as touched.
     ///
@@ -182,14 +172,6 @@ impl AreaObject {
             .map(|(c, flag)| (from_file_coords(*c), *flag))
     }
 
-    /// Get the raw file coordinates in mm with their flags.
-    ///
-    /// Prefer [`Self::raw_coords`] when a collected [`Vec`] is not needed.
-    #[deprecated(note = "use the allocation-free raw_coords iterator")]
-    pub fn get_raw_coords(&self) -> Vec<(Coord, u8)> {
-        self.raw_coords().collect()
-    }
-
     pub(crate) fn geometry_is_empty(&self) -> bool {
         self.geometry
             .get()
@@ -210,7 +192,7 @@ impl AreaObject {
     /// raw coordinate is outside the file-format range.
     pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         // Transform the discretized geometry if it has been initialized.
         if let Some(geometry) = self.geometry.get_mut() {

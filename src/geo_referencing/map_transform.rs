@@ -199,7 +199,7 @@ impl MapTransform {
     pub fn transform_between(
         old: &Self,
         new: &Self,
-    ) -> crate::Result<Box<dyn Fn(geo_types::Coord) -> Result<geo_types::Coord>>> {
+    ) -> Result<Box<dyn Fn(Coord) -> Result<Coord>>> {
         if old.crs_type == new.crs_type {
             let old = old.clone();
             let new = new.clone();

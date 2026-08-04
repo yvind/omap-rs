@@ -61,8 +61,7 @@ impl SpotColor {
         match self.cmyk_mode {
             CmykMode::FromSpotColors => Err(Error::ColorError),
             CmykMode::FromRgb => match self.rgb_mode {
-                RgbMode::FromSpotColors => Err(Error::ColorError),
-                RgbMode::FromCmyk => Err(Error::ColorError),
+                RgbMode::FromSpotColors | RgbMode::FromCmyk => Err(Error::ColorError),
                 RgbMode::Rgb(rgb) => Ok(rgb.into()),
             },
             CmykMode::Cmyk(cmyk) => Ok(cmyk),
@@ -79,8 +78,7 @@ impl SpotColor {
         match self.rgb_mode {
             RgbMode::FromSpotColors => Err(Error::ColorError),
             RgbMode::FromCmyk => match self.cmyk_mode {
-                CmykMode::FromSpotColors => Err(Error::ColorError),
-                CmykMode::FromRgb => Err(Error::ColorError),
+                CmykMode::FromSpotColors | CmykMode::FromRgb => Err(Error::ColorError),
                 CmykMode::Cmyk(cmyk) => Ok(cmyk.into()),
             },
             RgbMode::Rgb(rgb) => Ok(rgb),

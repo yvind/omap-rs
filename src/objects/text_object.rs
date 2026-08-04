@@ -155,7 +155,7 @@ impl TextObject {
     /// Returns any error produced by `transform`.
     pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         let anchor = match &self.geometry {
             TextGeometry::SingleAnchor(coord) => *coord,

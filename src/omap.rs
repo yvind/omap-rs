@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, BufWriter, Cursor, Write as _};
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
-#[cfg(feature = "geo_ref")]
+
 use geo_types::Coord;
 
 use quick_xml::{
@@ -326,7 +326,7 @@ impl Omap {
     /// Returns any error produced while transforming an object or template.
     pub fn apply_transform<F>(&mut self, transform: &F) -> Result<()>
     where
-        F: Fn(geo_types::Coord) -> Result<geo_types::Coord> + ?Sized,
+        F: Fn(Coord) -> Result<Coord> + ?Sized,
     {
         for object in self.iter_all_objects_mut() {
             object.apply_transform(transform)?;

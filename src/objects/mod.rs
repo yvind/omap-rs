@@ -33,8 +33,8 @@ type FileCoord = (Coord<i32>, u8);
 pub const COORD_FLAG_CURVE_START: u8 = 1;
 /// A coordinate closes the current path.
 pub const COORD_FLAG_CLOSE_POINT: u8 = 2;
-/// A coordinate is the endpoint of a line-symbol gap.
-pub const COORD_FLAG_GAP_POINT: u8 = 4;
+// A coordinate is the endpoint of a line-symbol gap.
+// pub const COORD_FLAG_GAP_POINT: u8 = 4;
 /// A coordinate closes an interior polygon ring.
 pub const COORD_FLAG_HOLE_POINT: u8 = 16;
 /// A coordinate is a forced dash point.
@@ -248,7 +248,7 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
                     let key = try_get_attr(&bytes_start, "k")?.unwrap_or(String::new());
                     let value = notes::parse(reader)?;
                     if !key.is_empty() && !value.is_empty() {
-                        let _ = tags.insert(key, value);
+                        let _old_value = tags.insert(key, value);
                     }
                 }
             }
