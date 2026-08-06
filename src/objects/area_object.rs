@@ -244,6 +244,76 @@ impl FlattenedPolygon {
         (self.exterior, self.interiors)
     }
 
+    /// Triangulate the polygon's rings into a triangle-index list.
+    ///
+    /// Indices address this polygon's own coordinates, concatenated as the
+    /// exterior followed by each interior in order and *including* every ring's
+    /// closing duplicate — the exact layout [`Self::exterior`] and
+    /// [`Self::interiors`] hand back, so those coordinates can be uploaded to a
+    /// renderer unchanged alongside the indices.
+    ///
+    /// That layout is worth stating because the ear-clipping itself works in a
+    /// numbering one coordinate shorter per ring, having no use for the closing
+    /// duplicate. Indices left in that space silently address the preceding
+    /// ring's coordinates, which fills an area larger than the polygon rather
+    /// than failing.
+    ///
+    /// A ring of fewer than four coordinates encloses no area: such an exterior
+    /// yields no triangles, and such an interior is not cut out of the fill,
+    /// though it keeps its slots in the coordinate numbering. The result is
+    /// likewise empty for a polygon of more than [`u32::MAX`] coordinates,
+    /// which an index of this width cannot address.
+    ///
+    /// Triangulating in the map's own coordinates is enough for a consumer that
+    /// then applies an affine transform, which maps triangles to triangles.
+    ///
+    /// Requires the `triangulate` feature.
+    #[cfg(feature = "triangulate")]
+    pub fn triangulate(&self) -> Vec<u32> {
+        if self.exterior.geometry().0.len() < 4 {
+            return Vec::new();
+        }
+
+        // Where each participating ring starts in this polygon's coordinates,
+        // paired with its length in the ear-clipping's own numbering.
+        let mut rings = Vec::with_capacity(1 + self.interiors.len());
+        let mut vertices: Vec<[f64; 2]> = Vec::new();
+        let mut hole_indices: Vec<usize> = Vec::new();
+        let mut base = 0usize;
+
+        for (index, ring) in std::iter::once(&self.exterior)
+            .chain(self.interiors.iter())
+            .enumerate()
+        {
+            let coords = &ring.geometry().0;
+            // Every nonempty ring is closed, so the last coordinate repeats the
+            // first; dropping it is what puts the ring in earcut's numbering.
+            if let Some(open) = coords.len().checked_sub(1).filter(|&open| open >= 3) {
+                if index > 0 {
+                    hole_indices.push(vertices.len());
+                }
+                rings.push((base, open));
+                vertices.extend(coords[..open].iter().map(|coord| [coord.x, coord.y]));
+            }
+            base += coords.len();
+        }
+
+        let mut clipped = Vec::new();
+        earcut::Earcut::new().earcut(vertices, &hole_indices, &mut clipped);
+
+        let mut triangles = Vec::with_capacity(clipped.len());
+        for index in clipped {
+            // Unreachable for well-formed output; drop the whole triangulation
+            // rather than emit an index addressing no coordinate.
+            let Some(index) = polygon_index(index, &rings).and_then(|i| u32::try_from(i).ok())
+            else {
+                return Vec::new();
+            };
+            triangles.push(index);
+        }
+        triangles
+    }
+
     /// Consume the flattened polygon and discard dash metadata.
     pub fn into_polygon(self) -> Polygon {
         let exterior = self.exterior.into_parts().0;
@@ -254,6 +324,21 @@ impl FlattenedPolygon {
             .collect();
         Polygon::new(exterior, interiors)
     }
+}
+
+/// Translate an index in the ear-clipping's own numbering into the polygon's
+/// `exterior ++ interiors` one. `rings` pairs each participating ring's start in
+/// the polygon's coordinates with its length in the clipping's, in order.
+#[cfg(feature = "triangulate")]
+fn polygon_index(clipped: usize, rings: &[(usize, usize)]) -> Option<usize> {
+    let mut base = 0usize;
+    for &(polygon_base, len) in rings {
+        if clipped < base + len {
+            return Some(polygon_base + clipped - base);
+        }
+        base += len;
+    }
+    None
 }
 
 impl From<FlattenedPolygon> for BezierPolygon {
@@ -646,5 +731,119 @@ mod tests {
                 .all(|segment| matches!(segment, BezierSegment::Line(_)))
         );
         Ok(())
+    }
+
+    #[cfg(feature = "triangulate")]
+    mod triangulate {
+        use geo_types::LineString;
+
+        use crate::{
+            Result,
+            objects::{FlattenedPath, FlattenedPolygon},
+        };
+
+        fn ring(low: f64, high: f64) -> LineString {
+            LineString::from(vec![
+                (low, low),
+                (high, low),
+                (high, high),
+                (low, high),
+                (low, low),
+            ])
+        }
+
+        fn path(geometry: LineString) -> Result<FlattenedPath> {
+            let vertex_is_dash_point = vec![false; geometry.0.len()];
+            FlattenedPath::new(geometry, vertex_is_dash_point)
+        }
+
+        /// Total area of the triangles, read back exactly as a renderer reads
+        /// them: indices into the `exterior ++ interiors` coordinates.
+        fn triangulated_area(polygon: &FlattenedPolygon) -> f64 {
+            let coords: Vec<_> = polygon
+                .exterior()
+                .geometry()
+                .0
+                .iter()
+                .chain(
+                    polygon
+                        .interiors()
+                        .iter()
+                        .flat_map(|r| r.geometry().0.iter()),
+                )
+                .copied()
+                .collect();
+            let indices = polygon.triangulate();
+            assert_eq!(indices.len() % 3, 0, "indices must come in triples");
+            assert!(
+                indices.iter().all(|&i| (i as usize) < coords.len()),
+                "every index must address a coordinate"
+            );
+            indices
+                .chunks_exact(3)
+                .map(|t| {
+                    let (a, b, c) = (
+                        coords[t[0] as usize],
+                        coords[t[1] as usize],
+                        coords[t[2] as usize],
+                    );
+                    ((b - a).x * (c - a).y - (b - a).y * (c - a).x).abs() * 0.5
+                })
+                .sum()
+        }
+
+        #[test]
+        fn triangles_cover_the_ring_geometry_and_no_more() -> Result<()> {
+            // The indices must be in the polygon's numbering, not the
+            // ear-clipping's: unmapped, the hole's triangles land on exterior
+            // coordinates and cover far more than the polygon does.
+            let polygon =
+                FlattenedPolygon::new(path(ring(0.0, 10.0))?, vec![path(ring(3.0, 7.0))?])?;
+            let area = triangulated_area(&polygon);
+            assert!(
+                (area - (100.0 - 16.0)).abs() < 1e-9,
+                "a 10x10 square minus a 4x4 hole should triangulate to 84, got {area}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn a_hole_enclosing_no_area_is_not_cut_out() -> Result<()> {
+            // The degenerate ring keeps its slots in the coordinate numbering,
+            // so the exterior's own triangles must still address the exterior.
+            let sliver = LineString::from(vec![(3.0, 3.0), (7.0, 3.0), (3.0, 3.0)]);
+            let polygon = FlattenedPolygon::new(path(ring(0.0, 10.0))?, vec![path(sliver)?])?;
+            let area = triangulated_area(&polygon);
+            assert!(
+                (area - 100.0).abs() < 1e-9,
+                "expected a full fill, got {area}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn an_exterior_enclosing_no_area_yields_no_triangles() -> Result<()> {
+            let sliver = LineString::from(vec![(0.0, 0.0), (10.0, 0.0), (0.0, 0.0)]);
+            let polygon = FlattenedPolygon::new(path(sliver)?, Vec::new())?;
+            assert!(polygon.triangulate().is_empty());
+
+            let empty = FlattenedPolygon::new(path(LineString::new(Vec::new()))?, Vec::new())?;
+            assert!(empty.triangulate().is_empty());
+            Ok(())
+        }
+
+        #[test]
+        fn several_holes_each_map_back_to_their_own_coordinates() -> Result<()> {
+            let polygon = FlattenedPolygon::new(
+                path(ring(0.0, 10.0))?,
+                vec![path(ring(1.0, 3.0))?, path(ring(6.0, 8.0))?],
+            )?;
+            let area = triangulated_area(&polygon);
+            assert!(
+                (area - (100.0 - 4.0 - 4.0)).abs() < 1e-9,
+                "two 2x2 holes should leave 92, got {area}"
+            );
+            Ok(())
+        }
     }
 }
