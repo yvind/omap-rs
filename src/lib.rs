@@ -25,6 +25,8 @@ pub mod view;
 
 use std::{fmt::Debug, io::BufWriter};
 
+/// Re-export `geo_types` for convenience for downstream users
+pub use geo_types;
 pub use omap::Omap;
 pub use utils::{Code, NonNegativeF64, UnitF64};
 
