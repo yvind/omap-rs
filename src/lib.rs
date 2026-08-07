@@ -26,9 +26,9 @@ pub mod view;
 use std::{fmt::Debug, io::BufWriter};
 
 pub use omap::Omap;
-pub use utils::{Code, NonNegativeF64, UnitF64};
+pub use utils::{Code, NonNegativeF64, PositiveF64, UnitF64};
 
-type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 use thiserror::Error;
 
@@ -324,15 +324,18 @@ pub enum Error {
     /// The value is negative.
     #[error("The value is not non-negative and cannot be converted to a NonNegativeF64")]
     NotNonNegativeF64,
+    /// The value is negative or 0.
+    #[error("The value is negative or 0 and cannot be converted to a PositiveF64")]
+    NotPositiveF64,
     /// Infallible conversion (required by `From` blanket impl).
     #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
     /// A map coordinate exceeds the file-format range.
     #[error("A provided map coordinate is outside the range for writing")]
     MapCoordOutOfBounds,
-    /// An Error when parsing a [Code] from an empty string
-    #[error("Tried to parse a Code from an empty string")]
-    EmptyCode,
+    /// An Error when parsing a [Code] from a bad string
+    #[error("Tried to parse a Code from a bad string")]
+    BadCode,
     /// An error from the World Magnetic Model.
     #[cfg(feature = "geo_ref")]
     #[error(transparent)]

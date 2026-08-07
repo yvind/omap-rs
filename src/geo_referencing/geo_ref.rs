@@ -1,4 +1,4 @@
-use std::str::FromStr as _;
+use std::{num::NonZeroU32, str::FromStr as _};
 
 use geo_types::Coord;
 #[cfg(feature = "geo_ref")]
@@ -10,7 +10,8 @@ use quick_xml::{
 
 use super::CrsType;
 use crate::{
-    Error, OmapSection, Result, geo_referencing::MapTransform, notes, utils::try_get_attr_raw,
+    Error, OmapSection, PositiveF64, Result, geo_referencing::MapTransform, notes,
+    utils::try_get_attr_raw,
 };
 
 /// The georeferencing information of the map
@@ -18,13 +19,13 @@ use crate::{
 pub struct GeoRef {
     /// Map scale
     /// Remember to scale all map coordinates after changing this
-    pub scale_denominator: u32,
+    pub scale_denominator: NonZeroU32,
     /// Grid scale factor
     /// Remember to scale all map coordinates after changing this
-    pub grid_scale_factor: f64,
+    pub grid_scale_factor: PositiveF64,
     /// Scale factor due too elevation
     /// Remember to scale all map coordinates after changing this
-    pub auxiliary_scale_factor: f64,
+    pub auxiliary_scale_factor: PositiveF64,
     /// Angle between geographic north and magnetic north at the projected reference point
     /// Remember to rotate all map coordinates around the map center after changing this
     pub declination_deg: f64,
@@ -53,16 +54,16 @@ impl GeoRef {
         doc = "The returned transform compiles its WGS84 operation once and reuses it,",
         doc = "so keep it around instead of asking for a new one per object."
     )]
-    pub fn get_transform(&self) -> MapTransform {
+    pub fn create_transform(&self) -> MapTransform {
         MapTransform::from_geo_ref(self)
     }
 
     /// Create a new local georeferencing with the given map scale.
-    pub fn new(scale: u32) -> Self {
+    pub fn new(scale: NonZeroU32) -> Self {
         Self {
             scale_denominator: scale,
-            grid_scale_factor: 1.,
-            auxiliary_scale_factor: 1.,
+            grid_scale_factor: PositiveF64::default(),
+            auxiliary_scale_factor: PositiveF64::default(),
             declination_deg: 0.,
             convergence_deg: 0.,
             crs_type: CrsType::Local,
@@ -80,18 +81,18 @@ impl GeoRef {
 
     /// Get the combined grid and auxiliary scale factor.
     pub fn combined_scale_factor(&self) -> f64 {
-        self.auxiliary_scale_factor * self.grid_scale_factor
+        self.auxiliary_scale_factor.get() * self.grid_scale_factor.get()
     }
 
     /// Get the PROJ.4 projection string for this CRS, if available.
-    pub fn get_proj_string(&self) -> Option<String> {
-        self.crs_type.get_proj_string()
+    pub fn proj_string(&self) -> Option<String> {
+        self.crs_type.proj_string()
     }
 
     // Returns Some(epsg_code) if the map is georeferenced using a epsg code or by a proj string containing the code
     /// Get the EPSG code for this CRS, if available.
-    pub fn get_epsg_code(&self) -> Option<u16> {
-        self.crs_type.get_epsg_code()
+    pub fn epsg_code(&self) -> Option<u16> {
+        self.crs_type.epsg_code()
     }
 
     pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
@@ -103,10 +104,10 @@ impl GeoRef {
                 self.combined_scale_factor().to_string().as_str(),
             ));
         }
-        if self.auxiliary_scale_factor != 1. {
+        if self.auxiliary_scale_factor.get() != 1. {
             bytes_start.push_attribute((
                 "auxiliary_scale_factor",
-                self.auxiliary_scale_factor.to_string().as_str(),
+                self.auxiliary_scale_factor.get().to_string().as_str(),
             ));
         }
         if self.declination_deg != 0. {
@@ -219,8 +220,8 @@ impl GeoRef {
 
         Ok(Self {
             scale_denominator: scale,
-            grid_scale_factor,
-            auxiliary_scale_factor,
+            grid_scale_factor: grid_scale_factor.try_into()?,
+            auxiliary_scale_factor: auxiliary_scale_factor.try_into()?,
             declination_deg,
             convergence_deg,
             crs_type,
@@ -242,22 +243,15 @@ fn parse_projected_crs<R: std::io::BufRead>(
             b"Gauss-Krueger, datum: Potsdam" => {
                 // get the parameter
                 let param_string = get_projected_crs_spec(reader, b"parameter")?;
-                CrsType::GaussKrueger(u8::from_str(param_string.as_str())?)
+                CrsType::GaussKrueger(param_string.parse()?)
             }
             b"EPSG" => {
                 let param_string = get_projected_crs_spec(reader, b"parameter")?;
                 CrsType::Epsg(u16::from_str(param_string.as_str())?)
             }
             b"UTM" => {
-                let mut param_string = get_projected_crs_spec(reader, b"parameter")?;
-                let sign = match param_string.pop() {
-                    Some('N') => 1_i8,
-                    Some('S') => -1_i8,
-                    _ => {
-                        return Err(Error::InvalidGeoreferencing);
-                    }
-                };
-                CrsType::Utm(sign * i8::from_str(param_string.trim())?)
+                let param_string = get_projected_crs_spec(reader, b"parameter")?;
+                CrsType::Utm(param_string.parse()?)
             }
             b"Local" => CrsType::Local,
             _ => {
@@ -360,7 +354,7 @@ impl GeoRef {
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
-        scale: u32,
+        scale: NonZeroU32,
     ) -> Result<Self> {
         if matches!(crs, CrsType::Local) {
             let mut gr = Self::new(scale);
@@ -387,7 +381,7 @@ impl GeoRef {
         Ok(Self {
             scale_denominator: scale,
             grid_scale_factor,
-            auxiliary_scale_factor,
+            auxiliary_scale_factor: auxiliary_scale_factor.try_into()?,
             declination_deg,
             convergence_deg,
             crs_type: crs,
@@ -400,15 +394,15 @@ impl GeoRef {
     #[cfg(feature = "geo_ref")]
     fn get_convergence_and_grid_scale_factor(
         local_proj: &CrsDef,
-        geo_ref_point: Coord,
-    ) -> Result<(f64, f64)> {
+        geo_ref_point_deg: Coord,
+    ) -> Result<(f64, PositiveF64)> {
         let baseline_proj = CrsDef::Projected(ProjectedCrsDef::new_with_base_geographic_crs(
             0,
             4326,
             proj_core::datum::WGS84,
             ProjectionMethod::ObliqueStereographic {
-                lon0: geo_ref_point.x,
-                lat0: geo_ref_point.y,
+                lon0: geo_ref_point_deg.x,
+                lat0: geo_ref_point_deg.y,
                 k0: 1.0,
                 false_easting: 0.0,
                 false_northing: 0.0,
@@ -446,11 +440,11 @@ impl GeoRef {
 
         let grid_scale_factor = determinant.sqrt();
 
-        Ok((convergence.to_degrees(), grid_scale_factor))
+        Ok((convergence.to_degrees(), grid_scale_factor.try_into()?))
     }
 
     #[cfg(feature = "geo_ref")]
-    fn get_elevation_scale_factor(geo_ref_point: Coord, meters_above_sea_level: f64) -> f64 {
+    fn get_elevation_scale_factor(geo_ref_point_deg: Coord, meters_above_sea_level: f64) -> f64 {
         // this is (ellipsoid_radius / (ellipsoid_radius + m_above_ellipsoid))
         //
         // ellipsoid_radius = R_equator * (1 - f * sin^2(lat))
@@ -459,13 +453,14 @@ impl GeoRef {
         const F: f64 = 1. / 298.257223563;
         const R_EQUATOR: f64 = 6378137.;
 
-        let ellipsoid_radius = R_EQUATOR * (1. - F * geo_ref_point.y.sin().powi(2));
+        let ellipsoid_radius =
+            R_EQUATOR * (1. - F * geo_ref_point_deg.y.to_radians().sin().powi(2));
 
         ellipsoid_radius / (ellipsoid_radius + meters_above_sea_level)
     }
 
     #[cfg(feature = "geo_ref")]
-    fn get_declination(geo_ref_point: Coord, meters_above_sea_level: f64) -> Result<f64> {
+    fn get_declination(geo_ref_point_deg: Coord, meters_above_sea_level: f64) -> Result<f64> {
         use chrono::Datelike as _;
         use world_magnetic_model::{
             GeomagneticField,
@@ -486,8 +481,8 @@ impl GeoRef {
 
         let field = GeomagneticField::new(
             Length::new::<meter>(meters_above_sea_level as f32),
-            Angle::new::<degree>(geo_ref_point.y as f32),
-            Angle::new::<degree>(geo_ref_point.x as f32),
+            Angle::new::<degree>(geo_ref_point_deg.y as f32),
+            Angle::new::<degree>(geo_ref_point_deg.x as f32),
             model_date,
         )?;
         let dec = field.declination().get::<degree>();

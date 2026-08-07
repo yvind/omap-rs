@@ -76,6 +76,20 @@ impl PartialEq for WeakSymbol {
         }
     }
 }
+impl Eq for WeakSymbol {}
+
+impl std::hash::Hash for WeakSymbol {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Line(weak) => weak.as_ptr().hash(state),
+            Self::Area(weak) => weak.as_ptr().hash(state),
+            Self::Point(weak) => weak.as_ptr().hash(state),
+            Self::Text(weak) => weak.as_ptr().hash(state),
+            Self::CombinedArea(weak) => weak.as_ptr().hash(state),
+            Self::CombinedLine(weak) => weak.as_ptr().hash(state),
+        }
+    }
+}
 
 macro_rules! impl_from_weak_symbol {
     ($symbol_ty:ty, $variant:ident) => {
@@ -317,7 +331,7 @@ impl Symbol {
 
     impl_symbol_getter!(has_custom_icon -> bool, |s| s.common.custom_icon.is_some());
     impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.common.custom_icon = icon);
-    impl_symbol_getter!(get_code -> Code, |s| s.common.code);
+    impl_symbol_getter!(code -> Code, |s| s.common.code);
     impl_symbol_setter!(set_code(code: Code), |s| s.common.code = code);
     impl_symbol_getter!(is_helper_symbol -> bool, |s| s.common.is_helper_symbol);
     impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.common.is_helper_symbol = is_helper);
@@ -325,9 +339,9 @@ impl Symbol {
     impl_symbol_setter!(set_hidden(is_hidden: bool), |s| s.common.is_hidden = is_hidden);
     impl_symbol_getter!(is_protected -> bool, |s| s.common.is_protected);
     impl_symbol_setter!(set_protected(is_protected: bool), |s| s.common.is_protected = is_protected);
-    impl_symbol_getter!(get_name -> String, |s| s.common.name.clone());
+    impl_symbol_getter!(name -> String, |s| s.common.name.clone());
     impl_symbol_setter!(set_name(name: String), |s| s.common.name = name);
-    impl_symbol_getter!(get_description -> String, |s| s.common.description.clone());
+    impl_symbol_getter!(description -> String, |s| s.common.description.clone());
     impl_symbol_setter!(set_description(description: String), |s| s.common.description = description);
 
     pub(super) fn parse<R: std::io::BufRead>(
@@ -443,8 +457,8 @@ mod tests {
             symbol.set_description("a description".to_owned())?;
 
             let common = symbol.common()?;
-            assert_eq!(common.code, symbol.get_code()?, "code mismatch");
-            assert_eq!(common.name, symbol.get_name()?, "name mismatch");
+            assert_eq!(common.code, symbol.code()?, "code mismatch");
+            assert_eq!(common.name, symbol.name()?, "name mismatch");
             assert_eq!(common.description, "a description", "description mismatch");
             assert!(common.is_helper_symbol, "helper flag mismatch");
             assert!(!common.is_hidden, "hidden flag mismatch");
@@ -462,8 +476,8 @@ mod tests {
                 common.is_hidden = true;
             }
 
-            assert_eq!(symbol.get_name()?, "renamed");
-            assert_eq!(symbol.get_code()?, Code::new(4, 5, 6));
+            assert_eq!(symbol.name()?, "renamed");
+            assert_eq!(symbol.code()?, Code::new(4, 5, 6));
             assert!(symbol.is_hidden()?);
         }
         Ok(())

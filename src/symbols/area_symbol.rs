@@ -9,6 +9,7 @@ use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
+    notes,
     utils::{parse_attr, try_get_attr_raw},
 };
 
@@ -204,10 +205,7 @@ impl FillPattern {
                     line_offset.to_file_value()?.to_string().as_str(),
                 ));
                 bs.push_attribute(("offset_along_line", "0"));
-                bs.push_attribute((
-                    "color",
-                    line_color.get_priority(color_set).to_string().as_str(),
-                ));
+                bs.push_attribute(("color", line_color.priority(color_set).to_string().as_str()));
                 bs.push_attribute((
                     "line_width",
                     line_width.to_file_value()?.to_string().as_str(),
@@ -276,7 +274,7 @@ pub struct AreaSymbol {
 
 impl AreaSymbol {
     /// Get the display name of this area symbol.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.common.name
     }
 
@@ -341,11 +339,7 @@ impl AreaSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => {
-                        if let Event::Text(text) = reader.read_event_into(&mut buf)? {
-                            common.description = String::from_utf8(text.to_vec())?;
-                        }
-                    }
+                    b"description" => common.description = notes::parse(reader)?,
                     b"area_symbol" => {
                         let ci = try_get_attr_raw(&e, "inner_color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
@@ -390,10 +384,7 @@ impl AreaSymbol {
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "4"),
             ("code", self.common.code.to_string().as_str()),
-            (
-                "name",
-                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
-            ),
+            ("name", self.common.name.as_str()),
         ]);
         if let Some(id) = index {
             bs.push_attribute(("id", id.to_string().as_str()));
@@ -418,7 +409,7 @@ impl AreaSymbol {
         let mut bs = BytesStart::new("area_symbol");
         bs.push_attribute((
             "inner_color",
-            self.color.get_priority(color_set).to_string().as_str(),
+            self.color.priority(color_set).to_string().as_str(),
         ));
         bs.push_attribute((
             "min_area",

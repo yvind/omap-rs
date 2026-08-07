@@ -57,7 +57,7 @@ impl SpotColor {
     ///
     /// Returns [`Error::ColorError`] if the color modes do not define a valid
     /// CMYK value.
-    pub fn get_cmyk(&self) -> Result<Cmyk> {
+    pub fn cmyk(&self) -> Result<Cmyk> {
         match self.cmyk_mode {
             CmykMode::FromSpotColors => Err(Error::ColorError),
             CmykMode::FromRgb => match self.rgb_mode {
@@ -74,7 +74,7 @@ impl SpotColor {
     ///
     /// Returns [`Error::ColorError`] if the color modes do not define a valid
     /// RGB value.
-    pub fn get_rgb(&self) -> Result<Rgb> {
+    pub fn rgb(&self) -> Result<Rgb> {
         match self.rgb_mode {
             RgbMode::FromSpotColors => Err(Error::ColorError),
             RgbMode::FromCmyk => match self.cmyk_mode {
@@ -103,7 +103,7 @@ impl SpotColor {
     }
 
     /// Get the current CMYK derivation mode.
-    pub fn get_cmyk_mode(&self) -> CmykMode {
+    pub fn cmyk_mode(&self) -> CmykMode {
         self.cmyk_mode
     }
 
@@ -125,12 +125,12 @@ impl SpotColor {
     }
 
     /// Get the current RGB derivation mode.
-    pub fn get_rgb_mode(&self) -> RgbMode {
+    pub fn rgb_mode(&self) -> RgbMode {
         self.rgb_mode
     }
 
     /// Get the display name of this spot color.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.color_name
     }
 
@@ -144,10 +144,10 @@ impl SpotColor {
         writer: &mut Writer<W>,
         priority: usize,
     ) -> Result<()> {
-        let cmyk = self.get_cmyk()?;
+        let cmyk = self.cmyk()?;
         writer.write_event(Event::Start(BytesStart::new("color").with_attributes([
             ("priority", priority.to_string().as_str()),
-            ("name", &quick_xml::escape::escape(self.get_name())),
+            ("name", self.name()),
             ("c", format!("{:.3}", cmyk.c.get()).as_str()),
             ("m", format!("{:.3}", cmyk.m.get()).as_str()),
             ("y", format!("{:.3}", cmyk.y.get()).as_str()),
@@ -222,7 +222,7 @@ impl MixedColor {
     ///
     /// Returns [`Error::ColorError`] if a component is unavailable or the
     /// color modes form an invalid dependency.
-    pub fn get_cmyk(&self) -> Result<Cmyk> {
+    pub fn cmyk(&self) -> Result<Cmyk> {
         match self.cmyk_mode {
             CmykMode::FromSpotColors => self.cmyk_from_spotcolors(),
             CmykMode::FromRgb => match self.rgb_mode {
@@ -240,7 +240,7 @@ impl MixedColor {
     ///
     /// Returns [`Error::ColorError`] if a component is unavailable or the
     /// color modes form an invalid dependency.
-    pub fn get_rgb(&self) -> Result<Rgb> {
+    pub fn rgb(&self) -> Result<Rgb> {
         match self.rgb_mode {
             RgbMode::FromSpotColors => self.rgb_from_spotcolors(),
             RgbMode::FromCmyk => match self.cmyk_mode {
@@ -253,7 +253,7 @@ impl MixedColor {
     }
 
     /// Get the display name of this mixed color.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.color_name
     }
 
@@ -278,7 +278,7 @@ impl MixedColor {
     }
 
     /// Get the current CMYK derivation mode.
-    pub fn get_cmyk_mode(&self) -> CmykMode {
+    pub fn cmyk_mode(&self) -> CmykMode {
         self.cmyk_mode
     }
 
@@ -298,7 +298,7 @@ impl MixedColor {
     }
 
     /// Get the current RGB derivation mode.
-    pub fn get_rgb_mode(&self) -> RgbMode {
+    pub fn rgb_mode(&self) -> RgbMode {
         self.rgb_mode
     }
 
@@ -317,7 +317,7 @@ impl MixedColor {
                 .upgrade()
                 .ok_or(Error::ColorError)?
                 .borrow()
-                .get_cmyk()?;
+                .cmyk()?;
 
             cmyk.c = UnitF64::clamped_from(
                 cmyk.c.get() + component.factor.get() * other.c.get() * (1.0 - cmyk.c.get()),
@@ -350,7 +350,7 @@ impl MixedColor {
                 .upgrade()
                 .ok_or(Error::ColorError)?
                 .borrow()
-                .get_rgb()?;
+                .rgb()?;
 
             rgb.r = UnitF64::clamped_from(
                 rgb.r.get() * (1.0 - component.factor.get() * (1.0 - other.r.get())),
@@ -371,11 +371,11 @@ impl MixedColor {
         priority: usize,
         color_set: &ColorSet,
     ) -> Result<()> {
-        let cmyk = self.get_cmyk()?;
+        let cmyk = self.cmyk()?;
 
         writer.write_event(Event::Start(BytesStart::new("color").with_attributes([
             ("priority", priority.to_string().as_str()),
-            ("name", &quick_xml::escape::escape(self.get_name())),
+            ("name", self.name()),
             ("c", format!("{:.3}", cmyk.c.get()).as_str()),
             ("m", format!("{:.3}", cmyk.m.get()).as_str()),
             ("y", format!("{:.3}", cmyk.y.get()).as_str()),
@@ -458,6 +458,16 @@ pub enum Color {
     MixedColor(Rc<RefCell<MixedColor>>),
 }
 
+impl PartialEq for Color {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::SpotColor(l0), Self::SpotColor(r0)) => l0.as_ptr() == r0.as_ptr(),
+            (Self::MixedColor(l0), Self::MixedColor(r0)) => l0.as_ptr() == r0.as_ptr(),
+            _ => false,
+        }
+    }
+}
+
 impl Color {
     /// Get the effective CMYK value of this color.
     ///
@@ -465,10 +475,10 @@ impl Color {
     ///
     /// Returns an error if the color is currently mutably borrowed or its
     /// definition cannot produce a CMYK value.
-    pub fn get_cmyk(&self) -> Result<Cmyk> {
+    pub fn cmyk(&self) -> Result<Cmyk> {
         let cmyk = match self {
-            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_cmyk()),
-            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_cmyk()),
+            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.cmyk()),
+            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.cmyk()),
         }??;
         Ok(cmyk)
     }
@@ -479,10 +489,10 @@ impl Color {
     ///
     /// Returns an error if the color is currently mutably borrowed or its
     /// definition cannot produce an RGB value.
-    pub fn get_rgb(&self) -> Result<Rgb> {
+    pub fn rgb(&self) -> Result<Rgb> {
         let rgb = match self {
-            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_rgb()),
-            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_rgb()),
+            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.rgb()),
+            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.rgb()),
         }??;
         Ok(rgb)
     }
@@ -533,10 +543,10 @@ impl Color {
     /// # Errors
     ///
     /// Returns an error if the color is currently mutably borrowed.
-    pub fn get_cmyk_mode(&self) -> Result<CmykMode> {
+    pub fn cmyk_mode(&self) -> Result<CmykMode> {
         let mode = match self {
-            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_cmyk_mode()),
-            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_cmyk_mode()),
+            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.cmyk_mode()),
+            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.cmyk_mode()),
         }?;
         Ok(mode)
     }
@@ -546,10 +556,10 @@ impl Color {
     /// # Errors
     ///
     /// Returns an error if the color is currently mutably borrowed.
-    pub fn get_rgb_mode(&self) -> Result<RgbMode> {
+    pub fn rgb_mode(&self) -> Result<RgbMode> {
         let mode = match self {
-            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_rgb_mode()),
-            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.get_rgb_mode()),
+            Self::SpotColor(ref_cell) => ref_cell.try_borrow().map(|c| c.rgb_mode()),
+            Self::MixedColor(ref_cell) => ref_cell.try_borrow().map(|c| c.rgb_mode()),
         }?;
         Ok(mode)
     }
@@ -823,7 +833,7 @@ impl SymbolColor {
     pub fn from_index(index: i32, color_set: &ColorSet) -> Self {
         match index {
             -900 => Self::RegistrationBlack,
-            i if i >= 0 => match color_set.get_weak_color_by_priority(i as usize) {
+            i if i >= 0 => match color_set.weak_color_by_priority(i as usize) {
                 Some(weak) => Self::Color(weak),
                 None => Self::NoColor,
             },
@@ -833,11 +843,11 @@ impl SymbolColor {
 
     /// Get the priority index of this color in the color set.
     /// Returns -1 for `NoColor`, -900 for `RegistrationBlack`.
-    pub fn get_priority(&self, color_set: &ColorSet) -> i32 {
+    pub fn priority(&self, color_set: &ColorSet) -> i32 {
         match self {
             Self::Color(weak_color) => weak_color
                 .upgrade()
-                .and_then(|c| color_set.get_id_of_color(&c).map(|u| u as i32))
+                .and_then(|c| color_set.priority_of_color(&c).map(|u| u as i32))
                 .unwrap_or(-1),
             Self::RegistrationBlack => -900,
             Self::NoColor => -1,

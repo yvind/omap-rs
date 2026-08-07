@@ -8,6 +8,7 @@ use super::SymbolCommon;
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
+    notes,
     utils::{self, try_get_attr_raw},
 };
 
@@ -25,7 +26,7 @@ pub enum FramingMode {
 
 impl FramingMode {
     /// Get the numeric identifier for this framing mode.
-    pub fn get_id(&self) -> u8 {
+    pub fn id(&self) -> u8 {
         match self {
             Self::NoFraming => 0,
             Self::LineFraming(_) => 1,
@@ -133,7 +134,7 @@ impl TextSymbol {
     }
 
     /// Get the display name of this text symbol.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.common.name
     }
 
@@ -215,11 +216,7 @@ impl TextSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => {
-                        if let Event::Text(text) = reader.read_event_into(&mut buf)? {
-                            common.description = String::from_utf8(text.to_vec())?;
-                        }
-                    }
+                    b"description" => common.description = notes::parse(reader)?,
                     b"text_symbol" => {
                         icon_text = try_get_attr_raw(&e, "icon_text")?.unwrap_or_default();
                         is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(false);
@@ -343,10 +340,7 @@ impl TextSymbol {
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "8"),
             ("code", self.common.code.to_string().as_str()),
-            (
-                "name",
-                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
-            ),
+            ("name", self.common.name.as_str()),
             ("id", index.to_string().as_str()),
         ]);
         if self.common.is_hidden {
@@ -395,10 +389,7 @@ impl TextSymbol {
         let ps_file = utils::to_file_value(self.paragraph_spacing)?;
         // text element
         let mut text = BytesStart::new("text").with_attributes([
-            (
-                "color",
-                self.color.get_priority(color_set).to_string().as_str(),
-            ),
+            ("color", self.color.priority(color_set).to_string().as_str()),
             ("line_spacing", self.line_spacing.get().to_string().as_str()),
             ("paragraph_spacing", ps_file.to_string().as_str()),
             (
@@ -418,10 +409,7 @@ impl TextSymbol {
                 FramingMode::LineFraming(lf) => {
                     writer.write_event(Event::Empty(
                         BytesStart::new("framing").with_attributes([
-                            (
-                                "color",
-                                lf.color.get_priority(color_set).to_string().as_str(),
-                            ),
+                            ("color", lf.color.priority(color_set).to_string().as_str()),
                             ("mode", "1"),
                             (
                                 "line_half_width",
@@ -437,10 +425,7 @@ impl TextSymbol {
                     let shadow = utils::to_file_coords(sf.shadow_offset)?;
                     writer.write_event(Event::Empty(
                         BytesStart::new("framing").with_attributes([
-                            (
-                                "color",
-                                sf.color.get_priority(color_set).to_string().as_str(),
-                            ),
+                            ("color", sf.color.priority(color_set).to_string().as_str()),
                             ("mode", "2"),
                             ("shadow_x_offset", shadow.x.to_string().as_str()),
                             ("shadow_y_offset", shadow.y.to_string().as_str()),
@@ -454,10 +439,7 @@ impl TextSymbol {
         if let Some(lb) = &self.line_below {
             writer.write_event(Event::Empty(BytesStart::new("line_below").with_attributes(
                 [
-                    (
-                        "color",
-                        lb.color.get_priority(color_set).to_string().as_str(),
-                    ),
+                    ("color", lb.color.priority(color_set).to_string().as_str()),
                     ("width", lb.width.to_file_value()?.to_string().as_str()),
                     (
                         "distance",

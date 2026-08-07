@@ -12,19 +12,38 @@ use crate::{Error, OmapSection, Result};
 /// An ordered set of map colors.
 ///
 /// The order of the [`Color`] values in the [`Vec`] determines their priority.
-/// Move colors to change priority, for example with `color_set.0.swap(2, 5)`.
+/// Move colors to change priority, for example with `color_set.swap(2, 5)`.
 ///
 /// Deleting a color drops its allocation if there are no outstanding [`Rc`]
 /// references. Symbols and [`ColorComponent`] values only hold
 /// [`std::rc::Weak`] references. A dangling weak reference contributes no color
 /// when the map is written.
-#[derive(Debug, Clone, Default)]
-pub struct ColorSet(pub Vec<Color>);
+#[derive(Debug, Default)]
+pub struct ColorSet(Vec<Color>);
 
 impl ColorSet {
+    /// Create a new [`ColorSet`]
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
     /// Get the number of colors in the set.
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Swap the priority of two colors
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either of the arguments are out of bounds
+    pub fn swap(&mut self, first: usize, second: usize) -> Result<()> {
+        if first < self.len() && second < self.len() {
+            self.0.swap(first, second);
+            Ok(())
+        } else {
+            Err(Error::MissingColorId)
+        }
     }
 
     /// Returns `true` if the color set contains no colors.
@@ -32,9 +51,12 @@ impl ColorSet {
         self.0.is_empty()
     }
 
-    /// Append a new color with the lowest priority.
-    pub fn push(&mut self, color: impl Into<Color>) {
-        self.0.push(color.into());
+    /// Append a new color with the lowest priority. Returns a weak pointer to the color.
+    pub fn push(&mut self, color: impl Into<Color>) -> WeakColor {
+        let color = color.into();
+        let weak = color.downgrade();
+        self.0.push(color);
+        weak
     }
 
     /// Remove a color by its priority index.
@@ -50,47 +72,58 @@ impl ColorSet {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ColorError`] if `index` is greater than the number of
-    /// colors.
-    pub fn insert(&mut self, index: usize, color: impl Into<Color>) -> Result<()> {
+    /// Returns [`Error::ColorError`] if `index` is greater than the number of colors.
+    pub fn insert(&mut self, index: usize, color: impl Into<Color>) -> Result<WeakColor> {
         if index > self.len() {
             return Err(Error::ColorError);
         }
-        self.0.insert(index, color.into());
-        Ok(())
+        let color = color.into();
+        let weak = color.downgrade();
+        self.0.insert(index, color);
+        Ok(weak)
     }
 
     /// Get a color by its priority index.
-    pub fn get_color_by_priority(&self, priority: usize) -> Option<&Color> {
+    pub fn color_by_priority(&self, priority: usize) -> Option<&Color> {
         self.0.get(priority)
     }
 
     /// Get a weak reference to a color by its priority index.
-    pub fn get_weak_color_by_priority(&self, priority: usize) -> Option<WeakColor> {
-        self.get_color_by_priority(priority).map(|c| c.downgrade())
+    pub fn weak_color_by_priority(&self, priority: usize) -> Option<WeakColor> {
+        self.color_by_priority(priority).map(|c| c.downgrade())
     }
 
     /// Get the first color with an exact name match
-    pub fn get_color_by_name(&self, name: &str) -> Option<&Color> {
-        self.0.iter().find(|c| match c {
-            Color::SpotColor(ref_cell) => match ref_cell.try_borrow() {
-                Ok(c) => c.get_name() == name,
-                Err(_) => false,
-            },
-            Color::MixedColor(ref_cell) => match ref_cell.try_borrow() {
-                Ok(c) => c.get_name() == name,
-                Err(_) => false,
-            },
-        })
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a color cannot be borrowed because it is mutably borrowed somewhere else
+    pub fn color_by_name(&self, name: &str) -> Result<Option<&Color>> {
+        for color in &self.0 {
+            match color {
+                Color::SpotColor(ref_cell) => {
+                    if ref_cell.try_borrow()?.name() == name {
+                        return Ok(Some(color));
+                    }
+                }
+                Color::MixedColor(ref_cell) => {
+                    if ref_cell.try_borrow()?.name() == name {
+                        return Ok(Some(color));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Get the priority index of a specific color in the set (by pointer identity).
-    pub fn get_id_of_color(&self, color: &Color) -> Option<usize> {
-        self.iter().position(|c| match (color, c) {
-            (Color::SpotColor(c1), Color::SpotColor(c2)) => c1.as_ptr() == c2.as_ptr(),
-            (Color::MixedColor(c1), Color::MixedColor(c2)) => c1.as_ptr() == c2.as_ptr(),
-            _ => false,
-        })
+    pub fn priority_of_color(&self, color: &Color) -> Option<usize> {
+        self.iter().position(|c| c == color)
+    }
+
+    /// Get the priority index of a specific color in the set (by pointer identity).
+    pub fn priority_of_weak_color(&self, color: &WeakColor) -> Option<usize> {
+        self.iter_weak().position(|c| &c == color)
     }
 
     /// Access the colors through an iterator

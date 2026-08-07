@@ -36,12 +36,12 @@ impl PointObject {
     }
 
     /// Get a shared reference to the point geometry.
-    pub fn get_geometry(&self) -> &Point {
+    pub fn geometry(&self) -> &Point {
         &self.geometry
     }
 
     /// Get a mutable reference to the point geometry.
-    pub fn get_geometry_mut(&mut self) -> &mut Point {
+    pub fn geometry_mut(&mut self) -> &mut Point {
         &mut self.geometry
     }
 

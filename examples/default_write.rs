@@ -49,7 +49,8 @@ fn main() -> Result<(), Error> {
 
     let erosion_gully = map
         .symbols
-        .get_symbol_by_code(Code::new(107, 0, 0))
+        .symbol_by_code(Code::new(107, 0, 0))
+        .unwrap()
         .unwrap()
         .downgrade();
 
@@ -60,7 +61,7 @@ fn main() -> Result<(), Error> {
     );
     ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
 
-    map.parts.0[0].add_object(ls);
+    map.parts.get_mut(0).unwrap().add_object(ls);
 
     println!("\nCombined Line symbols:");
     for symbol in map.symbols.iter() {
@@ -68,7 +69,7 @@ fn main() -> Result<(), Error> {
             println!("{}", s.borrow().common.name);
         }
     }
-    if let Some(s) = map.symbols.get_symbol_by_name("Railway, Olive background") {
+    if let Ok(Some(s)) = map.symbols.symbol_by_name("Railway, Olive background") {
         println!("{s:?}");
     }
 

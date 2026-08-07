@@ -8,9 +8,19 @@ use crate::{Error, OmapSection, Result, symbols::SymbolSet};
 
 /// An ordered collection of map parts (layers).
 #[derive(Debug, Default, Clone)]
-pub struct MapParts(pub Vec<MapPart>);
+pub struct MapParts(Vec<MapPart>);
 
 impl MapParts {
+    /// Create a new empty [`MapParts`] object
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Create a new [`MapParts`] object with a [`MapPart`] named "Map"
+    pub fn new_with_default_part() -> Self {
+        Self(vec![MapPart::new("Map")])
+    }
+
     /// Add a new map part to the end of the collection.
     pub fn push(&mut self, part: MapPart) {
         self.0.push(part);
@@ -29,13 +39,18 @@ impl MapParts {
     /// Merge all map parts into a single part
     /// If `new_name` is some, then the new name is applied, else the name of the first map part is kept
     pub fn merge_all_parts(&mut self, new_name: Option<String>) {
-        while let Some(part) = self.0.pop() {
-            if let Some(first) = self.0.first_mut() {
-                first.merge(part);
-            } else {
-                self.0.push(part);
-                break;
+        if self.0.len() > 1 {
+            let mut first = self.0.remove(0);
+
+            let mut pop_parts = Vec::with_capacity(self.0.len());
+            while let Some(part) = self.0.pop() {
+                pop_parts.push(part);
             }
+
+            for part in pop_parts.into_iter().rev() {
+                first.merge(part);
+            }
+            self.0.push(first);
         }
 
         if let Some(name) = new_name
@@ -68,7 +83,7 @@ impl MapParts {
     }
 
     /// Remove and return the map part at the given index, or `None` if out of bounds.
-    pub fn remove_map_part_by_index(&mut self, index: usize) -> Option<MapPart> {
+    pub fn remove(&mut self, index: usize) -> Option<MapPart> {
         if index < self.len() {
             Some(self.0.remove(index))
         } else {
@@ -77,17 +92,17 @@ impl MapParts {
     }
 
     /// Case sensitive
-    pub fn get_map_part_by_name(&self, name: &str) -> Option<&MapPart> {
+    pub fn by_name(&self, name: &str) -> Option<&MapPart> {
         self.0.iter().find(|p| p.name.as_str() == name)
     }
 
     /// Case sensitive
-    pub fn get_map_part_by_name_mut(&mut self, name: &str) -> Option<&mut MapPart> {
+    pub fn by_name_mut(&mut self, name: &str) -> Option<&mut MapPart> {
         self.0.iter_mut().find(|p| p.name.as_str() == name)
     }
 
     /// Get a map part by its index.
-    pub fn get_map_part_by_index(&self, index: usize) -> Option<&MapPart> {
+    pub fn get(&self, index: usize) -> Option<&MapPart> {
         if index >= self.0.len() {
             None
         } else {
@@ -96,7 +111,7 @@ impl MapParts {
     }
 
     /// Get a mutable reference to a map part by its index.
-    pub fn get_map_part_by_index_mut(&mut self, index: usize) -> Option<&mut MapPart> {
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut MapPart> {
         if index >= self.0.len() {
             None
         } else {

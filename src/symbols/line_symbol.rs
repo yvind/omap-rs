@@ -9,6 +9,7 @@ use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
+    notes,
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
 
@@ -76,7 +77,7 @@ impl LineSymbol {
     }
 
     /// Get the display name of this line symbol.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.common.name
     }
 
@@ -317,10 +318,7 @@ impl LineSymbolBorder {
 
     fn write<W: std::io::Write>(&self, writer: &mut Writer<W>, color_set: &ColorSet) -> Result<()> {
         let mut bs = BytesStart::new("border").with_attributes([
-            (
-                "color",
-                self.color.get_priority(color_set).to_string().as_str(),
-            ),
+            ("color", self.color.priority(color_set).to_string().as_str()),
             ("width", self.width.to_file_value()?.to_string().as_str()),
             ("shift", self.shift.to_file_value()?.to_string().as_str()),
         ]);
@@ -457,11 +455,7 @@ impl LineSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => {
-                        if let Event::Text(text) = reader.read_event_into(&mut buf)? {
-                            common.description = String::from_utf8(text.to_vec())?;
-                        }
-                    }
+                    b"description" => common.description = notes::parse(reader)?,
                     b"line_symbol" => {
                         let color_index = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(color_index, color_set);
@@ -687,10 +681,7 @@ impl LineSymbol {
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "2"),
             ("code", self.common.code.to_string().as_str()),
-            (
-                "name",
-                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
-            ),
+            ("name", self.common.name.as_str()),
         ]);
         if let Some(id) = id {
             bs.push_attribute(("id", id.to_string().as_str()));
@@ -712,7 +703,7 @@ impl LineSymbol {
             writer.write_event(Event::End(BytesEnd::new("description")))?;
         }
 
-        let main_color = self.color.get_priority(color_set);
+        let main_color = self.color.priority(color_set);
 
         let mut bs = BytesStart::new("line_symbol").with_attributes([
             ("color", main_color.to_string().as_str()),

@@ -10,6 +10,7 @@ use super::{AreaSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolS
 use crate::{
     Code, Error, OmapSection, Result,
     colors::ColorSet,
+    notes,
     symbols::{AreaOrLineSymbol, CombinedLineSymbol, WeakPathSymbol, WeakSymbol},
     utils::{parse_attr, try_get_attr_raw},
 };
@@ -32,15 +33,11 @@ impl CombinedAreaSymbol {
         self.parts.iter()
     }
 
-    /// Iterate through the mutable symbol component of the symbol
-    pub fn components_mut(
-        &mut self,
-    ) -> impl Iterator<Item = &mut PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
-        self.parts.iter_mut()
-    }
-
     /// Remove and return the symbol component at position `index` in the component vec.
-    /// This preserves the order of the components. O(N) run time
+    ///
+    /// This preserves the order of the components.
+    ///
+    /// Note: Because this shifts over the remaining elements, it has a worst-case performance of O(n). If you don't need the order of elements to be preserved, use [`Self::swap_remove_component`] instead.
     pub fn remove_component(
         &mut self,
         index: usize,
@@ -52,8 +49,11 @@ impl CombinedAreaSymbol {
         }
     }
 
-    /// Remove and return the symbol component at position `index` in the component vec.
-    /// This does not preserve the order of the components. O(1) run time
+    /// Removes a component from the symbol and returns it.
+    ///
+    /// The last component is moved to the removed components index.
+    ///
+    /// This does not preserve ordering of the remaining components, but is O(1). If you need to preserve the component order, use [`Self::remove_component()`] instead.
     pub fn swap_remove_component(
         &mut self,
         index: usize,
@@ -67,9 +67,6 @@ impl CombinedAreaSymbol {
 
     /// Adds a component to the symbol
     /// Fails if adding this component will create a cycle in the symbol component definitions
-    ///
-    /// The cycle detection relies on run time borrow checking, meaning that if any of the sub-symbols refcells
-    /// are already being borrowed (through any of the .(try_)`borrow()`, .(try_)`borrow_mut()` functions) it fails and the component will not be added
     ///
     /// # Errors
     ///
@@ -117,7 +114,7 @@ impl CombinedAreaSymbol {
     }
 
     /// Get the display name of this combined area symbol.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.common.name
     }
 
@@ -142,16 +139,25 @@ impl CombinedAreaSymbol {
         let mut min = f64::MAX;
         for s in &self.parts {
             match s {
-                PublicOrPrivateSymbol::Public(p) => {
-                    if let WeakPathSymbol::Area(weak) = p
-                        && let Some(area) = weak.upgrade()
-                    {
-                        let area_symbol = area.try_borrow()?;
-                        if area_symbol.minimum_area.get() > 0. {
-                            min = min.min(area_symbol.minimum_area.get());
+                PublicOrPrivateSymbol::Public(p) => match p {
+                    WeakPathSymbol::Area(weak) => {
+                        if let Some(area) = weak.upgrade() {
+                            let area_symbol = area.try_borrow()?;
+                            if area_symbol.minimum_area.get() > 0. {
+                                min = min.min(area_symbol.minimum_area.get());
+                            }
                         }
                     }
-                }
+                    WeakPathSymbol::CombinedArea(weak) => {
+                        if let Some(area) = weak.upgrade() {
+                            let area = area.try_borrow()?.minimum_area()?;
+                            if area > 0. {
+                                min = min.min(area);
+                            }
+                        }
+                    }
+                    _ => (),
+                },
                 PublicOrPrivateSymbol::Private(p) => {
                     if let AreaOrLineSymbol::Area(area_symbol) = p
                         && area_symbol.minimum_area.get() > 0.
@@ -282,11 +288,7 @@ impl CombinedAreaSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => {
-                        if let Event::Text(text) = reader.read_event_into(&mut buf)? {
-                            common.description = String::from_utf8(text.to_vec())?;
-                        }
-                    }
+                    b"description" => common.description = notes::parse(reader)?,
                     b"combined_symbol" => {
                         // num_parts attribute is informational, we parse dynamically
                     }
@@ -398,10 +400,7 @@ impl CombinedAreaSymbol {
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "16"),
             ("code", self.common.code.to_string().as_str()),
-            (
-                "name",
-                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
-            ),
+            ("name", self.common.name.as_str()),
             ("id", index.to_string().as_str()),
         ]);
         if self.common.is_hidden {

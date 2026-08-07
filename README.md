@@ -8,19 +8,19 @@ For writing new files you can either start with a completely empty map `Omap::ne
 Or you can start from an already existing file with `Omap::from_path`.
 
 ## Geo-referencing
-With the `geo_ref`-feature automatic geo-referencing with magnetic north and scale factor calculation is enabled and done with the `omap::GeoRef::initialize` function. \
+With the `geo_ref`-feature automatic geo-referencing with magnetic north and scale factor calculation is enabled and done with the `omap::geo_referencing::GeoRef::initialize` function. \
 It is not enabled by default because of the extra dependencies needed (Proj4rs for coordinate projections, WMM for magnetic north calcualtion and Chrono for time as the magnetic north changes over time). Without this feature the georeferencing must be done by hand.
 
 **NB!** if you change any field (or the entire thing) in the map's `geo_referencing`-field then all the map objects projected/geographic positions will change as their coordinates are given in mm-of-paper and remain untouched.
 The best practice is to set the map's geo referencing before adding any objects.
 
-`omap::geo_referencing::MapTransform` provides functions for going back and forth between mm-of-paper and projected coordinates given by map's georeferencing. And is obtained with calling `get_transform` on the map's `geo_referencing`-field.
+`omap::geo_referencing::MapTransform` provides functions for going back and forth between mm-of-paper and projected coordinates given by the map's georeferencing. Obtain one by calling `create_transform` on the map's `geo_referencing` field.
 
 `MapTransform::transform_between` can be used to keep objects and non-georeferenced templates at the same real-world positions after changing the map's georeferencing. Without `geo_ref`, both maps must use the same projection; with `geo_ref`, differing projections are converted automatically.
 
 With the `geo_ref`-feature the same `MapTransform` also reaches WGS84 (`x` longitude, `y` latitude, in degrees) without a second projection dependency: `to_wgs84`, `to_wgs84_polygon`, `to_wgs84_bezierpath` and the rest of the family go from mm-of-paper all the way to degrees, and the `from_wgs84`-family comes back.
 They chain the paper ↔ projected step with a projection between the map's CRS and WGS84, resolved through `CrsType::to_crs_def`, the same resolution `GeoRef::initialize` uses.
-That projection is compiled on first use and kept, so hold on to the transform instead of calling `get_transform` per object.
+That projection is compiled on first use and kept, so hold on to the transform instead of calling `create_transform` per object.
 
 ## Dash-points and beziers
 
@@ -50,10 +50,23 @@ dash-point metadata aligned to every flattened coordinate. Flattened geometry
 is not cached by the crate. `replace_with_flattened` and `flatten_in_place`
 explicitly discard curves by replacing them with straight segments.
 
+Empty line and area geometries can remain in a map part while they are being
+edited, but they are omitted when an `.omap` file is written. Consequently,
+writing and reading a map removes empty line and area objects.
+
 ## Example
 
-```Rust
-fn main() {
+```rust
+use geo_types::{Coord, LineString};
+use omap::{
+    Code, Error, Omap,
+    colors::Color,
+    geo_referencing::CrsType,
+    objects::LineObject,
+    symbols::WeakLinePathSymbol,
+};
+
+fn main() -> Result<(), Error> {
     let proj_center = Coord {
         x: 463_575.5,
         y: 6_833_849.6,
@@ -87,13 +100,13 @@ fn main() {
     // The objects hold weak pointers of the symbol
     let erosion_gully = map
         .symbols
-        .get_symbol_by_code(Code::new(107, 0, 0))
-        .unwrap()
+        .symbol_by_code(Code::new(107, 0, 0))?
+        .expect("the default symbol set contains erosion gully")
         .downgrade();
 
     // O-mapper makes no difference between line objects and area objects, but we do.
     let mut ls = LineObject::new(
-        WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
+        WeakLinePathSymbol::try_from(erosion_gully)?,
         // LineStrings become straight Bézier segments. Geometry
         // coordinates are always in mm of paper.
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
@@ -102,11 +115,17 @@ fn main() {
     ls.tags.insert("Some Key".to_string(), "My value".to_string());
 
     // A map can have multiple parts let's add the object to the first one
-    map.parts.get_map_part_by_index_mut(0).unwrap().add_object(ls);
+    map.parts
+        .get_mut(0)
+        .expect("a default map contains one map part")
+        .add_object(ls);
 
     // O-mapper makes no difference between combined line symbols and combined area symbols, but we do
     // This will debug-print a `CombinedLineSymbol`
-    if let Some(s) = map.symbols.get_symbol_by_name("Railway, Olive background") {
+    if let Some(s) = map
+        .symbols
+        .symbol_by_name("Railway, Olive background")?
+    {
         dbg!(s);
     }
 

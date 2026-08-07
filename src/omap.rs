@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Cursor, Write as _};
+use std::num::NonZeroU32;
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
@@ -33,7 +34,7 @@ const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.om
 /// relative the ref point with positive y towards the magnetic north
 ///
 /// The Undo/Redo history and printer information is ignored
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Omap {
     /// Free-text notes embedded in the file.
     pub notes: String,
@@ -64,7 +65,13 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 15_000)?;
+        let geo_ref = GeoRef::initialize(
+            projected_ref_point,
+            crs,
+            meters_above_sea,
+            #[expect(clippy::unwrap_used)]
+            NonZeroU32::new(15_000).unwrap(),
+        )?;
         let mut omap = Self::from_bytes(DEFAULT_ISOM_15000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -82,7 +89,13 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 10_000)?;
+        let geo_ref = GeoRef::initialize(
+            projected_ref_point,
+            crs,
+            meters_above_sea,
+            #[expect(clippy::unwrap_used)]
+            NonZeroU32::new(10_000).unwrap(),
+        )?;
         let mut omap = Self::from_bytes(DEFAULT_ISOM_10000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -100,7 +113,13 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, 4_000)?;
+        let geo_ref = GeoRef::initialize(
+            projected_ref_point,
+            crs,
+            meters_above_sea,
+            #[expect(clippy::unwrap_used)]
+            NonZeroU32::new(4_000).unwrap(),
+        )?;
         let mut omap = Self::from_bytes(DEFAULT_ISSPROM_4000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -134,16 +153,13 @@ impl Omap {
     }
 
     /// Create a new empty map
-    pub fn new(scale_denominator: u32) -> Self {
+    pub fn new(scale_denominator: NonZeroU32) -> Self {
         Self {
             notes: Default::default(),
             geo_referencing: GeoRef::new(scale_denominator),
-            colors: ColorSet(Vec::new()),
-            symbols: SymbolSet {
-                symbols: Vec::new(),
-                name: "Custom".to_owned(),
-            },
-            parts: MapParts(vec![MapPart::new("Map")]),
+            colors: ColorSet::new(),
+            symbols: SymbolSet::new("Custom"),
+            parts: MapParts::new_with_default_part(),
             templates: Default::default(),
             view: Default::default(),
         }
@@ -251,7 +267,7 @@ impl Omap {
     ///
     /// Returns an error if the file cannot be created or any map data cannot
     /// be serialized.
-    pub fn write_to_file(self, path: impl AsRef<std::path::Path>) -> Result<()> {
+    pub fn write_to_file(mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let file = File::create(path)?;
         let mut writer = Writer::new(BufWriter::new(file));
 
@@ -265,6 +281,10 @@ impl Omap {
 
         self.geo_referencing.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
+
+        // sort the symbols, important to do this before writing parts
+        self.symbols.try_sort()?;
+
         // write objects to a buffer
         let mut object_writer = Writer::new(Vec::new());
         self.parts.write(&mut object_writer, &self.symbols)?;
@@ -370,8 +390,11 @@ impl Omap {
     }
 }
 
+#[expect(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use geo_types::{Coord, Point};
 
     use super::Omap;
@@ -380,7 +403,7 @@ mod tests {
     fn point_positions(map: &Omap) -> Vec<Coord> {
         map.iter_all_objects()
             .filter_map(|object| match object {
-                crate::objects::MapObject::Point(point) => Some(point.get_geometry().0),
+                crate::objects::MapObject::Point(point) => Some(point.geometry().0),
                 _ => None,
             })
             .collect()
@@ -388,11 +411,8 @@ mod tests {
 
     #[test]
     fn try_transform_is_transactional() -> Result<()> {
-        let mut map = Omap::new(10_000);
-        let part = map
-            .parts
-            .get_map_part_by_index_mut(0)
-            .ok_or(Error::ObjectError)?;
+        let mut map = Omap::new(NonZeroU32::new(10_000).unwrap());
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
         part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
         part.add_object(PointObject::new(
             std::rc::Weak::new(),

@@ -29,15 +29,11 @@ impl CombinedLineSymbol {
         self.parts.iter()
     }
 
-    /// Iterate through the mutable symbol component of the symbol
-    pub fn components_mut(
-        &mut self,
-    ) -> impl Iterator<Item = &mut PublicOrPrivateSymbol<WeakLinePathSymbol, Box<LineSymbol>>> {
-        self.parts.iter_mut()
-    }
-
     /// Remove and return the symbol component at position `index` in the component vec.
-    /// This preserves the order of the components. O(N) run time
+    ///
+    /// This preserves the order of the components.
+    ///
+    /// Note: Because this shifts over the remaining elements, it has a worst-case performance of O(n). If you don't need the order of elements to be preserved, use [`Self::swap_remove_component`] instead.
     pub fn remove_component(
         &mut self,
         index: usize,
@@ -49,8 +45,11 @@ impl CombinedLineSymbol {
         }
     }
 
-    /// Remove and return the symbol component at position `index` in the component vec.
-    /// This does not preserve the order of the components. O(1) run time
+    /// Removes a component from the symbol and returns it.
+    ///
+    /// The last component is moved to the removed components index.
+    ///
+    /// This does not preserve ordering of the remaining components, but is O(1). If you need to preserve the component order, use [`Self::remove_component()`] instead.
     pub fn swap_remove_component(
         &mut self,
         index: usize,
@@ -64,9 +63,6 @@ impl CombinedLineSymbol {
 
     /// Adds a component to the symbol
     /// Fails if adding this component will create a cycle in the symbol component definitions
-    ///
-    /// The cycle detection relies on run time borrow checking, meaning that if any of the sub-symbols refcells
-    /// are already being borrowed (through any of the .(try_)`borrow()`, .(try_)`borrow_mut()` functions) it fails
     ///
     /// # Errors
     ///
@@ -112,7 +108,7 @@ impl CombinedLineSymbol {
     }
 
     /// Get the display name of this combined line symbol.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.common.name
     }
 
@@ -260,10 +256,7 @@ impl CombinedLineSymbol {
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "16"),
             ("code", self.common.code.to_string().as_str()),
-            (
-                "name",
-                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
-            ),
+            ("name", self.common.name.as_str()),
             ("id", index.to_string().as_str()),
         ]);
         if self.common.is_hidden {

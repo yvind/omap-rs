@@ -93,13 +93,13 @@ pub struct TemplateEntry {
     /// The template data.
     pub template: Template,
     /// The visibility settings for this template.
-    pub visibilty: TemplateVisibility,
+    pub visibility: TemplateVisibility,
 }
 
 impl TemplateEntry {
     fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<TemplateVisibility> {
         self.template.write(writer)?;
-        Ok(self.visibilty)
+        Ok(self.visibility)
     }
 }
 
@@ -193,7 +193,7 @@ impl Templates {
             .into_iter()
             .map(|t| TemplateEntry {
                 template: t,
-                visibilty: TemplateVisibility::default(),
+                visibility: TemplateVisibility::default(),
             })
             .collect();
 
