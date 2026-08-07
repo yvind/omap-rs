@@ -268,8 +268,7 @@ impl Omap {
     /// Returns an error if the file cannot be created or any map data cannot
     /// be serialized.
     pub fn write_to_file(mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        let file = File::create(path)?;
-        let mut writer = Writer::new(BufWriter::new(file));
+        let mut writer = Writer::new(Vec::new());
 
         XmlDeclaration::write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
@@ -311,6 +310,10 @@ impl Omap {
         self.view.write(&mut writer, vis)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         writer.write_event(Event::End(BytesEnd::new("map")))?;
+
+        let file = File::create(path)?;
+        let mut file_writer = BufWriter::new(file);
+        let _ = file_writer.write(&writer.into_inner())?;
 
         Ok(())
     }
