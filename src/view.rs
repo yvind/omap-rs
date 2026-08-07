@@ -432,7 +432,7 @@ impl View {
     }
 
     pub(crate) fn write<W: std::io::Write>(
-        self,
+        &self,
         writer: &mut Writer<W>,
         visibilities: Vec<TemplateVisibility>,
     ) -> Result<()> {

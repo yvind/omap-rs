@@ -143,5 +143,5 @@ fn main() -> Result<(), Error> {
     );
     map.parts.get_mut(0).unwrap().add_object(ts);
 
-    map.write_to_file("./from_path_out.omap")
+    map.to_file("./from_path_out.omap")
 }

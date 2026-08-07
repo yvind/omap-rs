@@ -111,7 +111,7 @@ impl GeoRef {
         self.crs_type.epsg_code()
     }
 
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let mut bytes_start = BytesStart::new("georeferencing")
             .with_attributes([("scale", self.scale_denominator.to_string().as_str())]);
         if self.combined_scale_factor() != 1. {

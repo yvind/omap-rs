@@ -164,8 +164,8 @@ impl CrsType {
         }
     }
 
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        let (id, proj_str, parameter) = match self {
+    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        let (id, proj_str, parameter) = match &self {
             Self::Local => {
                 writer.write_event(Event::Start(
                     BytesStart::new("projected_crs").with_attributes([("id", "Local")]),
@@ -173,7 +173,7 @@ impl CrsType {
                 return Ok(());
             }
             Self::Epsg(code) => ("EPSG", format!("+init=epsg:{code}"), format!("{code}")),
-            Self::Proj4(proj_string) => ("PROJ.4", proj_string.clone(), proj_string),
+            Self::Proj4(proj_string) => ("PROJ.4", proj_string.clone(), proj_string.clone()),
             Self::GaussKrueger(code) => {
                 let lon = 3 * (code.get() as u16);
                 let x = 500_000 + (code.get() as u32 * 1_000_000);

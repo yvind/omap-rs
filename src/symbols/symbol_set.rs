@@ -414,7 +414,7 @@ impl SymbolSet {
     }
 
     pub(crate) fn write<W: std::io::Write>(
-        self,
+        &self,
         writer: &mut Writer<W>,
         colors: &ColorSet,
     ) -> Result<()> {
@@ -424,7 +424,7 @@ impl SymbolSet {
         ])))?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         for (index, symbol) in self.iter().enumerate() {
-            symbol.write(writer, &self, colors, index)?;
+            symbol.write(writer, self, colors, index)?;
             writer.get_mut().write_all(b"\n".as_slice())?;
         }
         writer.write_event(Event::End(BytesEnd::new("symbols")))?;

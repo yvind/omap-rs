@@ -97,7 +97,7 @@ pub struct TemplateEntry {
 }
 
 impl TemplateEntry {
-    fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<TemplateVisibility> {
+    fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<TemplateVisibility> {
         self.template.write(writer)?;
         Ok(self.visibility)
     }
@@ -205,7 +205,7 @@ impl Templates {
     }
 
     pub(crate) fn write<W: std::io::Write>(
-        self,
+        &self,
         writer: &mut Writer<W>,
     ) -> Result<Vec<TemplateVisibility>> {
         writer.write_event(Event::Start(BytesStart::new("templates").with_attributes(
@@ -219,7 +219,7 @@ impl Templates {
         )))?;
         writer.get_mut().write_all(b"\n")?;
         let mut visibilities = Vec::with_capacity(self.len());
-        for entry in self.template_entries {
+        for entry in &self.template_entries {
             visibilities.push(entry.write(writer)?);
             writer.get_mut().write_all(b"\n")?;
         }

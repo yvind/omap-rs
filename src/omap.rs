@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Write as _};
+use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::num::NonZeroU32;
 
 #[cfg(feature = "geo_ref")]
@@ -165,12 +165,34 @@ impl Omap {
         }
     }
 
-    fn from_bytes(bytes: &'static [u8]) -> Result<Self> {
+    /// Construct an [`Omap`] from a byte sequence
+    ///
+    /// See [`Self::from_reader`] for more docs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a required map section cannot be parsed.
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self> {
         Self::from_reader(Cursor::new(bytes))
     }
 
-    fn from_reader<R: BufRead>(reader: R) -> Result<Self> {
-        let mut reader = Reader::from_reader(reader);
+    /// Construct an [`Omap`] from anything that implements [`Read`]
+    ///
+    /// Parsing is intentionally permissive for some sections.
+    /// This function falls back to sensible defaults
+    /// for `notes`, `templates`, or `view`
+    /// if those sections cannot be parsed
+    ///
+    /// `barrier`s, `undo` and `redo` sections of the file are ignored
+    ///
+    /// The core sections `georeferencing`, `colors`, `symbols`, and `parts`
+    /// must still parse successfully or else loading fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a required map section cannot be parsed.
+    pub fn from_reader<R: Read>(reader: R) -> Result<Self> {
+        let mut reader = Reader::from_reader(BufReader::new(reader));
         reader.config_mut().expand_empty_elements = true;
 
         // these must be parsed successfully
@@ -222,6 +244,11 @@ impl Omap {
                     }
                     _ => (),
                 },
+                Event::End(bytes_end) => {
+                    if bytes_end.local_name().as_ref() == b"map" {
+                        break;
+                    }
+                }
                 Event::Eof => break,
                 _ => (),
             }
@@ -242,15 +269,7 @@ impl Omap {
 
     /// Create an [`Omap`] from a path to an `.omap` file.
     ///
-    /// Parsing is intentionally permissive for some sections.
-    /// This function falls back to sensible defaults
-    /// for `notes`, `templates`, or `view`
-    /// if those sections cannot be parsed
-    ///
-    /// `barrier`s, `undo` and `redo` sections of the file are ignored
-    ///
-    /// The core sections `georeferencing`, `colors`, `symbols`, and `parts`
-    /// must still parse successfully or else loading fails.
+    /// See [`Self::from_reader`] for more docs
     ///
     /// # Errors
     ///
@@ -261,14 +280,15 @@ impl Omap {
         Self::from_reader(BufReader::new(file))
     }
 
-    /// Write the map to an `.omap` file at the given path.
+    /// Write the map to anything that implements [`Write`]
+    ///
+    /// Takes a mutable borrow of self as the symbol set is sorted by [`crate::Code`] before writing
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be created or any map data cannot
-    /// be serialized.
-    pub fn write_to_file(mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        let mut writer = Writer::new(Vec::new());
+    /// Returns an error if any of the map data cannot be serialized.
+    pub fn to_writer<W: Write>(&mut self, writer: &mut W) -> Result<()> {
+        let mut writer = Writer::new(writer);
 
         XmlDeclaration::write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
@@ -281,39 +301,45 @@ impl Omap {
         self.geo_referencing.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
 
-        // sort the symbols, important to do this before writing parts
+        // sort the symbols, important to do this before writing symbols and parts
         self.symbols.try_sort()?;
-
-        // write objects to a buffer
-        let mut object_writer = Writer::new(Vec::new());
-        self.parts.write(&mut object_writer, &self.symbols)?;
-        let written_objects = object_writer.into_inner();
-
-        // write symbolset to a buffer
-        let mut symbol_writer = Writer::new(Vec::new());
-        self.symbols.write(&mut symbol_writer, &self.colors)?;
-        let written_symbols = symbol_writer.into_inner();
 
         // write colors
         self.colors.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
+        // write symbols
+        self.symbols.write(&mut writer, &self.colors)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
-        writer.get_mut().flush()?;
-        writer.get_mut().write_all(&written_symbols)?;
+        // write objects
+        self.parts.write(&mut writer, &self.symbols)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
-        writer.get_mut().flush()?;
-        writer.get_mut().write_all(&written_objects)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-
+        // write templates
         let vis = self.templates.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
+        // write view
         self.view.write(&mut writer, vis)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
+        // write eof
         writer.write_event(Event::End(BytesEnd::new("map")))?;
+        writer.get_mut().flush()?;
+        Ok(())
+    }
+
+    /// Write the map to an `.omap` file at the given path.
+    ///
+    /// See [`Self::to_writer`] for more docs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created or any map data cannot be serialized.
+    pub fn to_file(&mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        let mut data = Vec::new();
+        self.to_writer(&mut data)?;
 
         let file = File::create(path)?;
         let mut file_writer = BufWriter::new(file);
-        let _ = file_writer.write(&writer.into_inner())?;
+        file_writer.write_all(&data)?;
+        file_writer.flush()?;
 
         Ok(())
     }

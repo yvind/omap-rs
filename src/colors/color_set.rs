@@ -214,7 +214,7 @@ impl ColorSet {
         Ok(Self(parsed_colors.into_iter().map(|(c, _)| c).collect()))
     }
 
-    pub(crate) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
+    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         writer.write_event(Event::Start(
             BytesStart::new("colors").with_attributes([("count", self.len().to_string().as_str())]),
         ))?;
@@ -223,7 +223,7 @@ impl ColorSet {
             match color {
                 Color::SpotColor(ref_cell) => ref_cell.try_borrow()?.write(writer, priority)?,
                 Color::MixedColor(ref_cell) => {
-                    ref_cell.try_borrow()?.write(writer, priority, &self)?;
+                    ref_cell.try_borrow()?.write(writer, priority, self)?;
                 }
             }
             writer.get_mut().write_all(b"\n".as_slice())?;

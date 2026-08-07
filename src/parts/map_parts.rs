@@ -159,7 +159,7 @@ impl<'a> IntoIterator for &'a mut MapParts {
 
 impl MapParts {
     pub(crate) fn write<W: std::io::Write>(
-        self,
+        &self,
         writer: &mut Writer<W>,
         symbols: &SymbolSet,
     ) -> Result<()> {
@@ -169,7 +169,7 @@ impl MapParts {
         ])))?;
         writer.get_mut().write_all(b"\n")?;
 
-        for part in self.0 {
+        for part in &self.0 {
             part.write(writer, symbols)?;
             writer.get_mut().write_all(b"\n")?;
         }

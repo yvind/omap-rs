@@ -139,7 +139,7 @@ impl MapPart {
     }
 
     pub(super) fn write<W: std::io::Write>(
-        self,
+        &self,
         writer: &mut Writer<W>,
         symbols: &SymbolSet,
     ) -> Result<()> {
@@ -156,8 +156,8 @@ impl MapPart {
             BytesStart::new("objects")
                 .with_attributes([("count", object_count.to_string().as_str())]),
         ))?;
-
-        for object in self.objects {
+        writer.get_mut().write_all(b"\n")?;
+        for object in &self.objects {
             if object.geometry_is_empty() {
                 continue;
             }

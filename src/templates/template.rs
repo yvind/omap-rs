@@ -279,7 +279,7 @@ impl Template {
         Ok(template)
     }
 
-    pub(super) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
+    pub(super) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let common = self.common();
 
         let mut start = BytesStart::new("template").with_attributes([
