@@ -57,6 +57,13 @@ impl GeoRef {
         MapTransform::from_geo_ref(self)
     }
 
+    /// Like [`Self::get_transform`], but fails up front if the CRS cannot be
+    /// related to WGS84 instead of deferring that error to every conversion.
+    #[cfg(feature = "geo_ref")]
+    pub fn try_get_transform(&self) -> Result<MapTransform> {
+        MapTransform::try_from_geo_ref(self)
+    }
+
     /// Create a new local georeferencing with the given map scale.
     pub fn new(scale: u32) -> Self {
         Self {
@@ -81,6 +88,12 @@ impl GeoRef {
     /// Get the combined grid and auxiliary scale factor.
     pub fn combined_scale_factor(&self) -> f64 {
         self.auxiliary_scale_factor * self.grid_scale_factor
+    }
+
+    /// Get the ground distance, in the projection's units, spanned by one
+    /// millimetre of map
+    pub fn scale_factor(&self) -> f64 {
+        self.combined_scale_factor() * self.scale_denominator as f64 / 1000.
     }
 
     /// Get the PROJ.4 projection string for this CRS, if available.
