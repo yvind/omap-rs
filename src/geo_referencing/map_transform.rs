@@ -151,14 +151,33 @@ impl MapTransform {
         self.to_projected(proj_point.0).into()
     }
 
+    /// The ground distance, in the projection's units, spanned by one millimeter of map
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
+    }
+
+    /// Like [`Self::from_geo_ref`], but reports why the CRS could not be
+    /// related to WGS84 rather than storing the absence and failing later.
+    #[cfg(feature = "geo_ref")]
+    pub(super) fn try_from_geo_ref(geo_ref: &GeoRef) -> Result<Self> {
+        Ok(Self {
+            map_center: geo_ref.map_ref_point,
+            proj_center: geo_ref.projected_ref_point,
+            sin: geo_ref.grivation_deg().to_radians().sin(),
+            cos: geo_ref.grivation_deg().to_radians().cos(),
+            scale_factor: geo_ref.map_to_ground_scale(),
+            crs_type: geo_ref.crs_type.clone(),
+            wgs84_transform: Some(Self::wgs84_transforms(&geo_ref.crs_type)?),
+        })
+    }
+
     pub(super) fn from_geo_ref(geo_ref: &GeoRef) -> Self {
         Self {
             map_center: geo_ref.map_ref_point,
             proj_center: geo_ref.projected_ref_point,
             sin: geo_ref.grivation_deg().to_radians().sin(),
             cos: geo_ref.grivation_deg().to_radians().cos(),
-            scale_factor: geo_ref.combined_scale_factor() * geo_ref.scale_denominator.get() as f64
-                / 1000.,
+            scale_factor: geo_ref.map_to_ground_scale(),
             crs_type: geo_ref.crs_type.clone(),
             #[cfg(feature = "geo_ref")]
             wgs84_transform: Self::wgs84_transforms(&geo_ref.crs_type).ok(),
