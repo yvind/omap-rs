@@ -122,7 +122,7 @@ impl OgrTemplate {
 
 impl Template {
     /// Get the common properties shared by all template types.
-    pub fn get_common(&self) -> &TemplateCommon {
+    pub fn common(&self) -> &TemplateCommon {
         match self {
             Self::Image(t) => &t.common,
             Self::Map(t) => &t.common,
@@ -133,7 +133,7 @@ impl Template {
     }
 
     /// Get the mutable common properties shared by all template types.
-    pub fn get_common_mut(&mut self) -> &mut TemplateCommon {
+    pub fn common_mut(&mut self) -> &mut TemplateCommon {
         match self {
             Self::Image(t) => &mut t.common,
             Self::Map(t) => &mut t.common,
@@ -153,10 +153,10 @@ impl Template {
     where
         F: Fn(geo_types::Coord) -> geo_types::Coord,
     {
-        if self.get_common().is_georeferenced {
+        if self.common().is_georeferenced {
             return;
         }
-        if let Some(transformations) = &mut self.get_common_mut().transformations {
+        if let Some(transformations) = &mut self.common_mut().transformations {
             transformations.transform(transform);
         }
     }
@@ -173,10 +173,10 @@ impl Template {
     where
         F: Fn(geo_types::Coord) -> std::result::Result<geo_types::Coord, E>,
     {
-        if self.get_common().is_georeferenced {
+        if self.common().is_georeferenced {
             return Ok(());
         }
-        if let Some(transformations) = &mut self.get_common_mut().transformations {
+        if let Some(transformations) = &mut self.common_mut().transformations {
             transformations.try_transform(transform)?;
         }
         Ok(())
@@ -280,20 +280,14 @@ impl Template {
     }
 
     pub(super) fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        let common = self.get_common();
+        let common = self.common();
 
         let mut start = BytesStart::new("template").with_attributes([
             ("type", self.type_name()),
             ("open", common.is_open.to_string().as_str()),
             ("name", common.name.as_str()),
-            (
-                "path",
-                quick_xml::escape::escape(common.path.to_string_lossy().as_ref()).as_ref(),
-            ),
-            (
-                "relpath",
-                quick_xml::escape::escape(common.relpath.to_string_lossy().as_ref()).as_ref(),
-            ),
+            ("path", common.path.to_string_lossy().as_ref()),
+            ("relpath", common.relpath.to_string_lossy().as_ref()),
         ]);
 
         if common.is_georeferenced {

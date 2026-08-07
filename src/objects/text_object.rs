@@ -25,7 +25,7 @@ pub enum TextGeometry {
 
 impl TextGeometry {
     /// Get a shared reference to the anchor coordinate.
-    pub fn get_anchor_coord(&self) -> &Coord {
+    pub fn anchor_coord(&self) -> &Coord {
         match self {
             Self::SingleAnchor(coord) => coord,
             Self::WrapBox(wrap_box) => &wrap_box.anchor,
@@ -33,7 +33,7 @@ impl TextGeometry {
     }
 
     /// Get a mutable reference to the anchor coordinate.
-    pub fn get_anchor_coord_mut(&mut self) -> &mut Coord {
+    pub fn anchor_coord_mut(&mut self) -> &mut Coord {
         match self {
             Self::SingleAnchor(coord) => coord,
             Self::WrapBox(wrap_box) => &mut wrap_box.anchor,
@@ -142,12 +142,12 @@ impl TextObject {
     }
 
     /// Get a shared reference to the text geometry.
-    pub fn get_geometry(&self) -> &TextGeometry {
+    pub fn geometry(&self) -> &TextGeometry {
         &self.geometry
     }
 
     /// Get a mutable reference to the text geometry.
-    pub fn get_geometry_mut(&mut self) -> &mut TextGeometry {
+    pub fn geometry_mut(&mut self) -> &mut TextGeometry {
         &mut self.geometry
     }
 

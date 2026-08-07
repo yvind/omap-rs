@@ -16,72 +16,118 @@ use crate::{
     utils::{try_get_attr, try_get_attr_raw},
 };
 
-/// An ordered collection of symbols.
-#[derive(Debug, Clone)]
+/// A collection of symbols.
+#[derive(Debug)]
 pub struct SymbolSet {
     /// The symbols in this set.
-    pub symbols: Vec<Symbol>,
+    symbols: Vec<Symbol>,
     /// The name of the symbol set.
     pub name: String,
 }
 
 impl SymbolSet {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            symbols: Vec::new(),
+            name: name.into(),
+        }
+    }
+
     /// Get the number of symbols in the [`SymbolSet`].
     pub fn len(&self) -> usize {
         self.symbols.len()
     }
 
     /// Add a new symbol to the [`SymbolSet`]
-    pub fn push(&mut self, symbol: impl Into<Symbol>) {
-        self.symbols.push(symbol.into());
+    pub fn add_symbol(&mut self, symbol: impl Into<Symbol>) -> WeakSymbol {
+        let symbol = symbol.into();
+        let weak = symbol.downgrade();
+        self.symbols.push(symbol);
+        weak
     }
 
-    /// Get a symbol by its index in the [`SymbolSet`]
-    pub fn get_symbol_by_id(&self, id: usize) -> Option<&Symbol> {
-        if id >= self.len() {
-            None
+    /// Remove and return the [`Symbol`] with the given [`Code`] from the [`SymbolSet`]
+    ///
+    /// # Errors
+    ///
+    /// Returns and error if a symbol could not be borrowed as it is mutably borrowed somewhere else
+    pub fn remove_by_code(&mut self, code: Code) -> Result<Option<Symbol>> {
+        let mut remove = None;
+        for (i, s) in self.symbols.iter().enumerate() {
+            if s.common()?.code == code {
+                remove = Some(i);
+                break;
+            }
+        }
+        if let Some(i) = remove {
+            Ok(Some(self.symbols.swap_remove(i)))
         } else {
-            Some(&self.symbols[id])
+            Ok(None)
         }
     }
 
-    /// Find a symbol by its [Code].
-    pub fn get_symbol_by_code(&self, code: Code) -> Option<&Symbol> {
-        self.symbols
-            .iter()
-            .find(|s| s.get_code().map(|c| c == code).unwrap_or(false))
+    /// Remove and return the [`Symbol`] with the given name from the [`SymbolSet`]
+    ///
+    /// # Errors
+    ///
+    /// Returns and error if a symbol could not be borrowed as it is mutably borrowed somewhere else
+    pub fn remove_by_name(&mut self, name: &str) -> Result<Option<Symbol>> {
+        let mut remove = None;
+        for (i, s) in self.symbols.iter().enumerate() {
+            if s.common()?.name == name {
+                remove = Some(i);
+                break;
+            }
+        }
+        if let Some(i) = remove {
+            Ok(Some(self.symbols.swap_remove(i)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Remove and return the [`Symbol`] corresponding to the given [`WeakSymbol`] from the [`SymbolSet`]
+    pub fn remove_by_weak(&mut self, weak: WeakSymbol) -> Option<Symbol> {
+        let mut remove = None;
+        for (i, s) in self.iter_weak().enumerate() {
+            if s == weak {
+                remove = Some(i);
+                break;
+            }
+        }
+        if let Some(i) = remove {
+            Some(self.symbols.swap_remove(i))
+        } else {
+            None
+        }
+    }
+
+    /// Find a symbol by its [Code]. The first match is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a symbol cannot be borrowed for code checking (because it is mutably borrowed somewhere else)
+    pub fn symbol_by_code(&self, code: Code) -> Result<Option<&Symbol>> {
+        for s in &self.symbols {
+            if s.code()? == code {
+                return Ok(Some(s));
+            }
+        }
+        Ok(None)
     }
 
     /// Find a [Symbol] by its display name. The first match is returned.
-    /// If a symbol cannot be borrowed for name checking (because it is mutably borrowed somewhere else) it is simply skipped.
-    /// This means that a symbol-name that actually exists in the [`SymbolSet`] can return `None` in some cases
-    pub fn get_symbol_by_name(&self, name: &str) -> Option<&Symbol> {
-        self.symbols.iter().find(|s| match s {
-            Symbol::Line(ref_cell) => ref_cell
-                .try_borrow()
-                .map(|s| s.get_name() == name)
-                .unwrap_or(false),
-            Symbol::Area(ref_cell) => ref_cell
-                .try_borrow()
-                .map(|s| s.get_name() == name)
-                .unwrap_or(false),
-            Symbol::Point(ref_cell) => ref_cell
-                .try_borrow()
-                .map(|s| s.get_name() == name)
-                .unwrap_or(false),
-            Symbol::Text(ref_cell) => ref_cell
-                .try_borrow()
-                .map(|s| s.get_name() == name)
-                .unwrap_or(false),
-            Symbol::CombinedArea(ref_cell) => ref_cell
-                .try_borrow()
-                .map(|s| s.get_name() == name)
-                .unwrap_or(false),
-            Symbol::CombinedLine(ref_cell) => ref_cell
-                .try_borrow()
-                .map(|s| s.get_name() == name)
-                .unwrap_or(false),
-        })
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a symbol cannot be borrowed for name checking (because it is mutably borrowed somewhere else)
+    pub fn symbol_by_name(&self, name: &str) -> Result<Option<&Symbol>> {
+        for s in &self.symbols {
+            if s.common()?.name == name {
+                return Ok(Some(s));
+            }
+        }
+        Ok(None)
     }
 
     /// Iterate over non-owning references to all symbols.
@@ -92,11 +138,6 @@ impl SymbolSet {
     /// Access the symbols through an iterator
     pub fn iter(&self) -> impl Iterator<Item = &Symbol> {
         self.symbols.iter()
-    }
-
-    /// Access the mutable symbols through an iterator
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Symbol> {
-        self.symbols.iter_mut()
     }
 
     /// Iterate over only the point symbols.
@@ -155,13 +196,34 @@ impl SymbolSet {
     pub fn is_empty(&self) -> bool {
         self.symbols.is_empty()
     }
-
-    pub(crate) fn get_weak_symbol_by_id(&self, id: usize) -> Option<WeakSymbol> {
-        self.get_symbol_by_id(id).map(|c| c.downgrade())
-    }
 }
 
 impl SymbolSet {
+    pub(crate) fn symbol_by_index(&self, id: usize) -> Option<&Symbol> {
+        if id >= self.len() {
+            None
+        } else {
+            Some(&self.symbols[id])
+        }
+    }
+
+    pub(crate) fn get_weak_symbol_by_index(&self, id: usize) -> Option<WeakSymbol> {
+        self.symbol_by_index(id).map(|c| c.downgrade())
+    }
+
+    pub(crate) fn try_sort(&mut self) -> Result<()> {
+        let mut codes = Vec::with_capacity(self.len());
+        for s in &self.symbols {
+            codes.push(s.common()?.code);
+        }
+
+        let mut v = self.symbols.iter().cloned().enumerate().collect::<Vec<_>>();
+        v.sort_by_key(|(i, _)| codes[*i]);
+        self.symbols = v.into_iter().map(|(_, s)| s).collect();
+
+        Ok(())
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "symbol-set parsing also resolves combined-symbol references"
@@ -303,7 +365,7 @@ impl SymbolSet {
                     let mut symb = ref_cell.try_borrow_mut()?;
                     for &id in component_ids {
                         let weak_component = symbol_set
-                            .get_weak_symbol_by_id(id)
+                            .get_weak_symbol_by_index(id)
                             .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
                         match weak_component {
                             WeakSymbol::Line(weak) => symb.add_component(
@@ -326,7 +388,7 @@ impl SymbolSet {
                     let mut symb = ref_cell.try_borrow_mut()?;
                     for &id in component_ids {
                         let weak_component = symbol_set
-                            .get_weak_symbol_by_id(id)
+                            .get_weak_symbol_by_index(id)
                             .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
                         match weak_component {
                             WeakSymbol::Line(weak) => symb.add_component(

@@ -135,6 +135,7 @@ impl std::fmt::Display for Rgb {
             let value = (value.get() * 255.).round() as u32;
             write!(f, "{value:02x}")
         }
+        write!(f, "#")?;
         to_hex(self.r, f)?;
         to_hex(self.g, f)?;
         to_hex(self.b, f)
@@ -257,6 +258,7 @@ impl std::fmt::Display for Argb {
             write!(f, "{value:02x}")
         }
 
+        write!(f, "#")?;
         to_hex(self.a, f)?;
         to_hex(self.r, f)?;
         to_hex(self.g, f)?;

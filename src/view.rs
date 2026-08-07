@@ -419,7 +419,7 @@ impl View {
                     if let Ok(Some(index)) = try_get_attr_raw::<usize>(&bs, "template")
                         && index < templates.len()
                     {
-                        templates.template_entries[index].visibilty =
+                        templates.template_entries[index].visibility =
                             TemplateVisibility::parse_map_attrs(&bs);
                     }
                 }

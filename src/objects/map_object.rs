@@ -33,18 +33,22 @@ pub enum MapObject {
 
 impl MapObject {
     /// Get a non-owning reference to the symbol associated with this object.
-    pub fn get_weak_symbol(&self) -> WeakSymbol {
+    pub fn symbol(&self) -> WeakSymbol {
         match self {
-            Self::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
+            Self::Point(point_object) => WeakSymbol::Point(Weak::clone(&point_object.symbol)),
             Self::Line(line_object) => match &line_object.symbol {
-                WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
-                WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
+                WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(Weak::clone(weak)),
+                WeakLinePathSymbol::CombinedLine(weak) => {
+                    WeakSymbol::CombinedLine(Weak::clone(weak))
+                }
             },
             Self::Area(area_object) => match &area_object.symbol {
-                WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
-                WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
+                WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(Weak::clone(weak)),
+                WeakAreaPathSymbol::CombinedArea(weak) => {
+                    WeakSymbol::CombinedArea(Weak::clone(weak))
+                }
             },
-            Self::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
+            Self::Text(text_object) => WeakSymbol::Text(Weak::clone(&text_object.symbol)),
         }
     }
 
@@ -65,22 +69,6 @@ impl MapObject {
             Self::Line(o) => &mut o.tags,
             Self::Area(o) => &mut o.tags,
             Self::Text(o) => &mut o.tags,
-        }
-    }
-
-    /// Get a weak pointer to the objects symbol
-    pub fn get_symbol(&self) -> WeakSymbol {
-        match self {
-            Self::Point(point_object) => WeakSymbol::Point(point_object.symbol.clone()),
-            Self::Line(line_object) => match &line_object.symbol {
-                WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(weak.clone()),
-                WeakLinePathSymbol::CombinedLine(weak) => WeakSymbol::CombinedLine(weak.clone()),
-            },
-            Self::Area(area_object) => match &area_object.symbol {
-                WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(weak.clone()),
-                WeakAreaPathSymbol::CombinedArea(weak) => WeakSymbol::CombinedArea(weak.clone()),
-            },
-            Self::Text(text_object) => WeakSymbol::Text(text_object.symbol.clone()),
         }
     }
 
@@ -211,7 +199,7 @@ impl MapObject {
             && sid >= 0
         {
             symbols
-                .get_weak_symbol_by_id(sid as usize)
+                .get_weak_symbol_by_index(sid as usize)
                 .ok_or(Error::UnknownObjectSymbolId(sid))?
         } else {
             match object_type {

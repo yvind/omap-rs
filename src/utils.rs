@@ -10,7 +10,7 @@ use crate::{Error, Result};
 const FILE_COORD_MAX: f64 = ((i32::MAX / 1000) - 1) as f64;
 
 /// A three-part version or symbol code of the form `A.B.C`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Code {
     /// Major version / code component.
     pub major: u16,
@@ -34,11 +34,29 @@ impl Code {
 impl FromStr for Code {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self> {
-        let mut parts = value.split('.').take(3);
+        let mut parts = value.split('.');
+
+        #[expect(clippy::unwrap_used)]
+        let major = parts.next().unwrap().parse()?;
+        let minor = if let Some(part) = parts.next() {
+            part.parse()?
+        } else {
+            0
+        };
+        let patch = if let Some(part) = parts.next() {
+            part.parse()?
+        } else {
+            0
+        };
+
+        if parts.next().is_some() {
+            return Err(Error::BadCode);
+        }
+
         Ok(Self {
-            major: parts.next().ok_or(Error::EmptyCode)?.parse()?,
-            minor: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
-            patch: parts.next().and_then(|i| i.parse().ok()).unwrap_or(0),
+            major,
+            minor,
+            patch,
         })
     }
 }
@@ -49,10 +67,8 @@ impl std::fmt::Display for Code {
             write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
         } else if self.minor > 0 {
             write!(f, "{}.{}", self.major, self.minor)
-        } else if self.major > 0 {
-            write!(f, "{}", self.major)
         } else {
-            write!(f, "")
+            write!(f, "{}", self.major)
         }
     }
 }
@@ -139,6 +155,41 @@ impl TryFrom<f64> for UnitF64 {
     }
 }
 
+/// A f64, but not allowed to be 0 or less
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct PositiveF64(f64);
+
+impl Default for PositiveF64 {
+    fn default() -> Self {
+        Self::one()
+    }
+}
+
+impl PositiveF64 {
+    /// Get the inner `f64` value.
+    pub fn get(self) -> f64 {
+        self.0
+    }
+
+    /// Get the unit value
+    pub fn one() -> Self {
+        Self(1.)
+    }
+}
+
+/// Tries to create a [`PositiveF64`] from a f64, but succeeds only for strictly positive values
+impl TryFrom<f64> for PositiveF64 {
+    type Error = Error;
+
+    fn try_from(v: f64) -> Result<Self> {
+        if v.is_finite() && v > 0. {
+            Ok(Self(v))
+        } else {
+            Err(Error::NotPositiveF64)
+        }
+    }
+}
+
 /// A f64, but not allowed to be negative
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
 pub struct NonNegativeF64(f64);
@@ -149,9 +200,9 @@ impl NonNegativeF64 {
         self.0
     }
 
-    /// Get `NonNegativeF64` from a f64, clamp negative values to 0. and map NaN to 0.
+    /// Get `NonNegativeF64` from a f64, clamp negative values to 0. and non-finite values to 0..
     pub fn clamped_from(value: f64) -> Self {
-        if value.is_nan() {
+        if !value.is_finite() {
             Self(0.)
         } else {
             Self(value.max(0.))
@@ -183,8 +234,8 @@ impl NonNegativeF64 {
 impl TryFrom<f64> for NonNegativeF64 {
     type Error = Error;
 
-    fn try_from(v: f64) -> std::result::Result<Self, Self::Error> {
-        if v >= 0. {
+    fn try_from(v: f64) -> Result<Self> {
+        if v.is_finite() && v >= 0. {
             Ok(Self(v))
         } else {
             Err(Error::NotNonNegativeF64)
@@ -200,7 +251,7 @@ pub(crate) fn to_file_coords(map_coord: Coord) -> Result<Coord<i32>> {
 }
 
 pub(crate) fn to_file_value(value: f64) -> Result<i32> {
-    if value.abs() > FILE_COORD_MAX {
+    if !value.is_finite() || value.abs() > FILE_COORD_MAX {
         return Err(Error::MapCoordOutOfBounds);
     }
     Ok((value * 1000.).round() as i32)

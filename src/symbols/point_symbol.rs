@@ -9,6 +9,7 @@ use super::{AreaSymbol, LineSymbol};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorSet, SymbolColor},
+    notes,
     objects::{AreaObject, LineObject, PointObject},
     symbols::{SymbolCommon, WeakAreaPathSymbol, WeakLinePathSymbol},
     utils::try_get_attr_raw,
@@ -241,7 +242,7 @@ impl PointSymbol {
     }
 
     /// Get the display name of this point symbol.
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.common.name
     }
 
@@ -305,11 +306,7 @@ impl PointSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => {
-                        if let Event::Text(text) = reader.read_event_into(&mut buf)? {
-                            common.description = String::from_utf8(text.to_vec())?;
-                        }
-                    }
+                    b"description" => common.description = notes::parse(reader)?,
                     b"point_symbol" => {
                         is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(is_rotatable);
                         inner_radius = NonNegativeF64::from_file_value(
@@ -371,10 +368,7 @@ impl PointSymbol {
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "1"),
             ("code", code_str.as_str()),
-            (
-                "name",
-                quick_xml::escape::escape(self.common.name.as_str()).as_ref(),
-            ),
+            ("name", self.common.name.as_str()),
         ]);
         if let Some(id) = index {
             bs.push_attribute(("id", id.to_string().as_str()));
@@ -406,10 +400,7 @@ impl PointSymbol {
         ));
         bs.push_attribute((
             "inner_color",
-            self.inner_color
-                .get_priority(color_set)
-                .to_string()
-                .as_str(),
+            self.inner_color.priority(color_set).to_string().as_str(),
         ));
         bs.push_attribute((
             "outer_width",
@@ -417,10 +408,7 @@ impl PointSymbol {
         ));
         bs.push_attribute((
             "outer_color",
-            self.outer_color
-                .get_priority(color_set)
-                .to_string()
-                .as_str(),
+            self.outer_color.priority(color_set).to_string().as_str(),
         ));
         let element_count = self
             .elements

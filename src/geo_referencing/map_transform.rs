@@ -157,7 +157,7 @@ impl MapTransform {
             proj_center: geo_ref.projected_ref_point,
             sin: geo_ref.grivation_deg().to_radians().sin(),
             cos: geo_ref.grivation_deg().to_radians().cos(),
-            scale_factor: geo_ref.combined_scale_factor() * geo_ref.scale_denominator as f64
+            scale_factor: geo_ref.combined_scale_factor() * geo_ref.scale_denominator.get() as f64
                 / 1000.,
             crs_type: geo_ref.crs_type.clone(),
             #[cfg(feature = "geo_ref")]
@@ -488,18 +488,21 @@ fn transform_bezierstring(
     bezierstring
 }
 
+#[expect(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use geo_types::{Coord, coord};
 
     use super::MapTransform;
-    use crate::geo_referencing::{CrsType, GeoRef};
+    use crate::geo_referencing::{CrsType, GeoRef, UtmCode};
 
     fn map_transform(crs_type: CrsType, projected_ref_point: Coord) -> MapTransform {
         GeoRef {
-            scale_denominator: 15_000,
-            grid_scale_factor: 1.,
-            auxiliary_scale_factor: 1.,
+            scale_denominator: NonZeroU32::new(15_000).unwrap(),
+            grid_scale_factor: Default::default(),
+            auxiliary_scale_factor: Default::default(),
             declination_deg: 2.,
             convergence_deg: -1.,
             crs_type,
@@ -507,24 +510,27 @@ mod tests {
             projected_ref_point,
             geographic_ref_point_deg: Coord::zero(),
         }
-        .get_transform()
+        .create_transform()
     }
 
     #[test]
     fn transform_between_preserves_coordinates_in_the_same_projection() -> crate::Result<()> {
-        let old = map_transform(CrsType::Utm(33), coord! { x: 500_000., y: 6_600_000. });
+        let old = map_transform(
+            CrsType::Utm(UtmCode::new(33).unwrap()),
+            coord! { x: 500_000., y: 6_600_000. },
+        );
         let mut new_geo_ref = GeoRef {
-            scale_denominator: 10_000,
-            grid_scale_factor: 0.9998,
-            auxiliary_scale_factor: 1.0001,
+            scale_denominator: NonZeroU32::new(10_000).unwrap(),
+            grid_scale_factor: 0.9998.try_into().unwrap(),
+            auxiliary_scale_factor: 1.0001.try_into().unwrap(),
             declination_deg: -3.,
             convergence_deg: 1.,
-            crs_type: CrsType::Utm(33),
+            crs_type: CrsType::Utm(UtmCode::new(33).unwrap()),
             map_ref_point: coord! { x: -100., y: 75. },
             projected_ref_point: coord! { x: 500_250., y: 6_599_800. },
             geographic_ref_point_deg: Coord::zero(),
         };
-        let new = new_geo_ref.get_transform();
+        let new = new_geo_ref.create_transform();
         let input = coord! { x: 12.5, y: -8.25 };
 
         let transform = MapTransform::transform_between(&old, &new)?;
@@ -544,8 +550,14 @@ mod tests {
     #[cfg(not(feature = "geo_ref"))]
     #[test]
     fn transform_between_rejects_different_projections_without_geo_ref() {
-        let old = map_transform(CrsType::Utm(33), coord! { x: 500_000., y: 6_600_000. });
-        let new = map_transform(CrsType::Utm(32), coord! { x: 500_000., y: 6_600_000. });
+        let old = map_transform(
+            CrsType::Utm(UtmCode::new(33).unwrap()),
+            coord! { x: 500_000., y: 6_600_000. },
+        );
+        let new = map_transform(
+            CrsType::Utm(UtmCode::new(32).unwrap()),
+            coord! { x: 500_000., y: 6_600_000. },
+        );
 
         assert!(matches!(
             MapTransform::transform_between(&old, &new),
@@ -556,8 +568,14 @@ mod tests {
     #[cfg(feature = "geo_ref")]
     #[test]
     fn transform_between_converts_different_projections_with_geo_ref() -> crate::Result<()> {
-        let old = map_transform(CrsType::Utm(33), coord! { x: 500_000., y: 6_600_000. });
-        let new = map_transform(CrsType::Utm(32), coord! { x: 500_000., y: 6_600_000. });
+        let old = map_transform(
+            CrsType::Utm(UtmCode::new(33).unwrap()),
+            coord! { x: 500_000., y: 6_600_000. },
+        );
+        let new = map_transform(
+            CrsType::Utm(UtmCode::new(32).unwrap()),
+            coord! { x: 500_000., y: 6_600_000. },
+        );
         let input = coord! { x: 12.5, y: -8.25 };
 
         let transform = MapTransform::transform_between(&old, &new)?;

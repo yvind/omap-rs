@@ -1,14 +1,10 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
 use crate::objects::MapObject;
-use crate::symbols::{
-    AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolSet,
-    TextSymbol, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol,
-};
+use crate::symbols::{SymbolSet, WeakSymbol};
 use crate::utils::try_get_attr;
 use crate::{Error, OmapSection, Result};
 
@@ -17,7 +13,7 @@ use crate::{Error, OmapSection, Result};
 pub struct MapPart {
     /// The name of this map part.
     pub name: String,
-    objects: HashMap<SymbolPointer, Vec<MapObject>>,
+    objects: Vec<MapObject>,
 }
 
 impl MapPart {
@@ -25,99 +21,62 @@ impl MapPart {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            objects: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-enum SymbolPointer {
-    Point(*const RefCell<PointSymbol>),
-    Line(*const RefCell<LineSymbol>),
-    Area(*const RefCell<AreaSymbol>),
-    Text(*const RefCell<TextSymbol>),
-    CombinedArea(*const RefCell<CombinedAreaSymbol>),
-    CombinedLine(*const RefCell<CombinedLineSymbol>),
-}
-
-impl From<&WeakSymbol> for SymbolPointer {
-    fn from(value: &WeakSymbol) -> Self {
-        match value {
-            WeakSymbol::Line(weak) => Self::Line(weak.as_ptr()),
-            WeakSymbol::Area(weak) => Self::Area(weak.as_ptr()),
-            WeakSymbol::Point(weak) => Self::Point(weak.as_ptr()),
-            WeakSymbol::Text(weak) => Self::Text(weak.as_ptr()),
-            WeakSymbol::CombinedArea(weak) => Self::CombinedArea(weak.as_ptr()),
-            WeakSymbol::CombinedLine(weak) => Self::CombinedLine(weak.as_ptr()),
+            objects: Vec::new(),
         }
     }
 }
 
 impl MapPart {
-    /// Add an object to the map
+    /// Add an object to the map.
+    ///
+    /// Empty line and area objects are retained for further editing, but are
+    /// omitted when the map is written.
     pub fn add_object(&mut self, object: impl Into<MapObject>) {
-        let mo = object.into();
-        if mo.geometry_is_empty() {
-            return;
-        }
-
-        let pointer = match &mo {
-            MapObject::Point(o) => SymbolPointer::Point(o.symbol.as_ptr()),
-            MapObject::Line(o) => match &o.symbol {
-                WeakLinePathSymbol::Line(weak) => SymbolPointer::Line(weak.as_ptr()),
-                WeakLinePathSymbol::CombinedLine(weak) => {
-                    SymbolPointer::CombinedLine(weak.as_ptr())
-                }
-            },
-            MapObject::Area(o) => match &o.symbol {
-                WeakAreaPathSymbol::Area(weak) => SymbolPointer::Area(weak.as_ptr()),
-                WeakAreaPathSymbol::CombinedArea(weak) => {
-                    SymbolPointer::CombinedArea(weak.as_ptr())
-                }
-            },
-            MapObject::Text(o) => SymbolPointer::Text(o.symbol.as_ptr()),
-        };
-
-        if let Some(values) = self.objects.get_mut(&pointer) {
-            values.push(mo);
-        } else {
-            let _ = self.objects.insert(pointer, vec![mo]);
-        }
+        self.objects.push(object.into());
     }
 
     pub(super) fn merge(&mut self, other: Self) {
-        for (p, object_vec) in other.objects {
-            if let Some(contained_objects) = self.objects.get_mut(&p) {
-                contained_objects.extend(object_vec);
-            } else {
-                let _ = self.objects.insert(p, object_vec);
-            }
-        }
+        self.objects.extend(other.objects);
     }
 
     /// Remove all objects with a symbol from the map
-    pub fn remove(&mut self, key: &WeakSymbol) -> Option<Vec<MapObject>> {
-        self.objects.remove(&key.into())
+    pub fn remove(&mut self, key: &WeakSymbol) -> Vec<MapObject> {
+        self.objects
+            .extract_if(.., |mo| mo.symbol() == key.clone())
+            .collect()
     }
 
     /// Get objects associated with a symbol.
-    pub fn get(&self, key: &WeakSymbol) -> Option<&Vec<MapObject>> {
-        self.objects.get(&key.into())
+    pub fn objects_by_symbol(&self, key: &WeakSymbol) -> impl Iterator<Item = &MapObject> {
+        self.objects.iter().filter(|mo| mo.symbol() == key.clone())
     }
 
     /// Get a mutable reference to objects associated with a symbol.
-    pub fn get_mut(&mut self, key: &WeakSymbol) -> Option<&mut Vec<MapObject>> {
-        self.objects.get_mut(&key.into())
+    pub fn objects_by_symbol_mut(
+        &mut self,
+        key: &WeakSymbol,
+    ) -> impl Iterator<Item = &mut MapObject> {
+        self.objects
+            .iter_mut()
+            .filter(|mo| mo.symbol() == key.clone())
     }
 
     /// Get the number of distinct symbols with objects in this part.
     pub fn num_symbols(&self) -> usize {
-        self.objects.len()
+        let mut seen = HashSet::new();
+        let mut count = 0;
+        for obj in &self.objects {
+            if seen.insert(obj.symbol()) {
+                count += 1;
+            }
+        }
+        count
     }
 
-    /// Get the total number of objects in this part across all symbols.
+    /// Get the total number of objects in this part, including objects with
+    /// empty geometry that will be omitted when the map is written.
     pub fn len(&self) -> usize {
-        self.objects.values().map(|v| v.len()).sum()
+        self.objects.len()
     }
 
     /// Returns `true` if this part contains no objects.
@@ -127,27 +86,17 @@ impl MapPart {
 
     /// Iterate through all objects in this map-part in a flat iterator.
     pub fn iter_all_objects(&self) -> impl Iterator<Item = &MapObject> {
-        self.objects.values().flatten()
+        self.objects.iter()
     }
 
     /// Iterate mutably through all objects in this map-part in a flat iterator.
     pub fn iter_all_objects_mut(&mut self) -> impl Iterator<Item = &mut MapObject> {
-        self.objects.values_mut().flatten()
-    }
-
-    /// Iterate through the all the objects stored in this map-part, symbol by symbol
-    pub fn iter(&self) -> impl Iterator<Item = &Vec<MapObject>> {
-        self.objects.values()
-    }
-
-    /// Iterate mutabley through the all the objects stored in this map-part, symbol by symbol
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Vec<MapObject>> {
-        self.objects.values_mut()
+        self.objects.iter_mut()
     }
 
     /// Consume this map-part and get all the objects it contains
     pub fn into_objects(self) -> Vec<MapObject> {
-        self.objects.into_values().flatten().collect()
+        self.objects
     }
 
     pub(super) fn parse<R: std::io::BufRead>(
@@ -160,7 +109,7 @@ impl MapPart {
             .flatten()
             .unwrap_or(String::new());
 
-        let mut objects: HashMap<SymbolPointer, Vec<MapObject>> = HashMap::new();
+        let mut objects = Vec::new();
 
         let mut buf = Vec::new();
         loop {
@@ -171,14 +120,7 @@ impl MapPart {
                         if object.geometry_is_empty() {
                             continue;
                         }
-
-                        let symbol_pointer = (&object.get_weak_symbol()).into();
-
-                        if let Some(contained) = objects.get_mut(&symbol_pointer) {
-                            contained.push(object);
-                        } else {
-                            let _ = objects.insert(symbol_pointer, vec![object]);
-                        }
+                        objects.push(object);
                     }
                 }
                 Event::End(bytes_end) => {
@@ -203,28 +145,24 @@ impl MapPart {
     ) -> Result<()> {
         let object_count = self
             .objects
-            .values()
-            .flatten()
+            .iter()
             .filter(|object| !object.geometry_is_empty())
             .count();
 
         writer.write_event(Event::Start(
-            BytesStart::new("part")
-                .with_attributes([("name", quick_xml::escape::escape(self.name.as_str()))]),
+            BytesStart::new("part").with_attributes([("name", self.name.as_str())]),
         ))?;
         writer.write_event(Event::Start(
             BytesStart::new("objects")
                 .with_attributes([("count", object_count.to_string().as_str())]),
         ))?;
 
-        for (_, objects) in self.objects {
-            for object in objects {
-                if object.geometry_is_empty() {
-                    continue;
-                }
-                object.write(writer, symbols)?;
-                writer.get_mut().write_all(b"\n")?;
+        for object in self.objects {
+            if object.geometry_is_empty() {
+                continue;
             }
+            object.write(writer, symbols)?;
+            writer.get_mut().write_all(b"\n")?;
         }
         writer.write_event(Event::End(BytesEnd::new("objects")))?;
         writer.write_event(Event::End(BytesEnd::new("part")))?;
@@ -247,10 +185,7 @@ mod tests {
     };
 
     fn empty_symbol_set() -> SymbolSet {
-        SymbolSet {
-            symbols: Vec::new(),
-            name: String::new(),
-        }
+        SymbolSet::new("Empty")
     }
 
     #[test]
@@ -269,23 +204,24 @@ mod tests {
     }
 
     #[test]
-    fn empty_objects_are_rejected_on_insert_and_skipped_on_write() -> Result<()> {
+    fn empty_objects_are_retained_in_memory_and_skipped_on_write() -> Result<()> {
         let weak_symbol = WeakLinePathSymbol::Line(Weak::new());
         let mut part = MapPart::new("Map");
         part.add_object(LineObject::new(
             weak_symbol.clone(),
             LineString::new(Vec::new()),
         ));
-        assert!(part.is_empty());
+        assert_eq!(part.len(), 1);
 
         part.add_object(LineObject::new(
             weak_symbol,
             LineString::new(vec![coord! { x: 0., y: 0. }, coord! { x: 1., y: 0. }]),
         ));
-        let Some(MapObject::Line(line)) = part.iter_all_objects_mut().next() else {
+        let Some(MapObject::Line(line)) = part.iter_all_objects_mut().nth(1) else {
             panic!("expected line object");
         };
         *line.geometry_mut() = crate::objects::BezierPath::empty();
+        assert_eq!(part.len(), 2);
 
         let mut writer = Writer::new(Vec::new());
         part.write(&mut writer, &empty_symbol_set())?;

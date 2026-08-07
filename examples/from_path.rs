@@ -33,14 +33,14 @@ fn main() -> Result<(), Error> {
     #[cfg(feature = "geo_ref")]
     {
         // we want to move the map center to the average position of all objects
-        let old_transform = map.geo_referencing.get_transform();
+        let old_transform = map.geo_referencing.create_transform();
 
         let mut mean_pos = Coord::zero();
         let mut num_coords = 0;
         for obj in map.iter_all_objects() {
             match obj {
                 MapObject::Point(object) => {
-                    mean_pos = mean_pos + object.get_geometry().0;
+                    mean_pos = mean_pos + object.geometry().0;
                     num_coords += 1;
                 }
                 MapObject::Line(object) => {
@@ -63,7 +63,7 @@ fn main() -> Result<(), Error> {
                     num_coords += exterior.0.len();
                 }
                 MapObject::Text(object) => {
-                    match object.get_geometry() {
+                    match object.geometry() {
                         TextGeometry::SingleAnchor(coord) => mean_pos = mean_pos + *coord,
                         TextGeometry::WrapBox(wrap_box) => mean_pos = mean_pos + wrap_box.anchor,
                     }
@@ -89,7 +89,7 @@ fn main() -> Result<(), Error> {
         map.geo_referencing = new_gr;
 
         // get the new map transform
-        let new_transform = map.geo_referencing.get_transform();
+        let new_transform = map.geo_referencing.create_transform();
 
         // transfrom every object out of the old map space to projected coords
         // and from projected coord to the new map space
@@ -114,7 +114,8 @@ fn main() -> Result<(), Error> {
 
     let erosion_gully = map
         .symbols
-        .get_symbol_by_code(Code::new(107, 0, 0))
+        .symbol_by_code(Code::new(107, 0, 0))
+        .unwrap()
         .unwrap()
         .downgrade();
 
@@ -125,11 +126,12 @@ fn main() -> Result<(), Error> {
     );
     ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
 
-    map.parts.0[0].add_object(ls);
+    map.parts.get_mut(0).unwrap().add_object(ls);
 
     let weak_symbol = map
         .symbols
-        .get_symbol_by_name("Contour value")
+        .symbol_by_name("Contour value")
+        .unwrap()
         .unwrap()
         .downgrade();
 
@@ -139,7 +141,7 @@ fn main() -> Result<(), Error> {
         TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
         "This is the middle of the map".to_owned(),
     );
-    map.parts.0[0].add_object(ts);
+    map.parts.get_mut(0).unwrap().add_object(ts);
 
     map.write_to_file("./from_path_out.omap")
 }
