@@ -13,9 +13,52 @@ use std::num::NonZeroU32;
 /// Remains valid while the value it names is in the arena, and stops resolving
 /// once that value is removed, even if the slot is later reused.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(into = "u32", from = "u32"))]
 pub(crate) struct RawId {
     index: u32,
     generation: NonZeroU32,
+}
+
+/// Serialized as the bare slot index, which [`Arena::is_compact`] guarantees is
+/// also the value's position — the integer the `.omap` format itself stores.
+/// The generation is not serialized: deserialization always rebuilds a fresh
+/// arena whose generations are all [`NonZeroU32::MIN`].
+#[cfg(feature = "serde")]
+impl From<RawId> for u32 {
+    fn from(value: RawId) -> Self {
+        value.index
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<u32> for RawId {
+    fn from(index: u32) -> Self {
+        Self {
+            index,
+            generation: NonZeroU32::MIN,
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T: serde::Serialize> serde::Serialize for Arena<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::Error as _;
+        if !self.is_compact() {
+            return Err(S::Error::custom(
+                "arena must be compacted before serializing; call Omap::compact",
+            ));
+        }
+        self.values.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Arena<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Vec::<T>::deserialize(deserializer)?.into_iter().collect())
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -79,6 +122,60 @@ impl<T> Arena<T> {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.values.is_empty()
+    }
+
+    /// Does every live handle's slot index equal its position?
+    ///
+    /// True for any arena that has never had a removal, which covers every
+    /// freshly parsed map. Only [`Arena::remove`] can break it, by freeing a
+    /// slot that a later push then reuses at a different position.
+    pub(crate) fn is_compact(&self) -> bool {
+        self.free.is_empty()
+            && self.slots.len() == self.values.len()
+            && self
+                .ids
+                .iter()
+                .enumerate()
+                .all(|(position, id)| id.index as usize == position)
+    }
+
+    /// Renumber so that every slot index equals its position, and report the
+    /// mapping from old handle to new so references can be remapped. A handle
+    /// absent from the returned map named a removed value.
+    pub(crate) fn compact(&mut self) -> std::collections::HashMap<RawId, RawId> {
+        if self.is_compact() {
+            return self.ids.iter().map(|&id| (id, id)).collect();
+        }
+
+        // Every slot takes a generation above any handed out so far, so a
+        // handle from before compaction fails to resolve rather than aliasing
+        // whatever value moved into its old slot.
+        let generation = self
+            .slots
+            .iter()
+            .map(|slot| slot.generation)
+            .max()
+            .unwrap_or(NonZeroU32::MIN)
+            .checked_add(1)
+            .unwrap_or(NonZeroU32::MAX);
+
+        let mut mapping = std::collections::HashMap::with_capacity(self.ids.len());
+        let old = std::mem::take(&mut self.ids);
+        self.slots.clear();
+        self.free.clear();
+        for (position, old_id) in old.into_iter().enumerate() {
+            let new_id = RawId {
+                index: position as u32,
+                generation,
+            };
+            self.slots.push(Slot {
+                generation,
+                position: Some(position as u32),
+            });
+            self.ids.push(new_id);
+            let _previous = mapping.insert(old_id, new_id);
+        }
+        mapping
     }
 
     fn live_position(&self, id: RawId) -> Option<usize> {

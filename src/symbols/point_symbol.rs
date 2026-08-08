@@ -29,6 +29,7 @@ enum ElementObjectData {
 
 /// An element within a point symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Element {
     /// A nested point sub-symbol with its object.
     Point {
@@ -193,6 +194,7 @@ impl Element {
 
 /// A point symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,

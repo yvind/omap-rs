@@ -14,6 +14,7 @@ use crate::{
 
 /// The framing mode for a text symbol.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FramingMode {
     /// No framing.
     #[default]
@@ -37,6 +38,7 @@ impl FramingMode {
 
 /// Line-based framing (halo) around text characters.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineFraming {
     /// Color of the framing line.
     pub color: SymbolColor,
@@ -46,6 +48,7 @@ pub struct LineFraming {
 
 /// Shadow framing behind text characters.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShadowFraming {
     /// Color of the shadow.
     pub color: SymbolColor,
@@ -55,6 +58,7 @@ pub struct ShadowFraming {
 
 /// A line drawn below the text (underline).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineBelow {
     /// Color of the line.
     pub color: SymbolColor,
@@ -66,6 +70,7 @@ pub struct LineBelow {
 
 /// A text symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TextSymbol {
     /// The common symbol fields
     pub common: SymbolCommon,

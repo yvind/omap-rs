@@ -13,6 +13,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(super) enum ObjectType {
     Point,
     Line,
@@ -22,6 +23,7 @@ pub(super) enum ObjectType {
 
 /// A map object that can be a point, line, area, or text.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MapObject {
     /// A point object.
     Point(PointObject),

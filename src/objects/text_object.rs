@@ -16,6 +16,7 @@ use quick_xml::{
 
 /// The geometry of a text object, which is either a single anchor or a wrap box.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TextGeometry {
     /// A single anchor point.
     SingleAnchor(Coord),
@@ -43,6 +44,7 @@ impl TextGeometry {
 
 /// A rectangular bounding box for wrapped text.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WrapBox {
     /// The anchor (origin) coordinate of the box.
     pub anchor: Coord,
@@ -54,6 +56,7 @@ pub struct WrapBox {
 
 /// Horizontal text alignment.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HorizontalAlign {
     /// Align to the left.
     Left = 0,
@@ -79,6 +82,7 @@ impl FromStr for HorizontalAlign {
 
 /// Vertical text alignment.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum VerticalAlign {
     /// Align to the text baseline.
     Baseline = 0,
@@ -107,6 +111,7 @@ impl FromStr for VerticalAlign {
 
 /// A text object placed on the map.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TextObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,

@@ -21,6 +21,7 @@ use crate::{Error, OmapSection, Result};
 /// A [`ColorId`] left over from a removed color contributes no color when the
 /// map is written, exactly as a dangling weak reference did.
 #[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ColorSet(Arena<Color>);
 
 impl ColorSet {
@@ -208,6 +209,7 @@ impl ColorSet {
 }
 
 #[derive(Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 enum ColorKind {
     Spot,
     Mixed,
@@ -320,5 +322,17 @@ impl ColorSet {
         }
         writer.write_event(Event::End(BytesEnd::new("colors")))?;
         Ok(())
+    }
+}
+
+impl ColorSet {
+    pub(crate) fn compact_arena(
+        &mut self,
+    ) -> std::collections::HashMap<crate::arena::RawId, crate::arena::RawId> {
+        self.0.compact()
+    }
+
+    pub(crate) fn is_compact(&self) -> bool {
+        self.0.is_compact()
     }
 }

@@ -10,6 +10,7 @@ use crate::{Error, OmapSection, Result};
 
 /// A map part (layer) containing objects grouped by symbol.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MapPart {
     /// The name of this map part.
     pub name: String,

@@ -11,6 +11,7 @@ use quick_xml::{
 
 /// A named spot color with its own CMYK/RGB representation and screen parameters.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpotColor {
     /// The display name of this color.
     pub color_name: String,
@@ -177,6 +178,7 @@ impl SpotColor {
 
 /// A weighted reference to a spot color, used as a component in [`MixedColor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ColorComponent {
     /// in range [0, 1]
     pub factor: UnitF64,
@@ -186,6 +188,7 @@ pub struct ColorComponent {
 
 /// A color that is a weighted mixture of one or more spot colors.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MixedColor {
     /// The display name of this mixed color.
     pub color_name: String,
@@ -406,6 +409,7 @@ impl MixedColor {
 
 /// Either a [`SpotColor`] or a [`MixedColor`].
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Color {
     /// A spot color.
     SpotColor(SpotColor),
@@ -744,6 +748,7 @@ impl Color {
 
 /// A color reference used by symbols: a regular color, registration black, or no color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SymbolColor {
     /// A reference to a map color.
     Color(ColorId),

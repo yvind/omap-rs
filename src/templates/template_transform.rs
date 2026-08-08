@@ -14,10 +14,12 @@ use crate::{
 
 /// A 3×3 matrix stored in row-major order.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Matrix3x3(pub [f64; 9]);
 
 /// The `<transformations>` block for a non-georeferenced template.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TemplateTransformations {
     /// Adjustment state.
     pub adjustment: AdjustmentState,
@@ -37,6 +39,7 @@ pub struct TemplateTransformations {
 
 /// Whether the adjustment is applied, dirty, or neither.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AdjustmentState {
     /// No adjustment has been applied.
     NoAdjustment,
@@ -48,6 +51,7 @@ pub enum AdjustmentState {
 
 /// Parameters for a single `<transformation>` element.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TemplateTransform {
     /// Template position in mm of paper.
     pub template_pos: Coord,
@@ -72,6 +76,7 @@ impl Default for TemplateTransform {
 
 /// A pass-point relating source (template) coords to destination (map) coords.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PassPoint {
     /// Coordinate in the source template.
     pub src_coord: Coord,

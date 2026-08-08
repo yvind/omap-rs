@@ -28,6 +28,7 @@ use crate::{
 /// A [`SymbolId`] left over from a removed symbol is written as the format's
 /// `-1` unknown-symbol sentinel, exactly as a dangling weak reference was.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SymbolSet {
     symbols: Arena<Symbol>,
     /// The name of the symbol set.
@@ -497,5 +498,17 @@ impl SymbolSet {
         }
         writer.write_event(Event::End(BytesEnd::new("symbols")))?;
         Ok(())
+    }
+}
+
+impl SymbolSet {
+    pub(crate) fn compact_arena(
+        &mut self,
+    ) -> std::collections::HashMap<crate::arena::RawId, crate::arena::RawId> {
+        self.symbols.compact()
+    }
+
+    pub(crate) fn is_compact(&self) -> bool {
+        self.symbols.is_compact()
     }
 }

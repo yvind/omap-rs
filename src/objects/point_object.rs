@@ -14,6 +14,7 @@ use crate::{
 
 /// A point object placed at a single location on the map.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,

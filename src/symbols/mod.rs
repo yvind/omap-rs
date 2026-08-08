@@ -26,6 +26,7 @@ pub use text_symbol::{FramingMode, LineBelow, LineFraming, ShadowFraming, TextSy
 
 /// A combined-symbol part that is either a public (shared) reference or a private (embedded) symbol.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PublicOrPrivateSymbol<W, P> {
     /// A public (shared) reference to another symbol in the symbol set.
     Public(W),
@@ -35,6 +36,7 @@ pub enum PublicOrPrivateSymbol<W, P> {
 
 /// An area or line symbol used in private parts of area combined symbols
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AreaOrLineSymbol {
     /// An area sub-symbol.
     Area(Box<AreaSymbol>),

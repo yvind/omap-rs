@@ -14,6 +14,7 @@ use crate::{
 
 /// Common properties shared by all symbol types.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SymbolCommon {
     /// The symbol's name
     pub name: String,
@@ -37,6 +38,7 @@ pub struct SymbolCommon {
     reason = "a line symbol carries four optional point sub-symbols inline; a symbol set holds a few hundred entries, so boxing would cost an indirection for no measurable gain"
 )]
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Symbol {
     /// A line symbol.
     Line(LineSymbol),

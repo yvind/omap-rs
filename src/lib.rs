@@ -6,6 +6,7 @@
 mod arena;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
+mod compact;
 mod format_info;
 /// Coordinate-reference-system and projection helpers.
 pub mod geo_referencing;

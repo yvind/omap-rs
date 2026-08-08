@@ -8,6 +8,7 @@ use crate::{Error, OmapSection, Result, symbols::SymbolSet};
 
 /// An ordered collection of map parts (layers).
 #[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MapParts(Vec<MapPart>);
 
 impl MapParts {

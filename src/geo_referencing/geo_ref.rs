@@ -16,6 +16,7 @@ use crate::{
 
 /// The georeferencing information of the map. We assume the projected units are meters
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GeoRef {
     /// Map scale
     /// Remember to scale all map coordinates after changing this

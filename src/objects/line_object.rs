@@ -18,6 +18,7 @@ use crate::{
 
 /// A line object whose geometry retains straight and cubic segments.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineObject {
     /// The tags associated with the object.
     pub tags: HashMap<String, String>,

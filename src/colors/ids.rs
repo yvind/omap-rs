@@ -5,6 +5,7 @@ macro_rules! typed_color_id {
     ($name:ident, $variant:ident, $doc:literal) => {
         #[doc = $doc]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name(pub(crate) RawId);
 
         impl From<$name> for ColorId {
@@ -34,6 +35,7 @@ macro_rules! typed_color_id {
 /// resolving once that color is removed. It is meaningless against any other
 /// [`crate::Omap`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ColorId {
     /// A handle to a spot color.
     Spot(SpotColorId),

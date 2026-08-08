@@ -12,6 +12,7 @@ use crate::{
 
 /// A combined line symbol composed of multiple sub-symbols.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CombinedLineSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -227,5 +228,19 @@ impl CombinedLineSymbol {
         }
         writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
+    }
+}
+
+impl CombinedLineSymbol {
+    pub(crate) fn retain_map_components<F>(&mut self, mut f: F)
+    where
+        F: FnMut(
+            PublicOrPrivateSymbol<LinePathSymbolId, Box<LineSymbol>>,
+        ) -> Option<PublicOrPrivateSymbol<LinePathSymbolId, Box<LineSymbol>>>,
+    {
+        self.parts = std::mem::take(&mut self.parts)
+            .into_iter()
+            .filter_map(&mut f)
+            .collect();
     }
 }

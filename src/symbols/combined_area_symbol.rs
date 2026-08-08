@@ -14,6 +14,7 @@ use crate::{
 
 /// A combined area symbol composed of multiple sub-symbols.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CombinedAreaSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -360,5 +361,19 @@ impl CombinedAreaSymbol {
         }
         writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
+    }
+}
+
+impl CombinedAreaSymbol {
+    pub(crate) fn retain_map_components<F>(&mut self, mut f: F)
+    where
+        F: FnMut(
+            PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>,
+        ) -> Option<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>>,
+    {
+        self.parts = std::mem::take(&mut self.parts)
+            .into_iter()
+            .filter_map(&mut f)
+            .collect();
     }
 }

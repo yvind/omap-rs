@@ -5,6 +5,7 @@ macro_rules! typed_symbol_id {
     ($name:ident, $variant:ident, $doc:literal) => {
         #[doc = $doc]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name(pub(crate) RawId);
 
         impl From<$name> for SymbolId {
@@ -34,6 +35,7 @@ macro_rules! typed_symbol_id {
 /// and stops resolving once that symbol is removed. It is meaningless against
 /// any other [`crate::Omap`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SymbolId {
     /// A handle to a line symbol.
     Line(LineSymbolId),
@@ -96,6 +98,7 @@ impl SymbolId {
 /// The symbol used to render a path object: a line, an area, or either
 /// combined form.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PathSymbolId {
     /// A standalone line symbol.
     Line(LineSymbolId),
@@ -109,6 +112,7 @@ pub enum PathSymbolId {
 
 /// The symbol used to render a line object.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LinePathSymbolId {
     /// A standalone line symbol.
     Line(LineSymbolId),
@@ -118,6 +122,7 @@ pub enum LinePathSymbolId {
 
 /// The symbol used to render an area object.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AreaPathSymbolId {
     /// A standalone area symbol.
     Area(AreaSymbolId),

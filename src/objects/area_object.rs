@@ -19,6 +19,7 @@ use crate::{
 /// A polygon whose exterior and interior rings retain straight and cubic
 /// Bézier segments and dash-point metadata.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BezierPolygon {
     /// The polygon's exterior ring.
     exterior: BezierPath,
@@ -202,6 +203,7 @@ impl From<Polygon> for BezierPolygon {
 
 /// An owned flattened polygon whose rings retain dash-point metadata.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlattenedPolygon {
     /// The flattened exterior ring.
     exterior: FlattenedPath,
@@ -268,6 +270,7 @@ impl From<FlattenedPolygon> for BezierPolygon {
 
 /// A fill pattern rotation and origin used by area objects.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PatternRotation {
     /// Rotation of the fill pattern in radians.
     pub rotation: f64,
@@ -277,6 +280,7 @@ pub struct PatternRotation {
 
 /// An area object whose geometry retains straight and cubic rings.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AreaObject {
     /// The tags associated with the object.
     pub tags: HashMap<String, String>,

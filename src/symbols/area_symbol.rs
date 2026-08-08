@@ -15,6 +15,7 @@ use crate::{
 
 /// A fill pattern applied to an area.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FillPattern {
     /// A pattern of parallel lines.
     LinePattern {
@@ -54,6 +55,7 @@ pub enum FillPattern {
 
 /// Clipping option for point patterns at area boundaries.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ClippingOption {
     /// Clip elements at the boundary.
     #[default]
@@ -257,6 +259,7 @@ impl FillPattern {
 
 /// An area symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AreaSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,

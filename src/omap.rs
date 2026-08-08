@@ -37,6 +37,7 @@ const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.om
 ///
 /// The Undo/Redo history and printer information is ignored
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Omap {
     /// Free-text notes embedded in the file.
     pub notes: String,
@@ -449,6 +450,45 @@ impl Omap {
         self.try_transform(transform)
     }
 
+    /// Renumber every handle so that its index is also its position, dropping
+    /// references to symbols and colors that are no longer in their set.
+    ///
+    /// A freshly parsed map is already in this form, and stays in it as long as
+    /// nothing is removed from either set. Only [`crate::symbols::SymbolSet::remove`]
+    /// and the [`ColorSet`] removals break it, by leaving a gap that a later
+    /// insertion fills at a different position.
+    ///
+    /// Handles taken before this call do not survive it. A dangling symbol
+    /// reference becomes `None`, which writes as the format's `-1`; a dangling
+    /// color reference becomes [`crate::colors::SymbolColor::NoColor`]; and a
+    /// dangling combined-symbol component or mixed-color component is dropped.
+    ///
+    /// This is what makes the map serializable — see the `serde` feature.
+    pub fn compact(&mut self) {
+        let remap = crate::compact::Remap {
+            symbols: self.symbols.compact_arena(),
+            colors: self.colors.compact_arena(),
+        };
+
+        use crate::compact::Compact as _;
+        for color in self.colors.values_mut() {
+            color.compact(&remap);
+        }
+        for symbol in self.symbols.values_mut() {
+            symbol.compact(&remap);
+        }
+        for object in self.iter_all_objects_mut() {
+            object.compact(&remap);
+        }
+    }
+
+    /// Is every handle's index already its position?
+    ///
+    /// True for a map that has never had a symbol or color removed.
+    pub fn is_compact(&self) -> bool {
+        self.symbols.is_compact() && self.colors.is_compact()
+    }
+
     /// Validate references between objects, symbols, and colors.
     ///
     /// # Errors
@@ -597,5 +637,51 @@ mod tests {
         assert_eq!(fs::read(&path)?, b"previous map");
         fs::remove_file(path)?;
         Ok(())
+    }
+}
+
+/// Serializing borrows the map, but the representation requires compacted
+/// handles. A map that is already compacted -- the usual case -- serializes in
+/// place; otherwise a compacted copy is made for the duration.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize)]
+struct OmapFields<'a> {
+    notes: &'a String,
+    geo_referencing: &'a GeoRef,
+    colors: &'a ColorSet,
+    symbols: &'a SymbolSet,
+    parts: &'a MapParts,
+    templates: &'a Templates,
+    view: &'a View,
+}
+
+#[cfg(feature = "serde")]
+impl<'a> From<&'a Omap> for OmapFields<'a> {
+    fn from(map: &'a Omap) -> Self {
+        Self {
+            notes: &map.notes,
+            geo_referencing: &map.geo_referencing,
+            colors: &map.colors,
+            symbols: &map.symbols,
+            parts: &map.parts,
+            templates: &map.templates,
+            view: &map.view,
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Omap {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        if self.is_compact() {
+            OmapFields::from(self).serialize(serializer)
+        } else {
+            let mut compacted = self.clone();
+            compacted.compact();
+            OmapFields::from(&compacted).serialize(serializer)
+        }
     }
 }
