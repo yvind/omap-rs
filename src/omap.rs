@@ -1,9 +1,11 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::num::NonZeroU32;
+use std::path::Path;
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
+use crate::symbols::{PublicOrPrivateSymbol, Symbol};
 
 use geo_types::Coord;
 
@@ -23,7 +25,7 @@ use crate::{
     symbols::SymbolSet,
     templates::Templates,
     view::View,
-    {Error, Result},
+    {Error, Result, ValidationError},
 };
 
 const DEFAULT_ISOM_15000: &[u8] = include_bytes!("default_maps/isom_15000.omap");
@@ -275,7 +277,7 @@ impl Omap {
     ///
     /// Returns an error if the file cannot be opened or a required map section
     /// cannot be parsed.
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
+    pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(path)?;
         Self::from_reader(BufReader::new(file))
     }
@@ -329,18 +331,47 @@ impl Omap {
     ///
     /// See [`Self::to_writer`] for more docs
     ///
+    /// The replacement is atomic on platforms where [`fs::rename`] atomically
+    /// replaces an existing destination. The temporary file is created beside
+    /// `path`, so it is always on the same filesystem as the destination.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be created or any map data cannot be serialized.
-    pub fn to_file(&mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        let mut data = Vec::new();
-        self.to_writer(&mut data)?;
+    /// Returns an error if the temporary file cannot be created, map data
+    /// cannot be serialized, or the temporary file cannot replace `path`.
+    pub fn to_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
 
-        let file = File::create(path)?;
-        let mut file_writer = BufWriter::new(file);
-        file_writer.write_all(&data)?;
-        file_writer.flush()?;
+        // create temp file for safe writing
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let file_name = path.file_name().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "OMAP output path must name a file",
+            )
+        })?;
 
+        let mut temporary_name = file_name.to_os_string();
+        temporary_name.push(format!(".omap-rs-{}.tmp", std::process::id()));
+        let temporary_path = parent.join(temporary_name);
+        let temporary_file = File::create(&temporary_path)?;
+
+        let write_result = {
+            let mut writer = BufWriter::new(temporary_file);
+            self.to_writer(&mut writer)
+        };
+        if let Err(error) = write_result {
+            std::fs::remove_file(temporary_path)?;
+            return Err(error);
+        }
+
+        if let Err(error) = std::fs::rename(&temporary_path, path) {
+            std::fs::remove_file(temporary_path)?;
+            return Err(error.into());
+        }
         Ok(())
     }
 
@@ -417,17 +448,76 @@ impl Omap {
         let transform = MapTransform::transform_between(old, new)?;
         self.try_transform(transform)
     }
+
+    /// Validate references between objects, symbols, and colors.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first invalid reference with its map location, or an error
+    /// if a symbol cannot be borrowed during validation.
+    pub fn validate(&self) -> Result<()> {
+        for (symbol_index, symbol) in self.symbols.iter().enumerate() {
+            for color in symbol.colors()? {
+                self.colors
+                    .priority_of_weak_color(&color)
+                    .ok_or(ValidationError::DanglingSymbolColor { symbol_index })?;
+            }
+
+            match symbol {
+                Symbol::CombinedArea(combined) => {
+                    let combined = combined.try_borrow().map_err(Error::from)?;
+                    for (component_index, component) in combined.components().enumerate() {
+                        if let PublicOrPrivateSymbol::Public(component) = component
+                            && !self.symbols.contains_symbol(&component.clone().into())
+                        {
+                            return Err(Error::ValidationError(
+                                ValidationError::DanglingCombinedComponent {
+                                    symbol_index,
+                                    component_index,
+                                },
+                            ));
+                        }
+                    }
+                }
+                Symbol::CombinedLine(combined) => {
+                    let combined = combined.try_borrow().map_err(Error::from)?;
+                    for (component_index, component) in combined.components().enumerate() {
+                        if let PublicOrPrivateSymbol::Public(component) = component
+                            && !self.symbols.contains_symbol(&component.clone().into())
+                        {
+                            return Err(Error::ValidationError(
+                                ValidationError::DanglingCombinedComponent {
+                                    symbol_index,
+                                    component_index,
+                                },
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (object_index, object) in self.iter_all_objects().enumerate() {
+            if !self.symbols.contains_symbol(&object.symbol()) {
+                return Err(Error::ValidationError(
+                    ValidationError::DanglingObjectSymbol { object_index },
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[expect(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
+    use std::{fs, num::NonZeroU32};
 
     use geo_types::{Coord, Point};
 
     use super::Omap;
-    use crate::{Error, Result, objects::PointObject};
+    use crate::{Error, Result, ValidationError, objects::PointObject};
 
     fn point_positions(map: &Omap) -> Vec<Coord> {
         map.iter_all_objects()
@@ -462,6 +552,43 @@ mod tests {
 
         assert!(matches!(result, Err(Error::ObjectError)));
         assert_eq!(point_positions(&map), before);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_reports_the_dangling_object_location() -> Result<()> {
+        let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
+
+        assert!(matches!(
+            map.validate(),
+            Err(Error::ValidationError(
+                ValidationError::DanglingObjectSymbol { object_index: 0 }
+            ))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn to_file_preserves_existing_file_when_serialization_fails() -> Result<()> {
+        let path = std::env::temp_dir().join(format!(
+            "omap-rs-atomic-write-test-{}.omap",
+            std::process::id(),
+        ));
+        fs::write(&path, b"previous map")?;
+
+        let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(
+            std::rc::Weak::new(),
+            Point::new(3_000_000.0, 0.0),
+        ));
+
+        let result = map.to_file(&path);
+        assert!(matches!(result, Err(Error::MapCoordOutOfBounds)));
+        assert_eq!(fs::read(&path)?, b"previous map");
+        fs::remove_file(path)?;
         Ok(())
     }
 }

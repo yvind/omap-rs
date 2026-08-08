@@ -9,7 +9,7 @@ use quick_xml::{
 use super::{AreaSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
     Code, Error, OmapSection, Result,
-    colors::ColorSet,
+    colors::{ColorSet, WeakColor},
     notes,
     symbols::{AreaOrLineSymbol, CombinedLineSymbol, WeakPathSymbol, WeakSymbol},
     utils::{parse_attr, try_get_attr_raw},
@@ -223,6 +223,48 @@ impl CombinedAreaSymbol {
             }
         }
         Ok(false)
+    }
+
+    /// Return an Vec with every [`WeakColor`] in this symbol definition
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the public components could not be borrowed as it is mutably borrowed somewhere else
+    pub fn colors(&self) -> Result<Vec<WeakColor>> {
+        let mut colors = Vec::new();
+
+        for component in self.components() {
+            match component {
+                PublicOrPrivateSymbol::Public(sym) => match sym {
+                    WeakPathSymbol::Line(weak) => {
+                        if let Some(rc) = weak.upgrade() {
+                            colors.extend(rc.try_borrow()?.colors());
+                        }
+                    }
+                    WeakPathSymbol::CombinedLine(weak) => {
+                        if let Some(rc) = weak.upgrade() {
+                            colors.extend(rc.try_borrow()?.colors()?);
+                        }
+                    }
+                    WeakPathSymbol::Area(weak) => {
+                        if let Some(rc) = weak.upgrade() {
+                            colors.extend(rc.try_borrow()?.colors());
+                        }
+                    }
+                    WeakPathSymbol::CombinedArea(weak) => {
+                        if let Some(rc) = weak.upgrade() {
+                            colors.extend(rc.try_borrow()?.colors()?);
+                        }
+                    }
+                },
+                PublicOrPrivateSymbol::Private(sym) => match sym {
+                    AreaOrLineSymbol::Area(sym) => colors.extend(sym.colors()),
+                    AreaOrLineSymbol::Line(sym) => colors.extend(sym.colors()),
+                },
+            }
+        }
+
+        Ok(colors)
     }
 
     // This will recurse forever if any cycles exist,
@@ -448,10 +490,10 @@ impl CombinedAreaSymbol {
                     ))?;
                     match path_sym {
                         AreaOrLineSymbol::Line(line) => {
-                            line.write(writer, color_set, None)?;
+                            line.write(writer, color_set, None, false)?;
                         }
                         AreaOrLineSymbol::Area(area) => {
-                            area.write(writer, color_set, None)?;
+                            area.write(writer, color_set, None, false)?;
                         }
                     }
                     writer.write_event(Event::End(BytesEnd::new("part")))?;

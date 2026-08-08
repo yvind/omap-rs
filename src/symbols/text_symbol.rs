@@ -7,7 +7,7 @@ use quick_xml::{
 use super::SymbolCommon;
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor},
+    colors::{ColorSet, SymbolColor, WeakColor},
     notes,
     utils::{self, try_get_attr_raw},
 };
@@ -184,6 +184,38 @@ impl TextSymbol {
     pub fn as_helper_symbol(mut self) -> Self {
         self.common.is_helper_symbol = true;
         self
+    }
+
+    pub fn colors(&self) -> Vec<WeakColor> {
+        let mut colors = Vec::new();
+
+        if let SymbolColor::Color(weak) = &self.color {
+            colors.push(weak.clone());
+        }
+
+        if let Some(underline) = &self.line_below
+            && let SymbolColor::Color(weak) = &underline.color
+        {
+            colors.push(weak.clone());
+        }
+
+        if let Some(framing) = &self.framing_mode {
+            match framing {
+                FramingMode::NoFraming => (),
+                FramingMode::LineFraming(line_framing) => {
+                    if let SymbolColor::Color(weak) = &line_framing.color {
+                        colors.push(weak.clone());
+                    }
+                }
+                FramingMode::ShadowFraming(shadow_framing) => {
+                    if let SymbolColor::Color(weak) = &shadow_framing.color {
+                        colors.push(weak.clone());
+                    }
+                }
+            }
+        }
+
+        colors
     }
 
     #[expect(

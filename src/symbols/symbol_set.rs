@@ -38,6 +38,10 @@ impl SymbolSet {
         self.symbols.len()
     }
 
+    pub fn contains_symbol(&self, symbol: &WeakSymbol) -> bool {
+        self.iter_weak().find(|w| w == symbol).is_some()
+    }
+
     /// Add a new symbol to the [`SymbolSet`]
     pub fn add_symbol(&mut self, symbol: impl Into<Symbol>) -> WeakSymbol {
         let symbol = symbol.into();

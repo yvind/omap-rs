@@ -8,7 +8,7 @@ use quick_xml::{
 use super::{AreaSymbol, LineSymbol};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor},
+    colors::{ColorSet, SymbolColor, WeakColor},
     notes,
     objects::{AreaObject, LineObject, PointObject},
     symbols::{SymbolCommon, WeakAreaPathSymbol, WeakLinePathSymbol},
@@ -76,15 +76,15 @@ impl Element {
         writer.write_event(Event::Start(BytesStart::new("element")))?;
         match self {
             Self::Point { symbol, object } => {
-                symbol.write(writer, color_set, None)?;
+                symbol.write(writer, color_set, None, true)?;
                 object.write_as_element(writer, symbol.is_rotatable)?;
             }
             Self::Line { symbol, object } => {
-                symbol.write(writer, color_set, None)?;
+                symbol.write(writer, color_set, None, true)?;
                 object.write_as_element(writer)?;
             }
             Self::Area { symbol, object } => {
-                symbol.write(writer, color_set, None)?;
+                symbol.write(writer, color_set, None, true)?;
                 object.write_as_element(writer)?;
             }
         }
@@ -290,6 +290,27 @@ impl PointSymbol {
         self
     }
 
+    pub fn colors(&self) -> Vec<WeakColor> {
+        let mut colors = Vec::new();
+
+        if let SymbolColor::Color(weak) = &self.inner_color {
+            colors.push(weak.clone());
+        }
+        if let SymbolColor::Color(weak) = &self.outer_color {
+            colors.push(weak.clone());
+        }
+
+        for element in &self.elements {
+            colors.extend(match element {
+                Element::Point { symbol, object: _ } => symbol.colors(),
+                Element::Line { symbol, object: _ } => symbol.colors(),
+                Element::Area { symbol, object: _ } => symbol.colors(),
+            });
+        }
+
+        colors
+    }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
@@ -357,9 +378,10 @@ impl PointSymbol {
         writer: &mut Writer<W>,
         color_set: &ColorSet,
         index: Option<usize>,
+        is_element: bool,
     ) -> Result<()> {
-        // Elements do not have codes so we should skip code writing for the default code
-        let code_str = if self.common.code != Default::default() {
+        // Elements do not have codes so we should skip code writing if so
+        let code_str = if !is_element {
             self.common.code.to_string()
         } else {
             String::new()
@@ -457,7 +479,7 @@ mod tests {
         let mut symbol = PointSymbol::new(Code::default(), "");
         symbol.elements.push(empty_line_element());
         let mut writer = Writer::new(Vec::new());
-        symbol.write(&mut writer, &ColorSet::default(), None)?;
+        symbol.write(&mut writer, &ColorSet::default(), None, false)?;
         let output = String::from_utf8(writer.into_inner())?;
 
         assert!(output.contains(r#"elements="0""#));

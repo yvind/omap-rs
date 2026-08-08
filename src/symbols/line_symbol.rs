@@ -8,7 +8,7 @@ use quick_xml::{
 use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor},
+    colors::{ColorSet, SymbolColor, WeakColor},
     notes,
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
@@ -145,6 +145,47 @@ impl LineSymbol {
     pub fn as_helper_symbol(mut self) -> Self {
         self.common.is_helper_symbol = true;
         self
+    }
+
+    pub fn colors(&self) -> Vec<WeakColor> {
+        let mut colors = Vec::new();
+
+        if let SymbolColor::Color(weak) = &self.color {
+            colors.push(weak.clone());
+        }
+
+        if let Some(border) = &self.border {
+            match border {
+                BorderStyle::SymmetricBorder { both } => {
+                    if let SymbolColor::Color(weak) = &both.color {
+                        colors.push(weak.clone());
+                    }
+                }
+                BorderStyle::AsymmetricBorder { left, right } => {
+                    if let SymbolColor::Color(weak) = &left.color {
+                        colors.push(weak.clone());
+                    }
+                    if let SymbolColor::Color(weak) = &right.color {
+                        colors.push(weak.clone());
+                    }
+                }
+            }
+        }
+
+        if let Some(start) = &self.start_symbol {
+            colors.extend(start.colors());
+        }
+        if let Some(dash) = &self.dash_symbol {
+            colors.extend(dash.dash_symbol.colors());
+        }
+        if let Some(mid) = &self.mid_symbol {
+            colors.extend(mid.mid_symbol.colors());
+        }
+        if let Some(end) = &self.end_symbol {
+            colors.extend(end.colors());
+        }
+
+        colors
     }
 }
 
@@ -676,14 +717,22 @@ impl LineSymbol {
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
-        id: Option<usize>,
+        index: Option<usize>,
+        is_element: bool,
     ) -> Result<()> {
+        // Elements do not have codes so we should skip code writing if so
+        let code_str = if !is_element {
+            self.common.code.to_string()
+        } else {
+            String::new()
+        };
+
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "2"),
-            ("code", self.common.code.to_string().as_str()),
+            ("code", code_str.as_str()),
             ("name", self.common.name.as_str()),
         ]);
-        if let Some(id) = id {
+        if let Some(id) = index {
             bs.push_attribute(("id", id.to_string().as_str()));
         }
         if self.common.is_hidden {
@@ -839,22 +888,24 @@ impl LineSymbol {
         }
         if let Some(start_symbol) = &self.start_symbol {
             writer.write_event(Event::Start(BytesStart::new("start_symbol")))?;
-            start_symbol.write(writer, color_set, None)?;
+            start_symbol.write(writer, color_set, None, true)?;
             writer.write_event(Event::End(BytesEnd::new("start_symbol")))?;
         }
         if let Some(mid_symbol) = &self.mid_symbol {
             writer.write_event(Event::Start(BytesStart::new("mid_symbol")))?;
-            mid_symbol.mid_symbol.write(writer, color_set, None)?;
+            mid_symbol.mid_symbol.write(writer, color_set, None, true)?;
             writer.write_event(Event::End(BytesEnd::new("mid_symbol")))?;
         }
         if let Some(dash_symbol) = &self.dash_symbol {
             writer.write_event(Event::Start(BytesStart::new("dash_symbol")))?;
-            dash_symbol.dash_symbol.write(writer, color_set, None)?;
+            dash_symbol
+                .dash_symbol
+                .write(writer, color_set, None, true)?;
             writer.write_event(Event::End(BytesEnd::new("dash_symbol")))?;
         }
         if let Some(end_symbol) = &self.end_symbol {
             writer.write_event(Event::Start(BytesStart::new("end_symbol")))?;
-            end_symbol.write(writer, color_set, None)?;
+            end_symbol.write(writer, color_set, None, true)?;
             writer.write_event(Event::End(BytesEnd::new("end_symbol")))?;
         }
         writer.write_event(Event::End(BytesEnd::new("line_symbol")))?;

@@ -114,5 +114,7 @@ fn main() -> Result<(), Error> {
     }
     println!("\nNumber of sub symbols in line symbols: {num}");
 
+    println!("Does the map pass validation: {:?}", map.validate());
+
     map.to_file("./test_write.omap")
 }

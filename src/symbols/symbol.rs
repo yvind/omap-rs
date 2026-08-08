@@ -9,8 +9,11 @@ use super::{
     AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolSet,
     TextSymbol,
 };
-use crate::utils::{parse_attr, parse_attr_raw};
 use crate::{Code, Error, Result, colors::ColorSet};
+use crate::{
+    colors::WeakColor,
+    utils::{parse_attr, parse_attr_raw},
+};
 
 /// Common properties shared by all symbol types.
 #[derive(Default, Debug, Clone)]
@@ -151,6 +154,22 @@ pub enum Symbol {
 }
 
 impl Symbol {
+    /// Get a vector with every weakcolor used in this symbol definition
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a symbol could not be borrowed as it is mutably borrowed somewhere else
+    pub fn colors(&self) -> Result<Vec<WeakColor>> {
+        match self {
+            Self::Line(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
+            Self::Area(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
+            Self::Point(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
+            Self::Text(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
+            Self::CombinedArea(ref_cell) => ref_cell.try_borrow()?.colors(),
+            Self::CombinedLine(ref_cell) => ref_cell.try_borrow()?.colors(),
+        }
+    }
+
     /// Creates a new `WeakSymbol` pointer to this Symbol allocation
     pub fn downgrade(&self) -> WeakSymbol {
         match self {
@@ -417,9 +436,15 @@ impl Symbol {
     ) -> Result<()> {
         match self {
             // Line, area and point can be sub-symbols which do not have an index
-            Self::Line(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
-            Self::Area(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
-            Self::Point(rc) => rc.try_borrow()?.write(writer, color_set, Some(index)),
+            Self::Line(rc) => rc
+                .try_borrow()?
+                .write(writer, color_set, Some(index), false),
+            Self::Area(rc) => rc
+                .try_borrow()?
+                .write(writer, color_set, Some(index), false),
+            Self::Point(rc) => rc
+                .try_borrow()?
+                .write(writer, color_set, Some(index), false),
             Self::Text(rc) => rc.try_borrow()?.write(writer, color_set, index),
             Self::CombinedArea(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
             Self::CombinedLine(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),

@@ -370,4 +370,33 @@ pub enum Error {
     #[cfg(feature = "geo_ref")]
     #[error("Tried a conversion to WGS84, but no transform to WGS84 is available")]
     NoWGS84TransformAvailable,
+    #[error(transparent)]
+    ValidationError(#[from] ValidationError),
+}
+
+/// The reason an [`Omap`] cannot be safely serialized without losing references.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ValidationError {
+    /// A symbol references a color that is not owned by the map's color set.
+    #[error("symbol at index {symbol_index} references a color not in the color set")]
+    DanglingSymbolColor {
+        /// The index of the symbol in its symbol set.
+        symbol_index: usize,
+    },
+    /// A public component of a combined symbol is not owned by the symbol set.
+    #[error(
+        "combined symbol at index {symbol_index} has component {component_index} not in the symbol set"
+    )]
+    DanglingCombinedComponent {
+        /// The index of the combined symbol in its symbol set.
+        symbol_index: usize,
+        /// The index of the component within that combined symbol.
+        component_index: usize,
+    },
+    /// An object references a symbol that is not owned by the symbol set.
+    #[error("object at index {object_index} references a symbol not in the symbol set")]
+    DanglingObjectSymbol {
+        /// The object's index in the map-wide object iterator.
+        object_index: usize,
+    },
 }

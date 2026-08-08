@@ -9,7 +9,7 @@ use quick_xml::{
 use super::{LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
     Code, Error, Result,
-    colors::ColorSet,
+    colors::{ColorSet, WeakColor},
     symbols::{Symbol, WeakLinePathSymbol, WeakSymbol},
 };
 
@@ -167,6 +167,35 @@ impl CombinedLineSymbol {
         Ok(min)
     }
 
+    /// Return an Vec with every [`WeakColor`] in this symbol definition
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the public components could not be borrowed as it is mutably borrowed somewhere else
+    pub fn colors(&self) -> Result<Vec<WeakColor>> {
+        let mut colors = Vec::new();
+
+        for component in self.components() {
+            match component {
+                PublicOrPrivateSymbol::Public(sym) => match sym {
+                    WeakLinePathSymbol::Line(weak) => {
+                        if let Some(rc) = weak.upgrade() {
+                            colors.extend(rc.try_borrow()?.colors());
+                        }
+                    }
+                    WeakLinePathSymbol::CombinedLine(weak) => {
+                        if let Some(rc) = weak.upgrade() {
+                            colors.extend(rc.try_borrow()?.colors()?);
+                        }
+                    }
+                },
+                PublicOrPrivateSymbol::Private(sym) => colors.extend(sym.colors()),
+            }
+        }
+
+        Ok(colors)
+    }
+
     /// Check if this symbol definition is cyclic.
     ///
     /// Uses an explicit visited set to detect cycles reliably.
@@ -301,7 +330,7 @@ impl CombinedLineSymbol {
                     writer.write_event(Event::Start(
                         BytesStart::new("part").with_attributes([("private", "true")]),
                     ))?;
-                    line.write(writer, color_set, None)?;
+                    line.write(writer, color_set, None, false)?;
                     writer.write_event(Event::End(BytesEnd::new("part")))?;
                 }
             }

@@ -8,7 +8,7 @@ use quick_xml::{
 use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor},
+    colors::{ColorSet, SymbolColor, WeakColor},
     notes,
     utils::{parse_attr, try_get_attr_raw},
 };
@@ -247,7 +247,7 @@ impl FillPattern {
                     point_distance.to_file_value()?.to_string().as_str(),
                 ));
                 writer.write_event(Event::Start(bs))?;
-                point.write(writer, color_set, None)?;
+                point.write(writer, color_set, None, true)?;
                 writer.write_event(Event::End(BytesEnd::new("pattern")))?;
             }
         }
@@ -324,6 +324,42 @@ impl AreaSymbol {
         self
     }
 
+    pub fn colors(&self) -> Vec<WeakColor> {
+        let mut colors = Vec::new();
+        if let SymbolColor::Color(weak) = &self.color {
+            colors.push(weak.clone());
+        }
+
+        for pattern in &self.patterns {
+            match pattern {
+                FillPattern::LinePattern {
+                    angle: _,
+                    line_spacing: _,
+                    line_offset: _,
+                    line_color,
+                    line_width: _,
+                    rotatable: _,
+                } => {
+                    if let SymbolColor::Color(weak) = line_color {
+                        colors.push(weak.clone());
+                    }
+                }
+                FillPattern::PointPattern {
+                    clip_options: _,
+                    angle: _,
+                    line_spacing: _,
+                    line_offset: _,
+                    offset_along_line: _,
+                    point_distance: _,
+                    point,
+                    rotatable: _,
+                } => colors.extend(point.colors()),
+            }
+        }
+
+        colors
+    }
+
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
@@ -380,10 +416,18 @@ impl AreaSymbol {
         writer: &mut Writer<W>,
         color_set: &ColorSet,
         index: Option<usize>,
+        is_element: bool,
     ) -> Result<()> {
+        // Elements do not have codes so we should skip code writing if so
+        let code_str = if !is_element {
+            self.common.code.to_string()
+        } else {
+            String::new()
+        };
+
         let mut bs = BytesStart::new("symbol").with_attributes([
             ("type", "4"),
-            ("code", self.common.code.to_string().as_str()),
+            ("code", code_str.as_str()),
             ("name", self.common.name.as_str()),
         ]);
         if let Some(id) = index {

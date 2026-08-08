@@ -143,5 +143,7 @@ fn main() -> Result<(), Error> {
     );
     map.parts.get_mut(0).unwrap().add_object(ts);
 
+    println!("Does the map pass validation: {:?}", map.validate());
+
     map.to_file("./from_path_out.omap")
 }
