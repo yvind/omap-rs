@@ -384,9 +384,6 @@ impl TextSymbol {
         if self.common.is_protected {
             bs.push_attribute(("is_protected", "true"));
         }
-        if self.is_rotatable {
-            bs.push_attribute(("is_rotatable", "true"));
-        }
         writer.write_event(Event::Start(bs))?;
 
         if !self.common.description.is_empty() {
@@ -398,7 +395,7 @@ impl TextSymbol {
         writer.write_event(Event::Start(
             BytesStart::new("text_symbol").with_attributes([
                 ("icon_text", self.icon_text.as_str()),
-                ("rotatable", "true"),
+                ("rotatable", self.is_rotatable.to_string().as_str()),
             ]),
         ))?;
 

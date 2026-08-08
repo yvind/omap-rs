@@ -424,7 +424,7 @@ impl SymbolSet {
     ) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("symbols").with_attributes([
             ("count", self.len().to_string().as_str()),
-            ("name", self.name.as_str()),
+            ("id", self.name.as_str()),
         ])))?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         for (index, symbol) in self.iter().enumerate() {

@@ -856,13 +856,14 @@ impl LineSymbol {
                     .as_str(),
             ));
             if mid_symbol.show_at_least_one_mid_symbol {
-                bs.push_attribute(("show_at_least_one_mid_symbol", "true"));
+                bs.push_attribute(("show_at_least_one_symbol", "true"));
             }
         }
         if let Some(dash_symbol) = &self.dash_symbol {
-            if dash_symbol.scale_dash_symbol {
-                bs.push_attribute(("scale_dash_symbol", "true"));
-            }
+            bs.push_attribute((
+                "scale_dash_symbol",
+                dash_symbol.scale_dash_symbol.to_string().as_str(),
+            ));
             if dash_symbol.suppress_dash_symbol_at_ends {
                 bs.push_attribute(("suppress_dash_symbol_at_ends", "true"));
             }

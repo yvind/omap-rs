@@ -592,7 +592,12 @@ fn write_tags<W: std::io::Write>(
     tags: &HashMap<String, String>,
 ) -> Result<()> {
     writer.write_event(Event::Start(BytesStart::new("tags")))?;
-    for (key, value) in tags {
+    // Sorted, because `HashMap` iteration order is arbitrary and writing the
+    // same map twice must produce the same bytes.
+    let mut keys: Vec<&String> = tags.keys().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let Some(value) = tags.get(key) else { continue };
         writer.write_event(Event::Start(
             BytesStart::new("t").with_attributes([("k", key.as_str())]),
         ))?;
