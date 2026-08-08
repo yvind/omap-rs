@@ -4,7 +4,7 @@ use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
 use crate::objects::MapObject;
-use crate::symbols::{SymbolSet, WeakSymbol};
+use crate::symbols::{SymbolId, SymbolSet};
 use crate::utils::try_get_attr;
 use crate::{Error, OmapSection, Result};
 
@@ -40,25 +40,24 @@ impl MapPart {
     }
 
     /// Remove all objects with a symbol from the map
-    pub fn remove(&mut self, key: &WeakSymbol) -> Vec<MapObject> {
+    pub fn remove(&mut self, key: SymbolId) -> Vec<MapObject> {
         self.objects
-            .extract_if(.., |mo| mo.symbol() == key.clone())
+            .extract_if(.., |mo| mo.symbol() == Some(key))
             .collect()
     }
 
     /// Get objects associated with a symbol.
-    pub fn objects_by_symbol(&self, key: &WeakSymbol) -> impl Iterator<Item = &MapObject> {
-        self.objects.iter().filter(|mo| mo.symbol() == key.clone())
+    pub fn objects_by_symbol(&self, key: SymbolId) -> impl Iterator<Item = &MapObject> {
+        self.objects
+            .iter()
+            .filter(move |mo| mo.symbol() == Some(key))
     }
 
     /// Get a mutable reference to objects associated with a symbol.
-    pub fn objects_by_symbol_mut(
-        &mut self,
-        key: &WeakSymbol,
-    ) -> impl Iterator<Item = &mut MapObject> {
+    pub fn objects_by_symbol_mut(&mut self, key: SymbolId) -> impl Iterator<Item = &mut MapObject> {
         self.objects
             .iter_mut()
-            .filter(|mo| mo.symbol() == key.clone())
+            .filter(move |mo| mo.symbol() == Some(key))
     }
 
     /// Get the number of distinct symbols with objects in this part.
@@ -172,7 +171,6 @@ impl MapPart {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Weak;
 
     use geo_types::{LineString, coord};
     use quick_xml::{Reader, Writer, events::Event};
@@ -181,7 +179,7 @@ mod tests {
     use crate::{
         Result,
         objects::{LineObject, MapObject},
-        symbols::{SymbolSet, WeakLinePathSymbol},
+        symbols::SymbolSet,
     };
 
     fn empty_symbol_set() -> SymbolSet {
@@ -205,16 +203,13 @@ mod tests {
 
     #[test]
     fn empty_objects_are_retained_in_memory_and_skipped_on_write() -> Result<()> {
-        let weak_symbol = WeakLinePathSymbol::Line(Weak::new());
+        let symbol = None;
         let mut part = MapPart::new("Map");
-        part.add_object(LineObject::new(
-            weak_symbol.clone(),
-            LineString::new(Vec::new()),
-        ));
+        part.add_object(LineObject::new(symbol, LineString::new(Vec::new())));
         assert_eq!(part.len(), 1);
 
         part.add_object(LineObject::new(
-            weak_symbol,
+            symbol,
             LineString::new(vec![coord! { x: 0., y: 0. }, coord! { x: 1., y: 0. }]),
         ));
         let Some(MapObject::Line(line)) = part.iter_all_objects_mut().nth(1) else {

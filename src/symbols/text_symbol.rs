@@ -7,7 +7,7 @@ use quick_xml::{
 use super::SymbolCommon;
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{self, try_get_attr_raw},
 };
@@ -186,30 +186,30 @@ impl TextSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         if let Some(underline) = &self.line_below
-            && let SymbolColor::Color(weak) = &underline.color
+            && let SymbolColor::Color(id) = &underline.color
         {
-            colors.push(weak.clone());
+            colors.push(*id);
         }
 
         if let Some(framing) = &self.framing_mode {
             match framing {
                 FramingMode::NoFraming => (),
                 FramingMode::LineFraming(line_framing) => {
-                    if let SymbolColor::Color(weak) = &line_framing.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &line_framing.color {
+                        colors.push(*id);
                     }
                 }
                 FramingMode::ShadowFraming(shadow_framing) => {
-                    if let SymbolColor::Color(weak) = &shadow_framing.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &shadow_framing.color {
+                        colors.push(*id);
                     }
                 }
             }

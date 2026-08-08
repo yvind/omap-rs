@@ -8,7 +8,7 @@ use quick_xml::{
 use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{parse_attr, try_get_attr_raw},
 };
@@ -324,10 +324,10 @@ impl AreaSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         for pattern in &self.patterns {
@@ -340,8 +340,8 @@ impl AreaSymbol {
                     line_width: _,
                     rotatable: _,
                 } => {
-                    if let SymbolColor::Color(weak) = line_color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = line_color {
+                        colors.push(*id);
                     }
                 }
                 FillPattern::PointPattern {

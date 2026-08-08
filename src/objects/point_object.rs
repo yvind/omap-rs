@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Weak};
+use std::collections::HashMap;
 
 use geo_types::{Coord, Point};
 use quick_xml::{
@@ -8,7 +8,7 @@ use quick_xml::{
 
 use crate::{
     CoordinateComponent, Error, ObjectKind, OmapSection, Result,
-    symbols::{PointSymbol, Symbol, SymbolSet},
+    symbols::{PointSymbolId, SymbolSet},
     utils::{from_file_coords, to_file_coords, transform_position, try_transform_position},
 };
 
@@ -19,14 +19,15 @@ pub struct PointObject {
     pub tags: HashMap<String, String>,
     /// Rotation of the symbol in radians.
     pub rotation: f64,
-    /// Weak reference to the point symbol used to render this object.
-    pub symbol: Weak<RefCell<PointSymbol>>,
+    /// The point symbol used to render this object, or `None` for the
+    /// format's unknown-symbol sentinel.
+    pub symbol: Option<PointSymbolId>,
     geometry: Point,
 }
 
 impl PointObject {
     /// Create a new point object with the given symbol and position.
-    pub fn new(symbol: Weak<RefCell<PointSymbol>>, geometry: Point) -> Self {
+    pub fn new(symbol: Option<PointSymbolId>, geometry: Point) -> Self {
         Self {
             tags: HashMap::new(),
             rotation: 0.0,
@@ -81,24 +82,14 @@ impl PointObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let mut is_rotatable = false;
-        // Get index of symbol and if the symbol is rotatable
-        let index = if let Some(sym) = self.symbol.upgrade() {
-            is_rotatable = sym.try_borrow().map(|p| p.is_rotatable).unwrap_or(false);
-            symbol_set
-                .iter()
-                .position(|s| {
-                    if let Symbol::Point(s) = s {
-                        s.as_ptr() == sym.as_ptr()
-                    } else {
-                        false
-                    }
-                })
-                .map(|p| p as i32)
-                .unwrap_or(-1)
-        } else {
-            -1
-        };
+        let is_rotatable = self
+            .symbol
+            .and_then(|id| symbol_set.point_symbol(id))
+            .is_some_and(|symbol| symbol.is_rotatable);
+        let index = self
+            .symbol
+            .and_then(|id| symbol_set.index_of(id.into()))
+            .map_or(-1, |index| index as i32);
 
         self.write_content(writer, Some(index), is_rotatable)?;
         Ok(())
@@ -156,7 +147,7 @@ impl PointObject {
     /// the `<coords>` start event. Reads through `</object>`.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        symbol: Weak<RefCell<PointSymbol>>,
+        symbol: Option<PointSymbolId>,
         rotation: f64,
     ) -> Result<Self> {
         let mut tags = HashMap::new();

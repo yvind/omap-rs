@@ -1,22 +1,19 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    rc::{Rc, Weak},
-};
-
 use quick_xml::{Reader, Writer, events::BytesStart};
 
 use super::{
-    AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolSet,
-    TextSymbol,
+    AreaSymbol, AreaSymbolId, CombinedAreaSymbol, CombinedAreaSymbolId, CombinedLineSymbol,
+    CombinedLineSymbolId, LineSymbol, LineSymbolId, PointSymbol, PointSymbolId, SymbolId,
+    SymbolSet, TextSymbol, TextSymbolId,
 };
-use crate::{Code, Error, Result, colors::ColorSet};
+use crate::arena::RawId;
 use crate::{
-    colors::WeakColor,
+    Code, Error, Result,
+    colors::{ColorId, ColorSet},
     utils::{parse_attr, parse_attr_raw},
 };
 
 /// Common properties shared by all symbol types.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct SymbolCommon {
     /// The symbol's name
     pub name: String,
@@ -34,174 +31,34 @@ pub struct SymbolCommon {
     pub custom_icon: Option<String>,
 }
 
-/// A non-owning reference to a symbol of any type.
-#[derive(Debug, Clone)]
-pub enum WeakSymbol {
-    /// A weak reference to a line symbol.
-    Line(Weak<RefCell<LineSymbol>>),
-    /// A weak reference to an area symbol.
-    Area(Weak<RefCell<AreaSymbol>>),
-    /// A weak reference to a point symbol.
-    Point(Weak<RefCell<PointSymbol>>),
-    /// A weak reference to a text symbol.
-    Text(Weak<RefCell<TextSymbol>>),
-    /// A weak reference to a combined area symbol.
-    CombinedArea(Weak<RefCell<CombinedAreaSymbol>>),
-    /// A weak reference to a combined line symbol.
-    CombinedLine(Weak<RefCell<CombinedLineSymbol>>),
-}
-
-impl WeakSymbol {
-    /// Attempts to upgrade the `WeakSymbol` to a Symbol, delaying dropping of the inner value if successful.
-    /// Returns None if the inner value has since been dropped.
-    pub fn upgrade(&self) -> Option<Symbol> {
-        match self {
-            Self::Line(weak) => weak.upgrade().map(Symbol::Line),
-            Self::Area(weak) => weak.upgrade().map(Symbol::Area),
-            Self::Point(weak) => weak.upgrade().map(Symbol::Point),
-            Self::Text(weak) => weak.upgrade().map(Symbol::Text),
-            Self::CombinedArea(weak) => weak.upgrade().map(Symbol::CombinedArea),
-            Self::CombinedLine(weak) => weak.upgrade().map(Symbol::CombinedLine),
-        }
-    }
-}
-
-impl PartialEq for WeakSymbol {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Line(l0), Self::Line(r0)) => l0.ptr_eq(r0),
-            (Self::Area(l0), Self::Area(r0)) => l0.ptr_eq(r0),
-            (Self::Point(l0), Self::Point(r0)) => l0.ptr_eq(r0),
-            (Self::Text(l0), Self::Text(r0)) => l0.ptr_eq(r0),
-            (Self::CombinedArea(l0), Self::CombinedArea(r0)) => l0.ptr_eq(r0),
-            (Self::CombinedLine(l0), Self::CombinedLine(r0)) => l0.ptr_eq(r0),
-            _ => false,
-        }
-    }
-}
-impl Eq for WeakSymbol {}
-
-impl std::hash::Hash for WeakSymbol {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Self::Line(weak) => weak.as_ptr().hash(state),
-            Self::Area(weak) => weak.as_ptr().hash(state),
-            Self::Point(weak) => weak.as_ptr().hash(state),
-            Self::Text(weak) => weak.as_ptr().hash(state),
-            Self::CombinedArea(weak) => weak.as_ptr().hash(state),
-            Self::CombinedLine(weak) => weak.as_ptr().hash(state),
-        }
-    }
-}
-
-macro_rules! impl_from_weak_symbol {
-    ($symbol_ty:ty, $variant:ident) => {
-        impl From<Weak<RefCell<$symbol_ty>>> for WeakSymbol {
-            fn from(value: Weak<RefCell<$symbol_ty>>) -> Self {
-                WeakSymbol::$variant(value)
-            }
-        }
-    };
-}
-
-impl_from_weak_symbol!(AreaSymbol, Area);
-impl_from_weak_symbol!(LineSymbol, Line);
-impl_from_weak_symbol!(PointSymbol, Point);
-impl_from_weak_symbol!(TextSymbol, Text);
-impl_from_weak_symbol!(CombinedAreaSymbol, CombinedArea);
-impl_from_weak_symbol!(CombinedLineSymbol, CombinedLine);
-
-macro_rules! impl_try_from_weak_symbol {
-    ($symbol_ty:ty, $variant:ident) => {
-        impl TryFrom<WeakSymbol> for Weak<RefCell<$symbol_ty>> {
-            type Error = Error;
-
-            fn try_from(value: WeakSymbol) -> std::result::Result<Self, Self::Error> {
-                if let WeakSymbol::$variant(weak) = value {
-                    Ok(weak)
-                } else {
-                    Err(Error::SymbolConversionError)
-                }
-            }
-        }
-    };
-}
-
-impl_try_from_weak_symbol!(AreaSymbol, Area);
-impl_try_from_weak_symbol!(LineSymbol, Line);
-impl_try_from_weak_symbol!(PointSymbol, Point);
-impl_try_from_weak_symbol!(TextSymbol, Text);
-impl_try_from_weak_symbol!(CombinedAreaSymbol, CombinedArea);
-impl_try_from_weak_symbol!(CombinedLineSymbol, CombinedLine);
-
-/// An owning reference to a symbol of any type.
+/// A symbol of any type.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a line symbol carries four optional point sub-symbols inline; a symbol set holds a few hundred entries, so boxing would cost an indirection for no measurable gain"
+)]
 #[derive(Debug, Clone)]
 pub enum Symbol {
     /// A line symbol.
-    Line(Rc<RefCell<LineSymbol>>),
+    Line(LineSymbol),
     /// An area symbol.
-    Area(Rc<RefCell<AreaSymbol>>),
+    Area(AreaSymbol),
     /// A point symbol.
-    Point(Rc<RefCell<PointSymbol>>),
+    Point(PointSymbol),
     /// A text symbol.
-    Text(Rc<RefCell<TextSymbol>>),
+    Text(TextSymbol),
     /// Combined symbols can be either `CombinedArea` or `CombinedLine`
     /// The difference is what object geometry to relate with the symbol
     /// Mapper does not discern between any line and area objects
-    CombinedArea(Rc<RefCell<CombinedAreaSymbol>>),
+    CombinedArea(CombinedAreaSymbol),
     /// A combined line symbol.
-    CombinedLine(Rc<RefCell<CombinedLineSymbol>>),
-}
-
-impl Symbol {
-    /// Get a vector with every weakcolor used in this symbol definition
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a symbol could not be borrowed as it is mutably borrowed somewhere else
-    pub fn colors(&self) -> Result<Vec<WeakColor>> {
-        match self {
-            Self::Line(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
-            Self::Area(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
-            Self::Point(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
-            Self::Text(ref_cell) => Ok(ref_cell.try_borrow()?.colors()),
-            Self::CombinedArea(ref_cell) => ref_cell.try_borrow()?.colors(),
-            Self::CombinedLine(ref_cell) => ref_cell.try_borrow()?.colors(),
-        }
-    }
-
-    /// Creates a new `WeakSymbol` pointer to this Symbol allocation
-    pub fn downgrade(&self) -> WeakSymbol {
-        match self {
-            Self::Line(rc) => WeakSymbol::Line(Rc::downgrade(rc)),
-            Self::Area(rc) => WeakSymbol::Area(Rc::downgrade(rc)),
-            Self::Point(rc) => WeakSymbol::Point(Rc::downgrade(rc)),
-            Self::Text(rc) => WeakSymbol::Text(Rc::downgrade(rc)),
-            Self::CombinedArea(rc) => WeakSymbol::CombinedArea(Rc::downgrade(rc)),
-            Self::CombinedLine(rc) => WeakSymbol::CombinedLine(Rc::downgrade(rc)),
-        }
-    }
-}
-
-impl PartialEq for Symbol {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Line(l0), Self::Line(r0)) => l0.as_ptr() == r0.as_ptr(),
-            (Self::Area(l0), Self::Area(r0)) => l0.as_ptr() == r0.as_ptr(),
-            (Self::Point(l0), Self::Point(r0)) => l0.as_ptr() == r0.as_ptr(),
-            (Self::Text(l0), Self::Text(r0)) => l0.as_ptr() == r0.as_ptr(),
-            (Self::CombinedArea(l0), Self::CombinedArea(r0)) => l0.as_ptr() == r0.as_ptr(),
-            (Self::CombinedLine(l0), Self::CombinedLine(r0)) => l0.as_ptr() == r0.as_ptr(),
-            _ => false,
-        }
-    }
+    CombinedLine(CombinedLineSymbol),
 }
 
 macro_rules! impl_from_symbol {
     ($symbol_ty:ty, $variant:ident) => {
         impl From<$symbol_ty> for Symbol {
             fn from(value: $symbol_ty) -> Self {
-                Symbol::$variant(Rc::new(RefCell::new(value)))
+                Symbol::$variant(value)
             }
         }
     };
@@ -216,152 +73,90 @@ impl_from_symbol!(CombinedLineSymbol, CombinedLine);
 
 macro_rules! impl_symbol_getter {
     ($method:ident -> $ret_type:ty, |$s:ident| $expr:expr) => {
-        /// Access a common symbol property.
-        ///
-        /// Takes its own borrow; use [`Symbol::common`] to read several
-        /// properties of the same symbol at once.
-        ///
-        /// # Errors
-        ///
-        /// Returns an error if the symbol's `RefCell` is currently mutably
-        /// borrowed.
-        pub fn $method(&self) -> Result<$ret_type> {
-            match self {
-                Symbol::Line(rc) => {
-                    let $s = rc.try_borrow()?;
-                    Ok($expr)
-                }
-                Symbol::Area(rc) => {
-                    let $s = rc.try_borrow()?;
-                    Ok($expr)
-                }
-                Symbol::Point(rc) => {
-                    let $s = rc.try_borrow()?;
-                    Ok($expr)
-                }
-                Symbol::Text(rc) => {
-                    let $s = rc.try_borrow()?;
-                    Ok($expr)
-                }
-                Symbol::CombinedLine(rc) => {
-                    let $s = rc.try_borrow()?;
-                    Ok($expr)
-                }
-                Symbol::CombinedArea(rc) => {
-                    let $s = rc.try_borrow()?;
-                    Ok($expr)
-                }
-            }
+        /// Read a property shared by every symbol type.
+        pub fn $method(&self) -> $ret_type {
+            let $s = self.common();
+            $expr
         }
     };
 }
+
 macro_rules! impl_symbol_setter {
     ($method:ident($param:ident: $param_type:ty), |$s:ident| $expr:expr) => {
-        /// Update a common symbol property.
-        ///
-        /// Takes its own borrow; use [`Symbol::common_mut`] to update several
-        /// properties of the same symbol at once.
-        ///
-        /// # Errors
-        ///
-        /// Returns an error if the symbol's `RefCell` is already borrowed.
-        pub fn $method(&self, $param: $param_type) -> Result<()> {
-            match self {
-                Symbol::Line(rc) => {
-                    let mut $s = rc.try_borrow_mut()?;
-                    $expr
-                }
-                Symbol::Area(rc) => {
-                    let mut $s = rc.try_borrow_mut()?;
-                    $expr
-                }
-                Symbol::Point(rc) => {
-                    let mut $s = rc.try_borrow_mut()?;
-                    $expr
-                }
-                Symbol::Text(rc) => {
-                    let mut $s = rc.try_borrow_mut()?;
-                    $expr
-                }
-                Symbol::CombinedLine(rc) => {
-                    let mut $s = rc.try_borrow_mut()?;
-                    $expr
-                }
-                Symbol::CombinedArea(rc) => {
-                    let mut $s = rc.try_borrow_mut()?;
-                    $expr
-                }
-            }
-            Ok(())
+        /// Update a property shared by every symbol type.
+        pub fn $method(&mut self, $param: $param_type) {
+            let $s = self.common_mut();
+            $expr;
         }
     };
 }
 
 impl Symbol {
-    /// Borrow the [`SymbolCommon`] properties shared by every symbol type.
-    ///
-    /// The individual getters below take one `RefCell` borrow per call and
-    /// clone the `String` fields. Reading several properties of the same
-    /// symbol — filtering on [`SymbolCommon::is_helper_symbol`] and
-    /// [`SymbolCommon::is_hidden`] before dispatching on
-    /// [`SymbolCommon::code`], say — is a single borrow through this accessor,
-    /// and the strings can be read by reference.
-    ///
-    /// The returned guard keeps the symbol immutably borrowed; the setters and
-    /// anything else needing a mutable borrow will fail while it is alive.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the symbol's `RefCell` is currently mutably
-    /// borrowed.
-    pub fn common(&self) -> Result<Ref<'_, SymbolCommon>> {
-        Ok(match self {
-            Self::Line(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
-            Self::Area(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
-            Self::Point(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
-            Self::Text(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
-            Self::CombinedLine(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
-            Self::CombinedArea(rc) => Ref::map(rc.try_borrow()?, |s| &s.common),
-        })
+    /// The [`SymbolCommon`] properties shared by every symbol type.
+    pub fn common(&self) -> &SymbolCommon {
+        match self {
+            Self::Line(symbol) => &symbol.common,
+            Self::Area(symbol) => &symbol.common,
+            Self::Point(symbol) => &symbol.common,
+            Self::Text(symbol) => &symbol.common,
+            Self::CombinedLine(symbol) => &symbol.common,
+            Self::CombinedArea(symbol) => &symbol.common,
+        }
     }
 
-    /// Mutably borrow the [`SymbolCommon`] properties shared by every symbol
-    /// type.
-    ///
-    /// The counterpart of [`Symbol::common`] for the setters below, collapsing
-    /// a run of updates to the same symbol into a single borrow.
-    ///
-    /// The returned guard keeps the symbol mutably borrowed; every other
-    /// accessor will fail while it is alive.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the symbol's `RefCell` is already borrowed.
-    pub fn common_mut(&self) -> Result<RefMut<'_, SymbolCommon>> {
-        Ok(match self {
-            Self::Line(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
-            Self::Area(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
-            Self::Point(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
-            Self::Text(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
-            Self::CombinedLine(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
-            Self::CombinedArea(rc) => RefMut::map(rc.try_borrow_mut()?, |s| &mut s.common),
-        })
+    /// The [`SymbolCommon`] properties shared by every symbol type, mutably.
+    pub fn common_mut(&mut self) -> &mut SymbolCommon {
+        match self {
+            Self::Line(symbol) => &mut symbol.common,
+            Self::Area(symbol) => &mut symbol.common,
+            Self::Point(symbol) => &mut symbol.common,
+            Self::Text(symbol) => &mut symbol.common,
+            Self::CombinedLine(symbol) => &mut symbol.common,
+            Self::CombinedArea(symbol) => &mut symbol.common,
+        }
     }
 
-    impl_symbol_getter!(has_custom_icon -> bool, |s| s.common.custom_icon.is_some());
-    impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.common.custom_icon = icon);
-    impl_symbol_getter!(code -> Code, |s| s.common.code);
-    impl_symbol_setter!(set_code(code: Code), |s| s.common.code = code);
-    impl_symbol_getter!(is_helper_symbol -> bool, |s| s.common.is_helper_symbol);
-    impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.common.is_helper_symbol = is_helper);
-    impl_symbol_getter!(is_hidden -> bool, |s| s.common.is_hidden);
-    impl_symbol_setter!(set_hidden(is_hidden: bool), |s| s.common.is_hidden = is_hidden);
-    impl_symbol_getter!(is_protected -> bool, |s| s.common.is_protected);
-    impl_symbol_setter!(set_protected(is_protected: bool), |s| s.common.is_protected = is_protected);
-    impl_symbol_getter!(name -> String, |s| s.common.name.clone());
-    impl_symbol_setter!(set_name(name: String), |s| s.common.name = name);
-    impl_symbol_getter!(description -> String, |s| s.common.description.clone());
-    impl_symbol_setter!(set_description(description: String), |s| s.common.description = description);
+    /// Every color used in this symbol definition.
+    ///
+    /// Takes the [`SymbolSet`] that owns the symbol, because a combined
+    /// symbol's public components live in the set rather than in the symbol.
+    /// A component no longer in the set contributes no colors.
+    pub fn colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId> {
+        match self {
+            Self::Line(symbol) => symbol.colors(),
+            Self::Area(symbol) => symbol.colors(),
+            Self::Point(symbol) => symbol.colors(),
+            Self::Text(symbol) => symbol.colors(),
+            Self::CombinedArea(symbol) => symbol.colors(symbol_set),
+            Self::CombinedLine(symbol) => symbol.colors(symbol_set),
+        }
+    }
+
+    impl_symbol_getter!(has_custom_icon -> bool, |s| s.custom_icon.is_some());
+    impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.custom_icon = icon);
+    impl_symbol_getter!(code -> Code, |s| s.code);
+    impl_symbol_setter!(set_code(code: Code), |s| s.code = code);
+    impl_symbol_getter!(is_helper_symbol -> bool, |s| s.is_helper_symbol);
+    impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.is_helper_symbol = is_helper);
+    impl_symbol_getter!(is_hidden -> bool, |s| s.is_hidden);
+    impl_symbol_setter!(set_hidden(is_hidden: bool), |s| s.is_hidden = is_hidden);
+    impl_symbol_getter!(is_protected -> bool, |s| s.is_protected);
+    impl_symbol_setter!(set_protected(is_protected: bool), |s| s.is_protected = is_protected);
+    impl_symbol_getter!(name -> &str, |s| s.name.as_str());
+    impl_symbol_setter!(set_name(name: String), |s| s.name = name);
+    impl_symbol_getter!(description -> &str, |s| s.description.as_str());
+    impl_symbol_setter!(set_description(description: String), |s| s.description = description);
+
+    pub(super) fn id_for(&self, raw: RawId) -> SymbolId {
+        match self {
+            Self::Line(_) => SymbolId::Line(LineSymbolId(raw)),
+            Self::Area(_) => SymbolId::Area(AreaSymbolId(raw)),
+            Self::Point(_) => SymbolId::Point(PointSymbolId(raw)),
+            Self::Text(_) => SymbolId::Text(TextSymbolId(raw)),
+            Self::CombinedArea(_) => SymbolId::CombinedArea(CombinedAreaSymbolId(raw)),
+            Self::CombinedLine(_) => SymbolId::CombinedLine(CombinedLineSymbolId(raw)),
+        }
+    }
 
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
@@ -399,25 +194,17 @@ impl Symbol {
         // and parse them after all symbols have been parsed
         let mut public_component_ids = Vec::new();
         let symbol = match symbol_type {
-            1 => Self::Point(Rc::new(RefCell::new(PointSymbol::parse(
-                reader, color_set, common,
-            )?))),
-            2 => Self::Line(Rc::new(RefCell::new(LineSymbol::parse(
-                reader, color_set, common,
-            )?))),
-            4 => Self::Area(Rc::new(RefCell::new(AreaSymbol::parse(
-                reader, color_set, common,
-            )?))),
-            8 => Self::Text(Rc::new(RefCell::new(TextSymbol::parse(
-                reader, color_set, common,
-            )?))),
+            1 => Self::Point(PointSymbol::parse(reader, color_set, common)?),
+            2 => Self::Line(LineSymbol::parse(reader, color_set, common)?),
+            4 => Self::Area(AreaSymbol::parse(reader, color_set, common)?),
+            8 => Self::Text(TextSymbol::parse(reader, color_set, common)?),
             16 => {
                 // Assume the combined symbol is area for now
                 // Will be checked and corrected after all symbols have been parsed
                 let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
                 public_component_ids.extend(component_ids);
 
-                Self::CombinedArea(Rc::new(RefCell::new(symbol)))
+                Self::CombinedArea(symbol)
             }
             _ => {
                 return Err(Error::UnknownSymbolType(symbol_type));
@@ -436,18 +223,12 @@ impl Symbol {
     ) -> Result<()> {
         match self {
             // Line, area and point can be sub-symbols which do not have an index
-            Self::Line(rc) => rc
-                .try_borrow()?
-                .write(writer, color_set, Some(index), false),
-            Self::Area(rc) => rc
-                .try_borrow()?
-                .write(writer, color_set, Some(index), false),
-            Self::Point(rc) => rc
-                .try_borrow()?
-                .write(writer, color_set, Some(index), false),
-            Self::Text(rc) => rc.try_borrow()?.write(writer, color_set, index),
-            Self::CombinedArea(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
-            Self::CombinedLine(rc) => rc.try_borrow()?.write(writer, symbol_set, color_set, index),
+            Self::Line(symbol) => symbol.write(writer, color_set, Some(index), false),
+            Self::Area(symbol) => symbol.write(writer, color_set, Some(index), false),
+            Self::Point(symbol) => symbol.write(writer, color_set, Some(index), false),
+            Self::Text(symbol) => symbol.write(writer, color_set, index),
+            Self::CombinedArea(symbol) => symbol.write(writer, symbol_set, color_set, index),
+            Self::CombinedLine(symbol) => symbol.write(writer, symbol_set, color_set, index),
         }?;
         Ok(())
     }
@@ -457,7 +238,7 @@ impl Symbol {
 mod tests {
     use super::Symbol;
     use crate::{
-        Code, Result,
+        Code,
         symbols::{
             AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, TextSymbol,
         },
@@ -476,65 +257,33 @@ mod tests {
     }
 
     #[test]
-    fn common_sees_the_same_values_as_the_individual_getters() -> Result<()> {
-        for symbol in one_of_each() {
-            symbol.set_helper_symbol(true)?;
-            symbol.set_description("a description".to_owned())?;
+    fn common_sees_the_same_values_as_the_individual_getters() {
+        for mut symbol in one_of_each() {
+            symbol.set_helper_symbol(true);
+            symbol.set_description("a description".to_owned());
 
-            let common = symbol.common()?;
-            assert_eq!(common.code, symbol.code()?, "code mismatch");
-            assert_eq!(common.name, symbol.name()?, "name mismatch");
+            let common = symbol.common();
+            assert_eq!(common.code, symbol.code(), "code mismatch");
+            assert_eq!(common.name, symbol.name(), "name mismatch");
             assert_eq!(common.description, "a description", "description mismatch");
             assert!(common.is_helper_symbol, "helper flag mismatch");
             assert!(!common.is_hidden, "hidden flag mismatch");
         }
-        Ok(())
     }
 
     #[test]
-    fn common_mut_writes_through_to_the_getters() -> Result<()> {
-        for symbol in one_of_each() {
+    fn common_mut_writes_through_to_the_getters() {
+        for mut symbol in one_of_each() {
             {
-                let mut common = symbol.common_mut()?;
+                let common = symbol.common_mut();
                 common.name = "renamed".to_owned();
                 common.code = Code::new(4, 5, 6);
                 common.is_hidden = true;
             }
 
-            assert_eq!(symbol.name()?, "renamed");
-            assert_eq!(symbol.code()?, Code::new(4, 5, 6));
-            assert!(symbol.is_hidden()?);
+            assert_eq!(symbol.name(), "renamed");
+            assert_eq!(symbol.code(), Code::new(4, 5, 6));
+            assert!(symbol.is_hidden());
         }
-        Ok(())
-    }
-
-    #[test]
-    fn borrows_conflict_as_a_refcell_does() -> Result<()> {
-        for symbol in one_of_each() {
-            let common = symbol.common()?;
-            assert!(
-                symbol.set_hidden(true).is_err(),
-                "a setter must not succeed while a shared guard is alive"
-            );
-            assert!(
-                symbol.common_mut().is_err(),
-                "common_mut must not succeed while a shared guard is alive"
-            );
-            assert!(
-                symbol.is_hidden().is_ok(),
-                "a getter must still succeed while a shared guard is alive"
-            );
-            drop(common);
-
-            let common = symbol.common_mut()?;
-            assert!(
-                symbol.is_hidden().is_err(),
-                "a getter must not succeed while an exclusive guard is alive"
-            );
-            drop(common);
-
-            assert!(symbol.common().is_ok(), "guards must release on drop");
-        }
-        Ok(())
     }
 }

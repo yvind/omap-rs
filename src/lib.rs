@@ -3,6 +3,7 @@
 //! All map coordinates are given in millimetres on paper, relative to the
 //! reference point, with the positive y-axis pointing towards magnetic north.
 
+mod arena;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
 mod format_info;
@@ -260,24 +261,18 @@ pub enum Error {
     /// A color definition is missing its id.
     #[error("missing color id")]
     MissingColorId,
-    /// A `RefCell` borrow failed.
-    #[error(transparent)]
-    BorrowError(#[from] std::cell::BorrowError),
-    /// A `RefCell` mutable borrow failed.
-    #[error(transparent)]
-    BorrowMutError(#[from] std::cell::BorrowMutError),
     /// A Bézier-curve conversion error.
     #[error(transparent)]
     BezierConversionError(#[from] linestring2bezier::Error),
     /// An invalid color definition.
     #[error("Color definition error")]
     ColorError,
+    /// Tried to convert a color handle to an incompatible kind.
+    #[error("Tried to convert a color handle to an incompatible kind")]
+    ColorConversionError,
     /// A symbol definition would create a cycle.
     #[error("cyclic symbol definition")]
     CyclicSymbolDefinition,
-    /// A symbol could not be borrowed while checking for cycles.
-    #[error("cannot borrow symbol during cycle check")]
-    SymbolCycleBorrow,
     /// A combined symbol references a symbol outside the symbol set.
     #[error("symbol set index {0} out of range")]
     SymbolSetIndexOutOfRange(usize),

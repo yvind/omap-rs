@@ -1,8 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::Weak, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
 use crate::{
     CoordinateComponent, Error, NonNegativeF64, OmapSection, Result, notes,
-    symbols::{Symbol, SymbolSet, TextSymbol},
+    symbols::{SymbolSet, TextSymbolId},
     utils::{
         from_file_coords, to_file_coords, transform_position, try_get_attr_raw,
         try_transform_position,
@@ -111,7 +111,7 @@ pub struct TextObject {
     /// The tags associated with the object
     pub tags: HashMap<String, String>,
     /// Weak reference to the text symbol used to render this object.
-    pub symbol: Weak<RefCell<TextSymbol>>,
+    pub symbol: Option<TextSymbolId>,
     geometry: TextGeometry,
     /// The text content.
     pub text: String,
@@ -125,14 +125,10 @@ pub struct TextObject {
 
 impl TextObject {
     /// Create a new text object with the given symbol, geometry, and text content.
-    pub fn new(
-        symbol: impl Into<Weak<RefCell<TextSymbol>>>,
-        geometry: TextGeometry,
-        text: String,
-    ) -> Self {
+    pub fn new(symbol: Option<TextSymbolId>, geometry: TextGeometry, text: String) -> Self {
         Self {
             tags: HashMap::new(),
-            symbol: symbol.into(),
+            symbol,
             geometry,
             text,
             h_align: HorizontalAlign::default(),
@@ -203,23 +199,14 @@ impl TextObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let mut is_rotatable = false;
-        let index = if let Some(sym) = self.symbol.upgrade() {
-            is_rotatable = sym.try_borrow().map(|t| t.is_rotatable).unwrap_or(false);
-            symbol_set
-                .iter()
-                .position(|s| {
-                    if let Symbol::Text(s) = s {
-                        s.as_ptr() == sym.as_ptr()
-                    } else {
-                        false
-                    }
-                })
-                .map(|p| p as i32)
-                .unwrap_or(-1)
-        } else {
-            -1
-        };
+        let is_rotatable = self
+            .symbol
+            .and_then(|id| symbol_set.text_symbol(id))
+            .is_some_and(|symbol| symbol.is_rotatable);
+        let index = self
+            .symbol
+            .and_then(|id| symbol_set.index_of(id.into()))
+            .map_or(-1, |index| index as i32);
 
         let mut bs = BytesStart::new("object").with_attributes([
             ("type", "4"),
@@ -281,7 +268,7 @@ impl TextObject {
     /// the `<object>` start event. Reads through `</object>`.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        symbol: Weak<RefCell<TextSymbol>>,
+        symbol: Option<TextSymbolId>,
         h_align: HorizontalAlign,
         v_align: VerticalAlign,
         rotation: f64,

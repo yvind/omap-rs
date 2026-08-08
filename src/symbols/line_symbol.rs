@@ -8,7 +8,7 @@ use quick_xml::{
 use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
@@ -147,26 +147,26 @@ impl LineSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         if let Some(border) = &self.border {
             match border {
                 BorderStyle::SymmetricBorder { both } => {
-                    if let SymbolColor::Color(weak) = &both.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &both.color {
+                        colors.push(*id);
                     }
                 }
                 BorderStyle::AsymmetricBorder { left, right } => {
-                    if let SymbolColor::Color(weak) = &left.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &left.color {
+                        colors.push(*id);
                     }
-                    if let SymbolColor::Color(weak) = &right.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &right.color {
+                        colors.push(*id);
                     }
                 }
             }

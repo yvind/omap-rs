@@ -1,10 +1,12 @@
 mod color;
 mod color_set;
+mod ids;
 
 use std::str::FromStr;
 
-pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor, WeakColor};
+pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor};
 pub use color_set::ColorSet;
+pub use ids::{ColorId, MixedColorId, SpotColorId};
 use quick_xml::{
     Writer,
     events::{BytesStart, Event},
