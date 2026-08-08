@@ -1,10 +1,12 @@
 mod color;
 mod color_set;
+mod ids;
 
 use std::str::FromStr;
 
-pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor, WeakColor};
+pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor};
 pub use color_set::ColorSet;
+pub use ids::{ColorId, MixedColorId, SpotColorId};
 use quick_xml::{
     Writer,
     events::{BytesStart, Event},
@@ -15,6 +17,7 @@ use crate::{Error, Result};
 
 /// A CMYK color value with each component in the range `[0, 1]`.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cmyk {
     /// Cyan component.
     pub c: UnitF64,
@@ -86,6 +89,7 @@ impl From<Rgb> for Cmyk {
 
 /// How the CMYK values are determined.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CmykMode {
     /// Derived from the spot-color composition.
     #[default]
@@ -112,6 +116,7 @@ impl CmykMode {
 
 /// An RGB color value with each component in the range `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Rgb {
     /// Red component.
     pub r: UnitF64,
@@ -197,6 +202,7 @@ impl Default for Rgb {
 
 /// How the RGB values are determined.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RgbMode {
     /// Derived from the spot-color composition.
     #[default]
@@ -227,6 +233,7 @@ impl RgbMode {
 
 /// An RGB color value with each component in the range `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Argb {
     /// Alpha component
     pub a: UnitF64,

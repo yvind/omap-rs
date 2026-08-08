@@ -12,13 +12,14 @@ use super::{
 };
 use crate::{
     Error, NonNegativeF64, OmapSection, Result,
-    symbols::{Symbol, SymbolSet, WeakAreaPathSymbol},
+    symbols::{AreaPathSymbolId, SymbolId, SymbolSet},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw, try_transform_position},
 };
 
 /// A polygon whose exterior and interior rings retain straight and cubic
 /// Bézier segments and dash-point metadata.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BezierPolygon {
     /// The polygon's exterior ring.
     exterior: BezierPath,
@@ -202,6 +203,7 @@ impl From<Polygon> for BezierPolygon {
 
 /// An owned flattened polygon whose rings retain dash-point metadata.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlattenedPolygon {
     /// The flattened exterior ring.
     exterior: FlattenedPath,
@@ -268,6 +270,7 @@ impl From<FlattenedPolygon> for BezierPolygon {
 
 /// A fill pattern rotation and origin used by area objects.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PatternRotation {
     /// Rotation of the fill pattern in radians.
     pub rotation: f64,
@@ -277,23 +280,24 @@ pub struct PatternRotation {
 
 /// An area object whose geometry retains straight and cubic rings.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AreaObject {
     /// The tags associated with the object.
     pub tags: HashMap<String, String>,
     /// The fill-pattern rotation and origin.
     pub pattern_rotation: PatternRotation,
     /// The area or combined-area symbol used to render this object.
-    pub symbol: WeakAreaPathSymbol,
+    pub symbol: Option<AreaPathSymbolId>,
     geometry: BezierPolygon,
 }
 
 impl AreaObject {
     /// Create an area object from a Bézier or `geo_types` polygon.
-    pub fn new(symbol: impl Into<WeakAreaPathSymbol>, geometry: impl Into<BezierPolygon>) -> Self {
+    pub fn new(symbol: Option<AreaPathSymbolId>, geometry: impl Into<BezierPolygon>) -> Self {
         Self {
             tags: HashMap::new(),
             pattern_rotation: PatternRotation::default(),
-            symbol: symbol.into(),
+            symbol,
             geometry: geometry.into(),
         }
     }
@@ -339,7 +343,7 @@ impl AreaObject {
 
     /// Create an area object for use as a point-symbol element.
     pub fn new_element(geometry: impl Into<BezierPolygon>) -> Self {
-        Self::new(WeakAreaPathSymbol::Area(std::rc::Weak::new()), geometry)
+        Self::new(None, geometry)
     }
 
     pub(crate) fn geometry_is_empty(&self) -> bool {
@@ -391,21 +395,10 @@ impl AreaObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let index = match &self.symbol {
-            WeakAreaPathSymbol::Area(weak) => weak.upgrade().and_then(|symbol| {
-                symbol_set.iter().position(|candidate| match candidate {
-                    Symbol::Area(reference) => reference.as_ptr() == symbol.as_ptr(),
-                    _ => false,
-                })
-            }),
-            WeakAreaPathSymbol::CombinedArea(weak) => weak.upgrade().and_then(|symbol| {
-                symbol_set.iter().position(|candidate| match candidate {
-                    Symbol::CombinedArea(reference) => reference.as_ptr() == symbol.as_ptr(),
-                    _ => false,
-                })
-            }),
-        }
-        .map_or(-1, |index| index as i32);
+        let index = self
+            .symbol
+            .and_then(|id| symbol_set.index_of(SymbolId::from(id)))
+            .map_or(-1, |index| index as i32);
 
         self.write_content(writer, Some(index))
     }
@@ -468,7 +461,7 @@ impl AreaObject {
     /// Parse an area object through its closing `object` element.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        symbol: WeakAreaPathSymbol,
+        symbol: Option<AreaPathSymbolId>,
     ) -> Result<Self> {
         let mut tags = HashMap::new();
         let mut pattern_rotation = PatternRotation::default();
@@ -544,7 +537,7 @@ mod tests {
     use quick_xml::{Reader, Writer, events::Event};
 
     use super::{AreaObject, BezierPolygon};
-    use crate::{NonNegativeF64, Result, objects::BezierSegment, symbols::WeakAreaPathSymbol};
+    use crate::{NonNegativeF64, Result, objects::BezierSegment};
 
     #[test]
     fn fitted_polygon_can_construct_area_object() -> Result<()> {
@@ -573,7 +566,7 @@ mod tests {
             ])],
         );
         let polygon = BezierPolygon::fit_polygon(polygon, NonNegativeF64::clamped_from(0.2))?;
-        let area = AreaObject::new(WeakAreaPathSymbol::Area(std::rc::Weak::new()), polygon);
+        let area = AreaObject::new(None, polygon);
 
         assert_eq!(area.geometry().interiors().len(), 1);
         for ring in std::iter::once(area.geometry().exterior()).chain(area.geometry().interiors()) {
@@ -598,7 +591,7 @@ mod tests {
         );
         assert!(matches!(reader.read_event()?, Event::Start(_)));
 
-        let area = AreaObject::parse(&mut reader, WeakAreaPathSymbol::Area(std::rc::Weak::new()))?;
+        let area = AreaObject::parse(&mut reader, None)?;
         assert!(area.geometry().exterior().is_closed());
         assert_eq!(area.geometry().interiors().len(), 1);
         assert!(area.geometry().interiors()[0].is_closed());
@@ -634,8 +627,7 @@ mod tests {
             r#"<object><coords count="5">0 0 1;0 1000;1000 1000;1000 0;0 0 2;</coords><pattern rotation="0"></pattern></object>"#,
         );
         assert!(matches!(reader.read_event()?, Event::Start(_)));
-        let mut area =
-            AreaObject::parse(&mut reader, WeakAreaPathSymbol::Area(std::rc::Weak::new()))?;
+        let mut area = AreaObject::parse(&mut reader, None)?;
 
         area.flatten_in_place(NonNegativeF64::clamped_from(0.1))?;
         assert!(

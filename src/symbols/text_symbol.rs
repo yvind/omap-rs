@@ -7,13 +7,14 @@ use quick_xml::{
 use super::SymbolCommon;
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{self, try_get_attr_raw},
 };
 
 /// The framing mode for a text symbol.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FramingMode {
     /// No framing.
     #[default]
@@ -37,6 +38,7 @@ impl FramingMode {
 
 /// Line-based framing (halo) around text characters.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineFraming {
     /// Color of the framing line.
     pub color: SymbolColor,
@@ -46,6 +48,7 @@ pub struct LineFraming {
 
 /// Shadow framing behind text characters.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShadowFraming {
     /// Color of the shadow.
     pub color: SymbolColor,
@@ -55,6 +58,7 @@ pub struct ShadowFraming {
 
 /// A line drawn below the text (underline).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineBelow {
     /// Color of the line.
     pub color: SymbolColor,
@@ -66,6 +70,7 @@ pub struct LineBelow {
 
 /// A text symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TextSymbol {
     /// The common symbol fields
     pub common: SymbolCommon,
@@ -186,30 +191,30 @@ impl TextSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         if let Some(underline) = &self.line_below
-            && let SymbolColor::Color(weak) = &underline.color
+            && let SymbolColor::Color(id) = &underline.color
         {
-            colors.push(weak.clone());
+            colors.push(*id);
         }
 
         if let Some(framing) = &self.framing_mode {
             match framing {
                 FramingMode::NoFraming => (),
                 FramingMode::LineFraming(line_framing) => {
-                    if let SymbolColor::Color(weak) = &line_framing.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &line_framing.color {
+                        colors.push(*id);
                     }
                 }
                 FramingMode::ShadowFraming(shadow_framing) => {
-                    if let SymbolColor::Color(weak) = &shadow_framing.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &shadow_framing.color {
+                        colors.push(*id);
                     }
                 }
             }

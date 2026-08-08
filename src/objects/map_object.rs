@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Weak};
+use std::collections::HashMap;
 
 use quick_xml::{Reader, Writer, events::BytesStart};
 
@@ -6,11 +6,14 @@ use super::{AreaObject, LineObject, PointObject, TextObject};
 use crate::{
     Error, Result,
     objects::{HorizontalAlign, VerticalAlign},
-    symbols::{SymbolSet, WeakAreaPathSymbol, WeakLinePathSymbol, WeakSymbol},
+    symbols::{
+        AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolSet, TextSymbolId,
+    },
     utils::parse_attr_raw,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(super) enum ObjectType {
     Point,
     Line,
@@ -20,6 +23,7 @@ pub(super) enum ObjectType {
 
 /// A map object that can be a point, line, area, or text.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MapObject {
     /// A point object.
     Point(PointObject),
@@ -32,23 +36,14 @@ pub enum MapObject {
 }
 
 impl MapObject {
-    /// Get a non-owning reference to the symbol associated with this object.
-    pub fn symbol(&self) -> WeakSymbol {
+    /// The symbol this object is rendered with, or `None` for the format's
+    /// unknown-symbol sentinel.
+    pub fn symbol(&self) -> Option<SymbolId> {
         match self {
-            Self::Point(point_object) => WeakSymbol::Point(Weak::clone(&point_object.symbol)),
-            Self::Line(line_object) => match &line_object.symbol {
-                WeakLinePathSymbol::Line(weak) => WeakSymbol::Line(Weak::clone(weak)),
-                WeakLinePathSymbol::CombinedLine(weak) => {
-                    WeakSymbol::CombinedLine(Weak::clone(weak))
-                }
-            },
-            Self::Area(area_object) => match &area_object.symbol {
-                WeakAreaPathSymbol::Area(weak) => WeakSymbol::Area(Weak::clone(weak)),
-                WeakAreaPathSymbol::CombinedArea(weak) => {
-                    WeakSymbol::CombinedArea(Weak::clone(weak))
-                }
-            },
-            Self::Text(text_object) => WeakSymbol::Text(Weak::clone(&text_object.symbol)),
+            Self::Point(object) => object.symbol.map(Into::into),
+            Self::Line(object) => object.symbol.map(Into::into),
+            Self::Area(object) => object.symbol.map(Into::into),
+            Self::Text(object) => object.symbol.map(Into::into),
         }
     }
 
@@ -193,57 +188,50 @@ impl MapObject {
             object_type = ObjectType::Line;
         }
 
-        // for elements the symbol_id is not given as the symbol is given in the element and we need to create a dummy weaksymbol
-        // Objects can have symbol id of -1 meaning unknown symbol so create a dummy in that case also
-        let weak_symbol = if let Some(sid) = symbol_id
+        // Point-symbol elements carry their symbol inline rather than by index,
+        // and an object may name -1 for an unknown symbol. Both mean `None`.
+        let symbol = if let Some(sid) = symbol_id
             && sid >= 0
         {
-            symbols
-                .get_weak_symbol_by_index(sid as usize)
-                .ok_or(Error::UnknownObjectSymbolId(sid))?
+            Some(
+                symbols
+                    .id_at(usize::try_from(sid)?)
+                    .ok_or(Error::UnknownObjectSymbolId(sid))?,
+            )
         } else {
-            match object_type {
-                ObjectType::Point => WeakSymbol::Point(Weak::new()),
-                ObjectType::Line => WeakSymbol::Line(Weak::new()),
-                ObjectType::Area => WeakSymbol::Area(Weak::new()),
-                ObjectType::Text => WeakSymbol::Text(Weak::new()),
-            }
+            None
         };
 
         // Mapper does not discern between area and line objects. But we do because we want a Polygon or a LineString!
         // Let's check the symbol for what the object must be
-        if object_type == ObjectType::Area {
-            match weak_symbol {
-                WeakSymbol::Line(_) | WeakSymbol::CombinedLine(_) => object_type = ObjectType::Line,
-                _ => (),
-            }
+        if object_type == ObjectType::Area
+            && matches!(symbol, Some(SymbolId::Line(_) | SymbolId::CombinedLine(_)))
+        {
+            object_type = ObjectType::Line;
         }
 
-        match (object_type, weak_symbol) {
-            (ObjectType::Point, WeakSymbol::Point(ps)) => {
-                Ok(Self::Point(PointObject::parse(reader, ps, rotation)?))
-            }
-            (ObjectType::Line, WeakSymbol::Line(ls)) => Ok(Self::Line(LineObject::parse(
+        match object_type {
+            ObjectType::Point => Ok(Self::Point(PointObject::parse(
                 reader,
-                WeakLinePathSymbol::Line(ls),
+                symbol.map(PointSymbolId::try_from).transpose()?,
+                rotation,
             )?)),
-            (ObjectType::Line, WeakSymbol::CombinedLine(cls)) => Ok(Self::Line(LineObject::parse(
+            ObjectType::Line => Ok(Self::Line(LineObject::parse(
                 reader,
-                WeakLinePathSymbol::CombinedLine(cls),
+                symbol.map(LinePathSymbolId::try_from).transpose()?,
             )?)),
             // do not bother sending rotation to the AreaObject as it is also given in the pattern rotation
-            (ObjectType::Area, WeakSymbol::Area(ars)) => Ok(Self::Area(AreaObject::parse(
+            ObjectType::Area => Ok(Self::Area(AreaObject::parse(
                 reader,
-                WeakAreaPathSymbol::Area(ars),
+                symbol.map(AreaPathSymbolId::try_from).transpose()?,
             )?)),
-            (ObjectType::Area, WeakSymbol::CombinedArea(cas)) => Ok(Self::Area(AreaObject::parse(
+            ObjectType::Text => Ok(Self::Text(TextObject::parse(
                 reader,
-                WeakAreaPathSymbol::CombinedArea(cas),
+                symbol.map(TextSymbolId::try_from).transpose()?,
+                h_align,
+                v_align,
+                rotation,
             )?)),
-            (ObjectType::Text, WeakSymbol::Text(ts)) => Ok(Self::Text(TextObject::parse(
-                reader, ts, h_align, v_align, rotation,
-            )?)),
-            _ => Err(Error::ObjectError),
         }
     }
 }
@@ -258,14 +246,13 @@ mod tests {
     use crate::{
         Result,
         objects::{AreaObject, PointObject, TextGeometry, TextObject},
-        symbols::WeakAreaPathSymbol,
     };
 
     #[test]
     fn rotatable_objects_follow_transform_rotation() -> Result<()> {
         let transform = |coord: geo_types::Coord| coord! { x: -coord.y + 10., y: coord.x - 5. };
 
-        let mut point = PointObject::new(std::rc::Weak::new(), Point::new(1., 2.));
+        let mut point = PointObject::new(None, Point::new(1., 2.));
         point.rotation = 0.1;
         let mut point = MapObject::Point(point);
         point.transform(transform);
@@ -275,7 +262,7 @@ mod tests {
         assert!((point.rotation - (0.1 + FRAC_PI_2)).abs() < 1e-12);
 
         let mut text = TextObject::new(
-            std::rc::Weak::new(),
+            None,
             TextGeometry::SingleAnchor(coord! { x: 1., y: 2. }),
             String::new(),
         );
@@ -293,10 +280,7 @@ mod tests {
             coord! { x: 0., y: 1. },
             coord! { x: 0., y: 0. },
         ]);
-        let mut area = AreaObject::new(
-            WeakAreaPathSymbol::Area(std::rc::Weak::new()),
-            Polygon::new(ring, Vec::new()),
-        );
+        let mut area = AreaObject::new(None, Polygon::new(ring, Vec::new()));
         area.pattern_rotation.coord = coord! { x: 1., y: 2. };
         area.pattern_rotation.rotation = 0.3;
         let mut area = MapObject::Area(area);

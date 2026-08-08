@@ -17,6 +17,7 @@ use crate::Error;
 use crate::Result;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UtmCode(i8);
 
 impl UtmCode {
@@ -64,6 +65,7 @@ impl FromStr for UtmCode {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GaussKrueger(u8);
 
 impl GaussKrueger {
@@ -101,6 +103,7 @@ impl FromStr for GaussKrueger {
 
 /// The coordinate reference system type.
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CrsType {
     /// Local (non-georeferenced) coordinates.
     #[default]

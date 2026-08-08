@@ -11,6 +11,7 @@ use crate::{Error, NonNegativeF64, Result};
 
 /// Visibility settings for a template or the map layer.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TemplateVisibility {
     /// Opacity from 0.0 (invisible) to 1.0 (opaque).
     pub opacity: UnitF64,
@@ -47,6 +48,7 @@ impl TemplateVisibility {
 
 /// How the grid is displayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GridDisplay {
     /// Grid is hidden.
     #[default]
@@ -97,6 +99,7 @@ impl AsRef<str> for GridDisplay {
 
 /// Grid alignment reference direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GridAlignment {
     /// Aligned to magnetic north.
     #[default]
@@ -142,6 +145,7 @@ impl AsRef<str> for GridAlignment {
 
 /// Grid spacing unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GridUnit {
     /// Meters on the ground.
     #[default]
@@ -187,6 +191,7 @@ impl AsRef<str> for GridUnit {
 
 /// The map grid display settings.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Grid {
     /// Rgb Grid colour parsed from a hex string, e.g. `"#646464"`.
     pub color: Argb,
@@ -284,6 +289,7 @@ impl Grid {
 /// The view onto the map, including zoom, position, rotation, grid settings,
 /// and visibility of the map layer and templates.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct View {
     /// Grid display settings.
     pub grid: Grid,

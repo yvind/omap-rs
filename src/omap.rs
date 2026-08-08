@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
-use crate::symbols::{PublicOrPrivateSymbol, Symbol};
+use crate::symbols::{PublicOrPrivateSymbol, Symbol, SymbolId};
 
 use geo_types::Coord;
 
@@ -36,7 +36,8 @@ const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.om
 /// relative the ref point with positive y towards the magnetic north
 ///
 /// The Undo/Redo history and printer information is ignored
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Omap {
     /// Free-text notes embedded in the file.
     pub notes: String,
@@ -304,7 +305,7 @@ impl Omap {
         writer.get_mut().write_all(b"\n".as_slice())?;
 
         // sort the symbols, important to do this before writing symbols and parts
-        self.symbols.try_sort()?;
+        self.symbols.sort();
 
         // write colors
         self.colors.write(&mut writer)?;
@@ -331,7 +332,7 @@ impl Omap {
     ///
     /// See [`Self::to_writer`] for more docs
     ///
-    /// The replacement is atomic on platforms where [`fs::rename`] atomically
+    /// The replacement is atomic on platforms where [`std::fs::rename`] atomically
     /// replaces an existing destination. The temporary file is created beside
     /// `path`, so it is always on the same filesystem as the destination.
     ///
@@ -449,60 +450,93 @@ impl Omap {
         self.try_transform(transform)
     }
 
+    /// Renumber every handle so that its index is also its position, dropping
+    /// references to symbols and colors that are no longer in their set.
+    ///
+    /// A freshly parsed map is already in this form, and stays in it as long as
+    /// nothing is removed from either set. Only [`crate::symbols::SymbolSet::remove`]
+    /// and the [`ColorSet`] removals break it, by leaving a gap that a later
+    /// insertion fills at a different position.
+    ///
+    /// Handles taken before this call do not survive it. A dangling symbol
+    /// reference becomes `None`, which writes as the format's `-1`; a dangling
+    /// color reference becomes [`crate::colors::SymbolColor::NoColor`]; and a
+    /// dangling combined-symbol component or mixed-color component is dropped.
+    ///
+    /// This is what makes the map serializable — see the `serde` feature.
+    pub fn compact(&mut self) {
+        let remap = crate::compact::Remap {
+            symbols: self.symbols.compact_arena(),
+            colors: self.colors.compact_arena(),
+        };
+
+        use crate::compact::Compact as _;
+        for color in self.colors.values_mut() {
+            color.compact(&remap);
+        }
+        for symbol in self.symbols.values_mut() {
+            symbol.compact(&remap);
+        }
+        for object in self.iter_all_objects_mut() {
+            object.compact(&remap);
+        }
+    }
+
+    /// Is every handle's index already its position?
+    ///
+    /// True for a map that has never had a symbol or color removed.
+    pub fn is_compact(&self) -> bool {
+        self.symbols.is_compact() && self.colors.is_compact()
+    }
+
     /// Validate references between objects, symbols, and colors.
     ///
     /// # Errors
     ///
     /// Returns the first invalid reference with its map location, or an error
     /// if a symbol cannot be borrowed during validation.
-    pub fn validate(&self) -> Result<()> {
-        for (symbol_index, symbol) in self.symbols.iter().enumerate() {
-            for color in symbol.colors()? {
-                self.colors
-                    .priority_of_weak_color(&color)
-                    .ok_or(ValidationError::DanglingSymbolColor { symbol_index })?;
+    pub fn validate(&self) -> std::result::Result<(), ValidationError> {
+        for (symbol_index, symbol) in self.symbols.values().enumerate() {
+            for color in symbol.colors(&self.symbols) {
+                if !self.colors.contains(color) {
+                    return Err(ValidationError::DanglingSymbolColor { symbol_index });
+                }
             }
 
-            match symbol {
-                Symbol::CombinedArea(combined) => {
-                    let combined = combined.try_borrow().map_err(Error::from)?;
-                    for (component_index, component) in combined.components().enumerate() {
-                        if let PublicOrPrivateSymbol::Public(component) = component
-                            && !self.symbols.contains_symbol(&component.clone().into())
-                        {
-                            return Err(Error::ValidationError(
-                                ValidationError::DanglingCombinedComponent {
-                                    symbol_index,
-                                    component_index,
-                                },
-                            ));
-                        }
-                    }
+            let components: Vec<Option<SymbolId>> = match symbol {
+                Symbol::CombinedArea(combined) => combined
+                    .components()
+                    .map(|part| match part {
+                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Private(_) => None,
+                    })
+                    .collect(),
+                Symbol::CombinedLine(combined) => combined
+                    .components()
+                    .map(|part| match part {
+                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Private(_) => None,
+                    })
+                    .collect(),
+                _ => continue,
+            };
+            for (component_index, component) in components.into_iter().enumerate() {
+                if let Some(component) = component
+                    && !self.symbols.contains(component)
+                {
+                    return Err(ValidationError::DanglingCombinedComponent {
+                        symbol_index,
+                        component_index,
+                    });
                 }
-                Symbol::CombinedLine(combined) => {
-                    let combined = combined.try_borrow().map_err(Error::from)?;
-                    for (component_index, component) in combined.components().enumerate() {
-                        if let PublicOrPrivateSymbol::Public(component) = component
-                            && !self.symbols.contains_symbol(&component.clone().into())
-                        {
-                            return Err(Error::ValidationError(
-                                ValidationError::DanglingCombinedComponent {
-                                    symbol_index,
-                                    component_index,
-                                },
-                            ));
-                        }
-                    }
-                }
-                _ => {}
             }
         }
 
         for (object_index, object) in self.iter_all_objects().enumerate() {
-            if !self.symbols.contains_symbol(&object.symbol()) {
-                return Err(Error::ValidationError(
-                    ValidationError::DanglingObjectSymbol { object_index },
-                ));
+            if let Some(symbol) = object.symbol()
+                && !self.symbols.contains(symbol)
+            {
+                return Err(ValidationError::DanglingObjectSymbol { object_index });
             }
         }
         Ok(())
@@ -532,11 +566,8 @@ mod tests {
     fn try_transform_is_transactional() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).unwrap());
         let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
-        part.add_object(PointObject::new(
-            std::rc::Weak::new(),
-            Point::new(10.0, 20.0),
-        ));
+        part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
+        part.add_object(PointObject::new(None, Point::new(10.0, 20.0)));
         let before = point_positions(&map);
 
         let result = map.try_transform(|coord| {
@@ -558,15 +589,34 @@ mod tests {
     #[test]
     fn validate_reports_the_dangling_object_location() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
-        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
-
-        assert!(matches!(
-            map.validate(),
-            Err(Error::ValidationError(
-                ValidationError::DanglingObjectSymbol { object_index: 0 }
-            ))
+        let symbol = map.symbols.add_symbol(crate::symbols::PointSymbol::new(
+            crate::Code::new(1, 0, 0),
+            "dot",
         ));
+        let point = crate::symbols::PointSymbolId::try_from(symbol)?;
+
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
+        assert!(map.validate().is_ok(), "a live handle must validate");
+
+        let _removed = map.symbols.remove(symbol);
+        assert!(
+            matches!(
+                map.validate(),
+                Err(ValidationError::DanglingObjectSymbol { object_index: 0 })
+            ),
+            "a handle to a removed symbol must not validate"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_object_without_a_symbol_validates() -> Result<()> {
+        let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
+
+        assert!(map.validate().is_ok());
         Ok(())
     }
 
@@ -580,15 +630,58 @@ mod tests {
 
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
         let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(
-            std::rc::Weak::new(),
-            Point::new(3_000_000.0, 0.0),
-        ));
+        part.add_object(PointObject::new(None, Point::new(3_000_000.0, 0.0)));
 
         let result = map.to_file(&path);
         assert!(matches!(result, Err(Error::MapCoordOutOfBounds)));
         assert_eq!(fs::read(&path)?, b"previous map");
         fs::remove_file(path)?;
         Ok(())
+    }
+}
+
+/// Serializing borrows the map, but the representation requires compacted
+/// handles. A map that is already compacted -- the usual case -- serializes in
+/// place; otherwise a compacted copy is made for the duration.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize)]
+struct OmapFields<'a> {
+    notes: &'a String,
+    geo_referencing: &'a GeoRef,
+    colors: &'a ColorSet,
+    symbols: &'a SymbolSet,
+    parts: &'a MapParts,
+    templates: &'a Templates,
+    view: &'a View,
+}
+
+#[cfg(feature = "serde")]
+impl<'a> From<&'a Omap> for OmapFields<'a> {
+    fn from(map: &'a Omap) -> Self {
+        Self {
+            notes: &map.notes,
+            geo_referencing: &map.geo_referencing,
+            colors: &map.colors,
+            symbols: &map.symbols,
+            parts: &map.parts,
+            templates: &map.templates,
+            view: &map.view,
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Omap {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        if self.is_compact() {
+            OmapFields::from(self).serialize(serializer)
+        } else {
+            let mut compacted = self.clone();
+            compacted.compact();
+            OmapFields::from(&compacted).serialize(serializer)
+        }
     }
 }

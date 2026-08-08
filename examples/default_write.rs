@@ -14,7 +14,7 @@ use omap::{
     Code, Error, Omap,
     colors::Color,
     objects::LineObject,
-    symbols::{PublicOrPrivateSymbol, Symbol, WeakLinePathSymbol},
+    symbols::{LinePathSymbolId, PublicOrPrivateSymbol, Symbol},
 };
 
 fn main() -> Result<(), Error> {
@@ -35,27 +35,19 @@ fn main() -> Result<(), Error> {
     #[cfg(not(feature = "geo_ref"))]
     let mut map = Omap::default_15_000()?;
 
-    for color in map.colors.iter() {
+    for color in map.colors.values() {
         match color {
-            Color::SpotColor(ref_cell) => {
-                let b = ref_cell.try_borrow().unwrap();
-                println!("{} with spot name {}", b.color_name, b.spotcolor_name);
+            Color::SpotColor(spot) => {
+                println!("{} with spot name {}", spot.color_name, spot.spotcolor_name);
             }
-            Color::MixedColor(ref_cell) => {
-                println!("{}", ref_cell.try_borrow().unwrap().color_name);
-            }
+            Color::MixedColor(mixed) => println!("{}", mixed.color_name),
         }
     }
 
-    let erosion_gully = map
-        .symbols
-        .symbol_by_code(Code::new(107, 0, 0))
-        .unwrap()
-        .unwrap()
-        .downgrade();
+    let erosion_gully = map.symbols.id_by_code(Code::new(107, 0, 0)).unwrap();
 
     let mut ls = LineObject::new(
-        WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
+        Some(LinePathSymbolId::try_from(erosion_gully).unwrap()),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
@@ -64,19 +56,19 @@ fn main() -> Result<(), Error> {
     map.parts.get_mut(0).unwrap().add_object(ls);
 
     println!("\nCombined Line symbols:");
-    for symbol in map.symbols.iter() {
+    for symbol in map.symbols.values() {
         if let Symbol::CombinedLine(s) = symbol {
-            println!("{}", s.borrow().common.name);
+            println!("{}", s.common.name);
         }
     }
-    if let Ok(Some(s)) = map.symbols.symbol_by_name("Railway, Olive background") {
+    if let Some(s) = map.symbols.symbol_by_name("Railway, Olive background") {
         println!("{s:?}");
     }
 
     let mut num = 0;
-    for symbol in map.symbols.iter() {
+    for symbol in map.symbols.values() {
         if let Symbol::Line(s) = symbol {
-            let borrowed = s.borrow();
+            let borrowed = s;
 
             if let Some(_ss_) = &borrowed.start_symbol {
                 num += 1;
@@ -92,7 +84,7 @@ fn main() -> Result<(), Error> {
             }
         }
         if let Symbol::CombinedLine(s) = symbol {
-            let borrowed = s.borrow();
+            let borrowed = s;
 
             for part in borrowed.components() {
                 if let PublicOrPrivateSymbol::Private(s) = part {

@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::collections::HashSet;
-
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -9,28 +6,38 @@ use quick_xml::{
 use super::{AreaSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
     Code, Error, OmapSection, Result,
-    colors::{ColorSet, WeakColor},
+    colors::{ColorId, ColorSet},
     notes,
-    symbols::{AreaOrLineSymbol, CombinedLineSymbol, WeakPathSymbol, WeakSymbol},
+    symbols::{AreaOrLineSymbol, PathSymbolId, Symbol, SymbolId},
     utils::{parse_attr, try_get_attr_raw},
 };
 
 /// A combined area symbol composed of multiple sub-symbols.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CombinedAreaSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
     /// The component parts of this combined symbol.
-    /// Be careful not to make circular symbol definitions (combined symbol A contains B which contains C which contains A)
-    parts: Vec<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>>,
+    /// Public components are added through [`SymbolSet::add_area_component`],
+    /// which rejects any component that would make the definition cyclic.
+    parts: Vec<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>>,
 }
 
 impl CombinedAreaSymbol {
     /// Iterate through the symbol component of the symbol
     pub fn components(
         &self,
-    ) -> impl Iterator<Item = &PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> impl Iterator<Item = &PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>> {
         self.parts.iter()
+    }
+
+    /// Iterate over only the public components.
+    pub fn public_components(&self) -> impl Iterator<Item = PathSymbolId> {
+        self.parts.iter().filter_map(|part| match part {
+            PublicOrPrivateSymbol::Public(id) => Some(*id),
+            PublicOrPrivateSymbol::Private(_) => None,
+        })
     }
 
     /// Remove and return the symbol component at position `index` in the component vec.
@@ -41,7 +48,7 @@ impl CombinedAreaSymbol {
     pub fn remove_component(
         &mut self,
         index: usize,
-    ) -> Option<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> Option<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>> {
         if self.parts.len() > index {
             Some(self.parts.remove(index))
         } else {
@@ -57,7 +64,7 @@ impl CombinedAreaSymbol {
     pub fn swap_remove_component(
         &mut self,
         index: usize,
-    ) -> Option<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> {
+    ) -> Option<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>> {
         if self.parts.len() > index {
             Some(self.parts.swap_remove(index))
         } else {
@@ -65,39 +72,11 @@ impl CombinedAreaSymbol {
         }
     }
 
-    /// Adds a component to the symbol
-    /// Fails if adding this component will create a cycle in the symbol component definitions
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the component would introduce a cycle or a child
-    /// symbol cannot be borrowed during cycle detection.
-    pub fn add_component(
+    pub(crate) fn push_component(
         &mut self,
-        new_component: PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>,
-    ) -> Result<()> {
-        if matches!(
-            new_component,
-            PublicOrPrivateSymbol::Public(
-                WeakPathSymbol::CombinedLine(_) | WeakPathSymbol::CombinedArea(_)
-            )
-        ) {
-            self.parts.push(new_component);
-            match self.contains_cycle() {
-                Ok(true) => {
-                    let _ = self.parts.pop();
-                    Err(Error::CyclicSymbolDefinition)
-                }
-                Ok(false) => Ok(()),
-                Err(e) => {
-                    let _ = self.parts.pop();
-                    Err(e)
-                }
-            }
-        } else {
-            self.parts.push(new_component);
-            Ok(())
-        }
+        component: PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>,
+    ) {
+        self.parts.push(component);
     }
 
     /// Create a new empty combined area symbol with the given code and name.
@@ -130,191 +109,69 @@ impl CombinedAreaSymbol {
     }
 
     /// Get the minimum area (in paper dimensions mm²) among all area sub-symbols.
-    /// The check fails if any child combined area symbols cannot be borrowed
     ///
-    /// # Errors
-    ///
-    /// Returns an error if a child area symbol cannot be borrowed.
-    pub fn minimum_area(&self) -> Result<f64> {
+    /// Takes the [`SymbolSet`] that owns the public components. A component no
+    /// longer in the set contributes nothing.
+    pub fn minimum_area(&self, symbol_set: &SymbolSet) -> f64 {
         let mut min = f64::MAX;
-        for s in &self.parts {
-            match s {
-                PublicOrPrivateSymbol::Public(p) => match p {
-                    WeakPathSymbol::Area(weak) => {
-                        if let Some(area) = weak.upgrade() {
-                            let area_symbol = area.try_borrow()?;
-                            if area_symbol.minimum_area.get() > 0. {
-                                min = min.min(area_symbol.minimum_area.get());
-                            }
-                        }
-                    }
-                    WeakPathSymbol::CombinedArea(weak) => {
-                        if let Some(area) = weak.upgrade() {
-                            let area = area.try_borrow()?.minimum_area()?;
-                            if area > 0. {
-                                min = min.min(area);
-                            }
-                        }
-                    }
-                    _ => (),
-                },
-                PublicOrPrivateSymbol::Private(p) => {
-                    if let AreaOrLineSymbol::Area(area_symbol) = p
-                        && area_symbol.minimum_area.get() > 0.
-                    {
-                        min = min.min(area_symbol.minimum_area.get());
-                    }
-                }
-            }
-        }
-        if min == f64::MAX {
-            return Ok(0.);
-        }
-        Ok(min)
-    }
-
-    /// Check if this symbol definition is cyclic.
-    ///
-    /// Uses an explicit visited set to detect cycles reliably.
-    pub(super) fn contains_cycle(&self) -> Result<bool> {
-        let mut visited_area = HashSet::new();
-        let mut visited_line = HashSet::new();
-        self.contains_cycle_with_visited(&mut visited_area, &mut visited_line)
-    }
-
-    fn contains_cycle_with_visited(
-        &self,
-        visited_area: &mut HashSet<*const RefCell<Self>>,
-        visited_line: &mut HashSet<*const RefCell<CombinedLineSymbol>>,
-    ) -> Result<bool> {
         for part in &self.parts {
-            match part {
-                PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedArea(weak)) => {
-                    if let Some(ca) = weak.upgrade() {
-                        let ptr = std::rc::Rc::as_ptr(&ca);
-                        if !visited_area.insert(ptr) {
-                            return Ok(true); // Already visited — cycle detected
-                        }
-                        let borrowed = ca
-                            .try_borrow()
-                            .map_err(|_borrow_error| Error::SymbolCycleBorrow)?;
-                        if borrowed.contains_cycle_with_visited(visited_area, visited_line)? {
-                            return Ok(true);
-                        }
-                        let _ = visited_area.remove(&ptr);
-                    }
+            let area = match part {
+                PublicOrPrivateSymbol::Public(PathSymbolId::Area(id)) => symbol_set
+                    .area_symbol(*id)
+                    .map_or(0., |symbol| symbol.minimum_area.get()),
+                PublicOrPrivateSymbol::Public(PathSymbolId::CombinedArea(id)) => symbol_set
+                    .combined_area_symbol(*id)
+                    .map_or(0., |symbol| symbol.minimum_area(symbol_set)),
+                PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(symbol)) => {
+                    symbol.minimum_area.get()
                 }
-                PublicOrPrivateSymbol::Public(WeakPathSymbol::CombinedLine(weak)) => {
-                    if let Some(cl) = weak.upgrade() {
-                        let ptr = std::rc::Rc::as_ptr(&cl);
-                        if !visited_line.insert(ptr) {
-                            return Ok(true); // Already visited — cycle detected
-                        }
-                        let borrowed = cl
-                            .try_borrow()
-                            .map_err(|_borrow_error| Error::SymbolCycleBorrow)?;
-                        if borrowed.contains_cycle_line_with_visited(visited_line)? {
-                            return Ok(true);
-                        }
-                        let _ = visited_line.remove(&ptr);
-                    }
-                }
-                _ => (),
+                _ => 0.,
+            };
+            if area > 0. {
+                min = min.min(area);
             }
         }
-        Ok(false)
+        if min == f64::MAX { 0. } else { min }
     }
 
-    /// Return an Vec with every [`WeakColor`] in this symbol definition
+    /// Every color used in this symbol definition.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the public components could not be borrowed as it is mutably borrowed somewhere else
-    pub fn colors(&self) -> Result<Vec<WeakColor>> {
+    /// Takes the [`SymbolSet`] that owns the public components. A component no
+    /// longer in the set contributes no colors.
+    pub fn colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
         for component in self.components() {
             match component {
-                PublicOrPrivateSymbol::Public(sym) => match sym {
-                    WeakPathSymbol::Line(weak) => {
-                        if let Some(rc) = weak.upgrade() {
-                            colors.extend(rc.try_borrow()?.colors());
-                        }
+                PublicOrPrivateSymbol::Public(id) => {
+                    if let Some(symbol) = symbol_set.get(SymbolId::from(*id)) {
+                        colors.extend(symbol.colors(symbol_set));
                     }
-                    WeakPathSymbol::CombinedLine(weak) => {
-                        if let Some(rc) = weak.upgrade() {
-                            colors.extend(rc.try_borrow()?.colors()?);
-                        }
-                    }
-                    WeakPathSymbol::Area(weak) => {
-                        if let Some(rc) = weak.upgrade() {
-                            colors.extend(rc.try_borrow()?.colors());
-                        }
-                    }
-                    WeakPathSymbol::CombinedArea(weak) => {
-                        if let Some(rc) = weak.upgrade() {
-                            colors.extend(rc.try_borrow()?.colors()?);
-                        }
-                    }
-                },
-                PublicOrPrivateSymbol::Private(sym) => match sym {
-                    AreaOrLineSymbol::Area(sym) => colors.extend(sym.colors()),
-                    AreaOrLineSymbol::Line(sym) => colors.extend(sym.colors()),
+                }
+                PublicOrPrivateSymbol::Private(symbol) => match symbol {
+                    AreaOrLineSymbol::Area(symbol) => colors.extend(symbol.colors()),
+                    AreaOrLineSymbol::Line(symbol) => colors.extend(symbol.colors()),
                 },
             }
         }
 
-        Ok(colors)
+        colors
     }
 
-    // This will recurse forever if any cycles exist,
-    // but it should not as the components are private and the addition of components are shielded
-    /// Check if the symbol references the other symbol
-    /// The check fails if any sub-symbol cannot be borrowed (is mutably borrowed somewhere else)
+    /// Does this symbol reference `other`, directly or through a component?
     ///
-    /// # Errors
-    ///
-    /// Returns an error if a referenced combined symbol cannot be borrowed.
-    pub fn contains_symbol(&self, other_symbol: &WeakSymbol) -> Result<bool> {
-        match other_symbol {
-            WeakSymbol::Point(_) | WeakSymbol::Text(_) => return Ok(false),
-            _ => (),
-        }
-
-        for part in &self.parts {
-            if let PublicOrPrivateSymbol::Public(s) = part {
-                match (s, other_symbol) {
-                    (WeakPathSymbol::CombinedArea(weak), _) => {
-                        let combined_area = weak.upgrade();
-                        if let Some(ca) = combined_area
-                            && ca.try_borrow()?.contains_symbol(other_symbol)?
-                        {
-                            return Ok(true);
-                        }
-                    }
-                    (WeakPathSymbol::CombinedLine(weak), _) => {
-                        let combined_line = weak.upgrade();
-                        if let Some(cl) = combined_line
-                            && cl.try_borrow()?.contains_symbol(other_symbol)?
-                        {
-                            return Ok(true);
-                        }
-                    }
-                    (WeakPathSymbol::Area(weak), WeakSymbol::Area(other_weak))
-                        if weak.ptr_eq(other_weak) =>
-                    {
-                        return Ok(true);
-                    }
-                    (WeakPathSymbol::Line(weak), WeakSymbol::Line(other_weak))
-                        if weak.ptr_eq(other_weak) =>
-                    {
-                        return Ok(true);
-                    }
-                    _ => (),
-                }
+    /// Takes the [`SymbolSet`] that owns the public components.
+    pub fn contains_symbol(&self, symbol_set: &SymbolSet, other: SymbolId) -> bool {
+        self.public_components().any(|component| {
+            if SymbolId::from(component) == other {
+                return true;
             }
-        }
-        Ok(false)
+            match symbol_set.get(SymbolId::from(component)) {
+                Some(Symbol::CombinedArea(symbol)) => symbol.contains_symbol(symbol_set, other),
+                Some(Symbol::CombinedLine(symbol)) => symbol.contains_symbol(symbol_set, other),
+                _ => false,
+            }
+        })
     }
 
     pub(super) fn parse<R: std::io::BufRead>(
@@ -323,7 +180,7 @@ impl CombinedAreaSymbol {
         attributes: SymbolCommon,
     ) -> Result<(Self, Vec<usize>)> {
         let mut common = attributes;
-        let mut parts: Vec<PublicOrPrivateSymbol<WeakPathSymbol, AreaOrLineSymbol>> = Vec::new();
+        let mut parts: Vec<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>> = Vec::new();
         let mut public_component_ids: Vec<usize> = Vec::new();
 
         let mut buf = Vec::new();
@@ -468,16 +325,10 @@ impl CombinedAreaSymbol {
 
         for part in &self.parts {
             match part {
-                PublicOrPrivateSymbol::Public(weak_path) => {
-                    let sym_index = if let Some(sym) = weak_path.upgrade() {
-                        symbol_set
-                            .iter()
-                            .position(|s| s == &sym)
-                            .map(|p| p as i32)
-                            .unwrap_or(-1)
-                    } else {
-                        -1
-                    };
+                PublicOrPrivateSymbol::Public(id) => {
+                    let sym_index = symbol_set
+                        .index_of(SymbolId::from(*id))
+                        .map_or(-1, |index| index as i32);
 
                     writer.write_event(Event::Empty(
                         BytesStart::new("part")
@@ -510,5 +361,19 @@ impl CombinedAreaSymbol {
         }
         writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
+    }
+}
+
+impl CombinedAreaSymbol {
+    pub(crate) fn retain_map_components<F>(&mut self, mut f: F)
+    where
+        F: FnMut(
+            PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>,
+        ) -> Option<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>>,
+    {
+        self.parts = std::mem::take(&mut self.parts)
+            .into_iter()
+            .filter_map(&mut f)
+            .collect();
     }
 }

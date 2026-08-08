@@ -8,13 +8,14 @@ use quick_xml::{
 use super::{PointSymbol, SymbolCommon};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
 
 /// A line symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -147,26 +148,26 @@ impl LineSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         if let Some(border) = &self.border {
             match border {
                 BorderStyle::SymmetricBorder { both } => {
-                    if let SymbolColor::Color(weak) = &both.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &both.color {
+                        colors.push(*id);
                     }
                 }
                 BorderStyle::AsymmetricBorder { left, right } => {
-                    if let SymbolColor::Color(weak) = &left.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &left.color {
+                        colors.push(*id);
                     }
-                    if let SymbolColor::Color(weak) = &right.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &right.color {
+                        colors.push(*id);
                     }
                 }
             }
@@ -191,6 +192,7 @@ impl LineSymbol {
 
 /// A dash symbol placed on dashes of a dashed line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DashSymbol {
     /// Whether to suppress the dash symbol at the line ends.
     pub suppress_dash_symbol_at_ends: bool,
@@ -202,6 +204,7 @@ pub struct DashSymbol {
 
 /// Point symbols placed at regular positions along a line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MidSymbol {
     /// Number of mid symbols per placement spot.
     pub mid_symbols_per_spot: u16,
@@ -221,6 +224,7 @@ pub struct MidSymbol {
 
 /// Cap style for line endpoints.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CapStyle {
     /// Flat cap (no extension beyond endpoint).
     #[default]
@@ -249,6 +253,7 @@ impl FromStr for CapStyle {
 
 /// Join style at line vertices.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum JoinStyle {
     /// Bevel join.
     Bevel = 0,
@@ -274,6 +279,7 @@ impl FromStr for JoinStyle {
 
 /// Placement of mid symbols relative to the line's dash pattern.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MidSymbolPlacement {
     /// Mid symbols on every dash
     #[default]
@@ -300,6 +306,7 @@ impl FromStr for MidSymbolPlacement {
 
 /// Whether the border is symmetric (same on both sides) or asymmetric.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BorderStyle {
     /// Both sides share the same border definition.
     SymmetricBorder {
@@ -317,6 +324,7 @@ pub enum BorderStyle {
 
 /// A single border line definition alongside the main line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineSymbolBorder {
     /// Border colour.
     pub color: SymbolColor,
@@ -389,6 +397,7 @@ impl LineSymbolBorder {
 
 /// Dash parameters for a border line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BorderDash {
     /// Length of each dash in mm.
     pub dash_length: NonNegativeF64,
@@ -398,6 +407,7 @@ pub struct BorderDash {
 
 /// The dash style of a line symbol.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DashStyle {
     /// The line is dashed.
     Dashed {
@@ -428,6 +438,7 @@ impl Default for DashStyle {
 
 /// Grouping of dashes in a dash style.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GroupDashes {
     /// Dashes are grouped together.
     Grouped {

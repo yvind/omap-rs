@@ -1,5 +1,3 @@
-use std::rc::Weak;
-
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -8,10 +6,10 @@ use quick_xml::{
 use super::{AreaSymbol, LineSymbol};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     objects::{AreaObject, LineObject, PointObject},
-    symbols::{SymbolCommon, WeakAreaPathSymbol, WeakLinePathSymbol},
+    symbols::SymbolCommon,
     utils::try_get_attr_raw,
 };
 
@@ -31,6 +29,7 @@ enum ElementObjectData {
 
 /// An element within a point symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Element {
     /// A nested point sub-symbol with its object.
     Point {
@@ -129,24 +128,16 @@ impl Element {
                         let obj_type = try_get_attr_raw(&e, "type")?.unwrap_or(6_u8);
                         object_data = Some(match obj_type {
                             0 => ElementObjectData::Point(Box::new(PointObject::parse(
-                                reader,
-                                Weak::new(),
-                                0.,
+                                reader, None, 0.,
                             )?)),
                             1 => match &symbol_data {
                                 Some(s) => match s {
-                                    ElementSymbolData::Line(_) => {
-                                        ElementObjectData::Line(Box::new(LineObject::parse(
-                                            reader,
-                                            WeakLinePathSymbol::Line(Weak::new()),
-                                        )?))
-                                    }
-                                    ElementSymbolData::Area(_) => {
-                                        ElementObjectData::Area(Box::new(AreaObject::parse(
-                                            reader,
-                                            WeakAreaPathSymbol::Area(Weak::new()),
-                                        )?))
-                                    }
+                                    ElementSymbolData::Line(_) => ElementObjectData::Line(
+                                        Box::new(LineObject::parse(reader, None)?),
+                                    ),
+                                    ElementSymbolData::Area(_) => ElementObjectData::Area(
+                                        Box::new(AreaObject::parse(reader, None)?),
+                                    ),
                                     ElementSymbolData::Point(_) => {
                                         return Err(Error::ElementSymbolObjectMismatch);
                                     }
@@ -203,6 +194,7 @@ impl Element {
 
 /// A point symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -290,14 +282,14 @@ impl PointSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.inner_color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.inner_color {
+            colors.push(*id);
         }
-        if let SymbolColor::Color(weak) = &self.outer_color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.outer_color {
+            colors.push(*id);
         }
 
         for element in &self.elements {

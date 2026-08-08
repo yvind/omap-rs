@@ -52,6 +52,7 @@ const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT;
 ///
 /// The path is the geometry stored by line and area objects.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BezierPath {
     /// The straight and cubic segments forming the path.
     geometry: BezierString,
@@ -354,6 +355,7 @@ impl From<LineString> for BezierPath {
 /// which is the final segment end. Thus a flattened path with `n` segments
 /// has `n + 1` flags. A path without coordinates has no flags.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlattenedPath {
     geometry: LineString,
     vertex_is_dash_point: Vec<bool>,
