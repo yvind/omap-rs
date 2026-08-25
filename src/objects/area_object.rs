@@ -7,8 +7,8 @@ use quick_xml::{
 };
 
 use super::{
-    BezierPath, COORD_FLAG_CLOSE_POINT, COORD_FLAGS_RING_END, FileCoord, FlattenedPath,
-    bezier_from_file_coords, file_coords_from_bezier,
+    BezierPath, COORD_FLAGS_RING_END, FileCoord, FlattenedPath, bezier_from_file_coords,
+    file_coords_from_bezier,
 };
 use crate::{
     Error, NonNegativeF64, OmapSection, Result,
@@ -436,7 +436,7 @@ impl AreaObject {
         }
 
         let mut all_coords =
-            file_coords_from_bezier(&self.geometry.exterior, COORD_FLAG_CLOSE_POINT)?;
+            file_coords_from_bezier(&self.geometry.exterior, COORD_FLAGS_RING_END)?;
         for ring in self
             .geometry
             .interiors

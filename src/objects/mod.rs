@@ -34,7 +34,7 @@ type FileCoord = (Coord<i32>, u8);
 const COORD_FLAG_CURVE_START: u8 = 1;
 /// A coordinate closes the current path.
 const COORD_FLAG_CLOSE_POINT: u8 = 2;
-/// A coordinate closes an interior polygon ring.
+/// A coordinate closes a polygon ring.
 const COORD_FLAG_HOLE_POINT: u8 = 16;
 /// A coordinate is a forced dash point.
 const COORD_FLAG_DASH_POINT: u8 = 32;
