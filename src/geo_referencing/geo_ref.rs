@@ -381,7 +381,7 @@ impl GeoRef {
         let local_crs = crs.to_crs_def()?;
         let geographic_crs = proj_wkt::parse_crs("EPSG:4326")?;
 
-        let transform = Transform::from_crs_defs(&local_crs, &geographic_crs)?;
+        let transform = Transform::from_horizontal_components(&local_crs, &geographic_crs)?;
 
         // get geographic ref point
         let geographic_ref_point_deg = transform.convert(projected_ref_point)?;
@@ -429,7 +429,7 @@ impl GeoRef {
 
         // The projected CRS is anonymous, but its registered WGS84 base CRS
         // lets proj-core select an operation directly to the local CRS.
-        let transform = Transform::from_crs_defs(&baseline_proj, local_proj)?;
+        let transform = Transform::from_horizontal_components(&baseline_proj, local_proj)?;
 
         const D: f64 = 1000.0;
         let meridian =
