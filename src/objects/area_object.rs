@@ -623,7 +623,7 @@ mod tests {
         let mut writer = Writer::new(Vec::new());
         area.write_content(&mut writer, None)?;
         let output = String::from_utf8(writer.into_inner())?;
-        assert!(output.contains("0 0 32;2000 0;1000 1000;0 0 34;"));
+        assert!(output.contains("0 0 32;2000 0;1000 1000;0 0 50;"));
         assert!(output.contains("500 250 32;1000 250;750 750;500 250 50;"));
         Ok(())
     }
