@@ -11,6 +11,7 @@ const FILE_COORD_MAX: f64 = ((i32::MAX / 1000) - 1) as f64;
 
 /// A three-part version or symbol code of the form `A.B.C`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Code {
     /// Major version / code component.
     pub major: u16,
@@ -36,8 +37,7 @@ impl FromStr for Code {
     fn from_str(value: &str) -> Result<Self> {
         let mut parts = value.split('.');
 
-        #[expect(clippy::unwrap_used)]
-        let major = parts.next().unwrap().parse()?;
+        let major = parts.next().ok_or(Error::BadCode)?.parse()?;
         let minor = if let Some(part) = parts.next() {
             part.parse()?
         } else {
@@ -73,7 +73,6 @@ impl std::fmt::Display for Code {
     }
 }
 
-// parse helpers
 /// Do not use this for fields with user text as it will not unescape xml-codes
 pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Result<T> {
     let e = match T::from_str(std::str::from_utf8(value.as_ref())?) {
@@ -114,6 +113,7 @@ pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Re
 
 /// A f64, but only allowed to be in the unit interval 0.0..=1.0
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UnitF64(f64);
 
 impl UnitF64 {
@@ -157,6 +157,7 @@ impl TryFrom<f64> for UnitF64 {
 
 /// A f64, but not allowed to be 0 or less
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PositiveF64(f64);
 
 impl Default for PositiveF64 {
@@ -192,6 +193,7 @@ impl TryFrom<f64> for PositiveF64 {
 
 /// A f64, but not allowed to be negative
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NonNegativeF64(f64);
 
 impl NonNegativeF64 {

@@ -2,19 +2,20 @@ use std::str::FromStr;
 
 use quick_xml::{
     Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{PointSymbol, SymbolCommon};
+use super::{PointSymbol, SymbolCommon, SymbolKind, symbol::SymbolPosition};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{parse_attr, try_get_attr_raw},
 };
 
 /// A fill pattern applied to an area.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FillPattern {
     /// A pattern of parallel lines.
     LinePattern {
@@ -54,6 +55,7 @@ pub enum FillPattern {
 
 /// Clipping option for point patterns at area boundaries.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ClippingOption {
     /// Clip elements at the boundary.
     #[default]
@@ -107,7 +109,6 @@ impl FillPattern {
                 let line_width = NonNegativeF64::from_file_value(
                     try_get_attr_raw(element, "line_width")?.unwrap_or(0),
                 );
-                // Skip to end of pattern element
                 let mut buf = Vec::new();
                 loop {
                     match reader.read_event_into(&mut buf)? {
@@ -134,7 +135,6 @@ impl FillPattern {
                 let point_distance = NonNegativeF64::from_file_value(
                     try_get_attr_raw(element, "point_distance")?.unwrap_or(0),
                 );
-                // Parse nested point symbol
                 let mut point = None;
                 let mut buf = Vec::new();
                 loop {
@@ -247,7 +247,7 @@ impl FillPattern {
                     point_distance.to_file_value()?.to_string().as_str(),
                 ));
                 writer.write_event(Event::Start(bs))?;
-                point.write(writer, color_set, None, true)?;
+                point.write(writer, color_set, SymbolPosition::Element)?;
                 writer.write_event(Event::End(BytesEnd::new("pattern")))?;
             }
         }
@@ -257,6 +257,7 @@ impl FillPattern {
 
 /// An area symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AreaSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -324,10 +325,10 @@ impl AreaSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         for pattern in &self.patterns {
@@ -340,8 +341,8 @@ impl AreaSymbol {
                     line_width: _,
                     rotatable: _,
                 } => {
-                    if let SymbolColor::Color(weak) = line_color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = line_color {
+                        colors.push(*id);
                     }
                 }
                 FillPattern::PointPattern {
@@ -411,45 +412,28 @@ impl AreaSymbol {
         })
     }
 
+    /// Write this symbol on its own, for the sub-symbol positions that
+    /// [`Symbol::write`] does not reach: private parts of a combined symbol,
+    /// and point-symbol elements.
     pub(super) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
-        index: Option<usize>,
-        is_element: bool,
+        position: SymbolPosition,
     ) -> Result<()> {
-        // Elements do not have codes so we should skip code writing if so
-        let code_str = if !is_element {
-            self.common.code.to_string()
-        } else {
-            String::new()
-        };
+        self.common
+            .write_open(writer, SymbolKind::Area.type_id(), position)?;
+        self.write_body(writer, color_set)?;
+        self.common.write_close(writer)
+    }
 
-        let mut bs = BytesStart::new("symbol").with_attributes([
-            ("type", "4"),
-            ("code", code_str.as_str()),
-            ("name", self.common.name.as_str()),
-        ]);
-        if let Some(id) = index {
-            bs.push_attribute(("id", id.to_string().as_str()));
-        }
-        if self.common.is_hidden {
-            bs.push_attribute(("is_hidden", "true"));
-        }
-        if self.common.is_helper_symbol {
-            bs.push_attribute(("is_helper_symbol", "true"));
-        }
-        if self.common.is_protected {
-            bs.push_attribute(("is_protected", "true"));
-        }
-        writer.write_event(Event::Start(bs))?;
-
-        if !self.common.description.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("description")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.common.description)))?;
-            writer.write_event(Event::End(BytesEnd::new("description")))?;
-        }
-
+    /// Write the type-specific body, between the halves of the shared
+    /// `<symbol>` frame written by [`Symbol::write`].
+    pub(super) fn write_body<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        color_set: &ColorSet,
+    ) -> Result<()> {
         let mut bs = BytesStart::new("area_symbol");
         bs.push_attribute((
             "inner_color",
@@ -471,12 +455,6 @@ impl AreaSymbol {
 
         writer.write_event(Event::End(BytesEnd::new("area_symbol")))?;
 
-        if let Some(icon) = &self.common.custom_icon {
-            writer.write_event(Event::Empty(
-                BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
-            ))?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
     }
 }

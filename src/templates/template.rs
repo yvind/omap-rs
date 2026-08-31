@@ -14,6 +14,7 @@ use crate::{
 
 /// A template attached to the map. Each variant carries type-specific data.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Template {
     /// A raster image template.
     Image(ImageTemplate),
@@ -29,6 +30,7 @@ pub enum Template {
 
 /// A raster image template.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ImageTemplate {
     /// Fields shared by every template kind.
     pub common: TemplateCommon,
@@ -36,6 +38,7 @@ pub struct ImageTemplate {
 
 /// A map file template.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MapTemplate {
     /// Fields shared by every template kind.
     pub common: TemplateCommon,
@@ -43,6 +46,7 @@ pub struct MapTemplate {
 
 /// A GPS track template.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TrackTemplate {
     /// Fields shared by every template kind.
     pub common: TemplateCommon,
@@ -70,6 +74,7 @@ impl TrackTemplate {
 
 /// A geospatial raster data template (via GDAL).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GdalTemplate {
     /// Fields shared by every template kind.
     pub common: TemplateCommon,
@@ -88,6 +93,7 @@ impl GdalTemplate {
 
 /// A geospatial vector data template (via OGR).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OgrTemplate {
     /// Fields shared by every template kind.
     pub common: TemplateCommon,
@@ -351,6 +357,7 @@ impl TemplateTransformations {
 
 /// The common properties shared by all template types.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TemplateCommon {
     /// Whether the template file was open (loaded) when the file was saved.
     pub is_open: bool,

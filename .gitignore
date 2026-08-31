@@ -4,3 +4,4 @@
 *.omap
 !/src/default_maps/*.omap
 !/example_data/*.omap
+/.cargo

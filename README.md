@@ -63,7 +63,7 @@ use omap::{
     colors::Color,
     geo_referencing::CrsType,
     objects::LineObject,
-    symbols::WeakLinePathSymbol,
+    symbols::LinePathSymbolId,
 };
 
 fn main() -> Result<(), Error> {
@@ -81,32 +81,29 @@ fn main() -> Result<(), Error> {
         map_center_elevation_meters,
     ).unwrap();
 
-    // Iterate through the colors
-    for color in map.colors.iter() {
+    // Iterate through the colors, in priority order
+    for color in map.colors.values() {
         match color {
             // Colors are split between `SpotColor` which defines new colors
-            Color::SpotColor(ref_cell) => {
-                let b = ref_cell.try_borrow().unwrap();
-                println!("{} with spot name {}", b.color_name, b.spotcolor_name);
+            Color::SpotColor(spot) => {
+                println!("{} with spot name {}", spot.color_name, spot.spotcolor_name);
             }
             // Or `MixedColor` which are made up of weighted `SpotColor`-components
-            Color::MixedColor(ref_cell) => {
-                println!("{}", ref_cell.try_borrow().unwrap().color_name);
-            }
+            Color::MixedColor(mixed) => println!("{}", mixed.color_name),
         }
     }
 
-    // The Symbol set holds `Rc`s (owning pointers) of the symbols (which again hold weak pointers of the colors)
-    // The objects hold weak pointers of the symbol
+    // The symbol set owns the symbols and hands out `SymbolId` handles. A handle
+    // is a `Copy` integer that keeps naming the same symbol across sorting, and
+    // stops resolving once the symbol is removed.
     let erosion_gully = map
         .symbols
-        .symbol_by_code(Code::new(107, 0, 0))?
-        .expect("the default symbol set contains erosion gully")
-        .downgrade();
+        .id_by_code(Code::new(107, 0, 0))
+        .expect("the default symbol set contains erosion gully");
 
     // O-mapper makes no difference between line objects and area objects, but we do.
     let mut ls = LineObject::new(
-        WeakLinePathSymbol::try_from(erosion_gully)?,
+        Some(LinePathSymbolId::try_from(erosion_gully)?),
         // LineStrings become straight Bézier segments. Geometry
         // coordinates are always in mm of paper.
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
@@ -124,7 +121,7 @@ fn main() -> Result<(), Error> {
     // This will debug-print a `CombinedLineSymbol`
     if let Some(s) = map
         .symbols
-        .symbol_by_name("Railway, Olive background")?
+        .symbol_by_name("Railway, Olive background")
     {
         dbg!(s);
     }

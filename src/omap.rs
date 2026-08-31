@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
-use crate::symbols::{PublicOrPrivateSymbol, Symbol};
+use crate::symbols::{PublicOrPrivateSymbol, Symbol, SymbolId};
 
 use geo_types::Coord;
 
@@ -32,11 +32,21 @@ const DEFAULT_ISOM_15000: &[u8] = include_bytes!("default_maps/isom_15000.omap")
 const DEFAULT_ISOM_10000: &[u8] = include_bytes!("default_maps/isom_10000.omap");
 const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.omap");
 
+/// The scale denominators the bundled default maps are drawn at.
+/// Unwrap on consts is compile time
+#[cfg(feature = "geo_ref")]
+const SCALE_15_000: NonZeroU32 = NonZeroU32::new(15_000).unwrap();
+#[cfg(feature = "geo_ref")]
+const SCALE_10_000: NonZeroU32 = NonZeroU32::new(10_000).unwrap();
+#[cfg(feature = "geo_ref")]
+const SCALE_4_000: NonZeroU32 = NonZeroU32::new(4_000).unwrap();
+
 /// All objects are in map coordinates i.e given in mm of paper
 /// relative the ref point with positive y towards the magnetic north
 ///
 /// The Undo/Redo history and printer information is ignored
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Omap {
     /// Free-text notes embedded in the file.
     pub notes: String,
@@ -67,13 +77,7 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(
-            projected_ref_point,
-            crs,
-            meters_above_sea,
-            #[expect(clippy::unwrap_used)]
-            NonZeroU32::new(15_000).unwrap(),
-        )?;
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_15_000)?;
         let mut omap = Self::from_bytes(DEFAULT_ISOM_15000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -91,13 +95,7 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(
-            projected_ref_point,
-            crs,
-            meters_above_sea,
-            #[expect(clippy::unwrap_used)]
-            NonZeroU32::new(10_000).unwrap(),
-        )?;
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_10_000)?;
         let mut omap = Self::from_bytes(DEFAULT_ISOM_10000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -115,13 +113,7 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(
-            projected_ref_point,
-            crs,
-            meters_above_sea,
-            #[expect(clippy::unwrap_used)]
-            NonZeroU32::new(4_000).unwrap(),
-        )?;
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_4_000)?;
         let mut omap = Self::from_bytes(DEFAULT_ISSPROM_4000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -197,13 +189,11 @@ impl Omap {
         let mut reader = Reader::from_reader(BufReader::new(reader));
         reader.config_mut().expand_empty_elements = true;
 
-        // these must be parsed successfully
         let mut georef = None;
         let mut colors = None;
         let mut symbols = None;
         let mut parts = None;
 
-        // these have sensible defaults and are not worth bailing over if parsing fails
         let mut notes = String::new();
         let mut templates = Templates::default();
         let mut view = View::default();
@@ -284,12 +274,14 @@ impl Omap {
 
     /// Write the map to anything that implements [`Write`]
     ///
-    /// Takes a mutable borrow of self as the symbol set is sorted by [`crate::Code`] before writing
+    /// Symbols are written in the order the symbol set holds them. Call
+    /// [`crate::symbols::SymbolSet::sort`] first to write them by
+    /// [`crate::Code`].
     ///
     /// # Errors
     ///
     /// Returns an error if any of the map data cannot be serialized.
-    pub fn to_writer<W: Write>(&mut self, writer: &mut W) -> Result<()> {
+    pub fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let mut writer = Writer::new(writer);
 
         XmlDeclaration::write(&mut writer)?;
@@ -302,9 +294,6 @@ impl Omap {
 
         self.geo_referencing.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
-
-        // sort the symbols, important to do this before writing symbols and parts
-        self.symbols.try_sort()?;
 
         // write colors
         self.colors.write(&mut writer)?;
@@ -331,7 +320,7 @@ impl Omap {
     ///
     /// See [`Self::to_writer`] for more docs
     ///
-    /// The replacement is atomic on platforms where [`fs::rename`] atomically
+    /// The replacement is atomic on platforms where [`std::fs::rename`] atomically
     /// replaces an existing destination. The temporary file is created beside
     /// `path`, so it is always on the same filesystem as the destination.
     ///
@@ -339,10 +328,9 @@ impl Omap {
     ///
     /// Returns an error if the temporary file cannot be created, map data
     /// cannot be serialized, or the temporary file cannot replace `path`.
-    pub fn to_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
+    pub fn to_file(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
 
-        // create temp file for safe writing
         let parent = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -449,60 +437,82 @@ impl Omap {
         self.try_transform(transform)
     }
 
+    /// Drop every reference to a symbol or color that is no longer in its set.
+    ///
+    /// A dangling symbol reference becomes `None`, which writes as the format's
+    /// `-1`; a dangling color reference becomes
+    /// [`crate::colors::SymbolColor::NoColor`]; and a dangling combined-symbol
+    /// component or mixed-color component is dropped.
+    ///
+    /// Handles you already hold stay valid across this call — only the map's own
+    /// references to removed values change. [`Omap::validate`] reports the
+    /// references this removes.
+    pub fn prune_dangling_references(&mut self) {
+        let live = crate::prune::Live {
+            symbols: self.symbols.ids().map(|id| id.0).collect(),
+            colors: self.colors.ids().map(|id| id.0).collect(),
+        };
+
+        use crate::prune::Prune as _;
+        for color in self.colors.values_mut() {
+            color.prune(&live);
+        }
+        for symbol in self.symbols.values_mut() {
+            symbol.prune(&live);
+        }
+        for object in self.iter_all_objects_mut() {
+            object.prune(&live);
+        }
+    }
+
     /// Validate references between objects, symbols, and colors.
     ///
     /// # Errors
     ///
     /// Returns the first invalid reference with its map location, or an error
     /// if a symbol cannot be borrowed during validation.
-    pub fn validate(&self) -> Result<()> {
-        for (symbol_index, symbol) in self.symbols.iter().enumerate() {
-            for color in symbol.colors()? {
-                self.colors
-                    .priority_of_weak_color(&color)
-                    .ok_or(ValidationError::DanglingSymbolColor { symbol_index })?;
+    pub fn validate(&self) -> std::result::Result<(), ValidationError> {
+        for (symbol_index, symbol) in self.symbols.values().enumerate() {
+            for color in symbol.colors(&self.symbols) {
+                if !self.colors.contains(color) {
+                    return Err(ValidationError::DanglingSymbolColor { symbol_index });
+                }
             }
 
-            match symbol {
-                Symbol::CombinedArea(combined) => {
-                    let combined = combined.try_borrow().map_err(Error::from)?;
-                    for (component_index, component) in combined.components().enumerate() {
-                        if let PublicOrPrivateSymbol::Public(component) = component
-                            && !self.symbols.contains_symbol(&component.clone().into())
-                        {
-                            return Err(Error::ValidationError(
-                                ValidationError::DanglingCombinedComponent {
-                                    symbol_index,
-                                    component_index,
-                                },
-                            ));
-                        }
-                    }
+            let components: Vec<Option<SymbolId>> = match symbol {
+                Symbol::CombinedArea(combined) => combined
+                    .components()
+                    .map(|part| match part {
+                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Private(_) => None,
+                    })
+                    .collect(),
+                Symbol::CombinedLine(combined) => combined
+                    .components()
+                    .map(|part| match part {
+                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Private(_) => None,
+                    })
+                    .collect(),
+                _ => continue,
+            };
+            for (component_index, component) in components.into_iter().enumerate() {
+                if let Some(component) = component
+                    && !self.symbols.contains(component)
+                {
+                    return Err(ValidationError::DanglingCombinedComponent {
+                        symbol_index,
+                        component_index,
+                    });
                 }
-                Symbol::CombinedLine(combined) => {
-                    let combined = combined.try_borrow().map_err(Error::from)?;
-                    for (component_index, component) in combined.components().enumerate() {
-                        if let PublicOrPrivateSymbol::Public(component) = component
-                            && !self.symbols.contains_symbol(&component.clone().into())
-                        {
-                            return Err(Error::ValidationError(
-                                ValidationError::DanglingCombinedComponent {
-                                    symbol_index,
-                                    component_index,
-                                },
-                            ));
-                        }
-                    }
-                }
-                _ => {}
             }
         }
 
         for (object_index, object) in self.iter_all_objects().enumerate() {
-            if !self.symbols.contains_symbol(&object.symbol()) {
-                return Err(Error::ValidationError(
-                    ValidationError::DanglingObjectSymbol { object_index },
-                ));
+            if let Some(symbol) = object.symbol()
+                && !self.symbols.contains(symbol)
+            {
+                return Err(ValidationError::DanglingObjectSymbol { object_index });
             }
         }
         Ok(())
@@ -532,11 +542,8 @@ mod tests {
     fn try_transform_is_transactional() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).unwrap());
         let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
-        part.add_object(PointObject::new(
-            std::rc::Weak::new(),
-            Point::new(10.0, 20.0),
-        ));
+        part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
+        part.add_object(PointObject::new(None, Point::new(10.0, 20.0)));
         let before = point_positions(&map);
 
         let result = map.try_transform(|coord| {
@@ -558,15 +565,35 @@ mod tests {
     #[test]
     fn validate_reports_the_dangling_object_location() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
-        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(std::rc::Weak::new(), Point::new(1.0, 2.0)));
+        let point = map
+            .symbols
+            .add_point_symbol(crate::symbols::PointSymbol::new(
+                crate::Code::new(1, 0, 0),
+                "dot",
+            ));
 
-        assert!(matches!(
-            map.validate(),
-            Err(Error::ValidationError(
-                ValidationError::DanglingObjectSymbol { object_index: 0 }
-            ))
-        ));
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
+        assert!(map.validate().is_ok(), "a live handle must validate");
+
+        let _removed = map.symbols.remove(point.into());
+        assert!(
+            matches!(
+                map.validate(),
+                Err(ValidationError::DanglingObjectSymbol { object_index: 0 })
+            ),
+            "a handle to a removed symbol must not validate"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_object_without_a_symbol_validates() -> Result<()> {
+        let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
+        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
+        part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
+
+        assert!(map.validate().is_ok());
         Ok(())
     }
 
@@ -580,15 +607,42 @@ mod tests {
 
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
         let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(
-            std::rc::Weak::new(),
-            Point::new(3_000_000.0, 0.0),
-        ));
+        part.add_object(PointObject::new(None, Point::new(3_000_000.0, 0.0)));
 
         let result = map.to_file(&path);
         assert!(matches!(result, Err(Error::MapCoordOutOfBounds)));
         assert_eq!(fs::read(&path)?, b"previous map");
         fs::remove_file(path)?;
+        Ok(())
+    }
+
+    /// A dangling reference must prune to `None`, never to whatever value later
+    /// takes the removed symbol's place.
+    #[test]
+    fn pruning_drops_references_to_removed_symbols() -> Result<()> {
+        let mut map = Omap::from_bytes(super::DEFAULT_ISOM_15000)?;
+        let point = map
+            .symbols
+            .iter_point_symbols()
+            .next()
+            .map(|(id, _)| id)
+            .unwrap();
+
+        let part = map.parts.get_mut(0).unwrap();
+        part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
+
+        let _removed = map.symbols.remove(point.into());
+        assert!(map.validate().is_err(), "the object now dangles");
+
+        map.prune_dangling_references();
+
+        let object = map.iter_all_objects().last().unwrap();
+        assert_eq!(
+            object.symbol(),
+            None,
+            "a dangling reference must prune to None"
+        );
+        assert!(map.validate().is_ok());
         Ok(())
     }
 }

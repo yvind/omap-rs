@@ -3,6 +3,7 @@
 //! All map coordinates are given in millimetres on paper, relative to the
 //! reference point, with the positive y-axis pointing towards magnetic north.
 
+mod arena;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
 mod format_info;
@@ -15,6 +16,7 @@ pub mod objects;
 pub mod omap;
 /// Map parts (layers) and their contained objects.
 pub mod parts;
+mod prune;
 /// Symbol definitions: point, line, area, text, and combined symbols.
 pub mod symbols;
 /// Background-template support (images, tracks, GDAL/OGR layers).
@@ -260,12 +262,6 @@ pub enum Error {
     /// A color definition is missing its id.
     #[error("missing color id")]
     MissingColorId,
-    /// A `RefCell` borrow failed.
-    #[error(transparent)]
-    BorrowError(#[from] std::cell::BorrowError),
-    /// A `RefCell` mutable borrow failed.
-    #[error(transparent)]
-    BorrowMutError(#[from] std::cell::BorrowMutError),
     /// A Bézier-curve conversion error.
     #[error(transparent)]
     BezierConversionError(#[from] linestring2bezier::Error),
@@ -275,18 +271,15 @@ pub enum Error {
     /// A symbol definition would create a cycle.
     #[error("cyclic symbol definition")]
     CyclicSymbolDefinition,
-    /// A symbol could not be borrowed while checking for cycles.
-    #[error("cannot borrow symbol during cycle check")]
-    SymbolCycleBorrow,
     /// A combined symbol references a symbol outside the symbol set.
     #[error("symbol set index {0} out of range")]
     SymbolSetIndexOutOfRange(usize),
     /// A combined area symbol references a point or text symbol.
-    #[error("combined area symbol contains a point or text symbol")]
-    CombinedSymbolContainsPointOrText,
+    #[error("a combined area symbol cannot contain {0:?} symbols")]
+    CombinedSymbolContainsPointOrText(symbols::SymbolKind),
     /// A combined line symbol references a non-line symbol.
-    #[error("combined line symbol contains a non-line symbol")]
-    CombinedLineSymbolContainsNonLine,
+    #[error("a combined line symbol cannot contain {0:?} symbols")]
+    CombinedLineSymbolContainsNonLine(symbols::SymbolKind),
     /// A clipping option value is unknown.
     #[error("unknown clipping option")]
     UnknownClippingOption,
@@ -363,8 +356,16 @@ pub enum Error {
     /// Only affine transforms within the same projection are available without the `geo_ref` feature
     #[error("Failed to get a coordinate transform between the old and new GeoRef")]
     CannotGetTransformBetweenDifferentGeoRef,
-    /// Tried to call try into on non-compatible symbols
-    #[error("Tried to call try into on non-compatible symbols")]
+    /// A handle does not name a symbol of the kind the operation requires.
+    #[error("expected a symbol handle of kind {expected:?}, found {found:?}")]
+    SymbolKindMismatch {
+        /// The kinds the target handle type accepts.
+        expected: &'static [symbols::SymbolKind],
+        /// The kind the handle actually names.
+        found: symbols::SymbolKind,
+    },
+    /// A handle does not resolve to a symbol of the required kind in this set.
+    #[error("the handle does not name a symbol of the required kind in this set")]
     SymbolConversionError,
     /// Tried to do a transform to WGS84, but the transform could not be done as no there were no available transform between the map coordinates and WGS84
     #[cfg(feature = "geo_ref")]

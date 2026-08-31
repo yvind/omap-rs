@@ -12,28 +12,49 @@ use super::{
 };
 use crate::{
     Error, NonNegativeF64, OmapSection, Result,
-    symbols::{Symbol, SymbolSet, WeakLinePathSymbol},
+    symbols::{LinePathSymbolId, SymbolSet},
     utils::try_get_attr_raw,
 };
 
 /// A line object whose geometry retains straight and cubic segments.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineObject {
-    /// The tags associated with the object.
-    pub tags: HashMap<String, String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    #[expect(
+        clippy::box_collection,
+        reason = "the map header is 48 bytes inline and most objects carry no tags"
+    )]
+    tags: Option<Box<HashMap<String, String>>>,
     /// The line or combined-line symbol used to render this object.
-    pub symbol: WeakLinePathSymbol,
+    pub symbol: Option<LinePathSymbolId>,
     geometry: BezierPath,
 }
 
 impl LineObject {
     /// Create a line object from a Bézier path, flattened path, or line string.
-    pub fn new(symbol: impl Into<WeakLinePathSymbol>, geometry: impl Into<BezierPath>) -> Self {
+    pub fn new(symbol: Option<LinePathSymbolId>, geometry: impl Into<BezierPath>) -> Self {
         Self {
-            tags: HashMap::new(),
-            symbol: symbol.into(),
+            tags: None,
+            symbol,
             geometry: geometry.into(),
         }
+    }
+
+    /// The tags associated with the object.
+    pub fn tags(&self) -> &HashMap<String, String> {
+        match &self.tags {
+            Some(tags) => tags,
+            None => super::empty_tags(),
+        }
+    }
+
+    /// Mutably access the tags, allocating the map on first use.
+    pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
+        self.tags.get_or_insert_with(Box::default)
     }
 
     /// Get the mixed straight/cubic geometry.
@@ -77,7 +98,7 @@ impl LineObject {
 
     /// Create a line object for use as a point-symbol element.
     pub fn new_element(geometry: impl Into<BezierPath>) -> Self {
-        Self::new(WeakLinePathSymbol::Line(std::rc::Weak::new()), geometry)
+        Self::new(None, geometry)
     }
 
     pub(crate) fn geometry_is_empty(&self) -> bool {
@@ -117,21 +138,7 @@ impl LineObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let index = match &self.symbol {
-            WeakLinePathSymbol::Line(weak) => weak.upgrade().and_then(|symbol| {
-                symbol_set.iter().position(|candidate| match candidate {
-                    Symbol::Line(reference) => reference.as_ptr() == symbol.as_ptr(),
-                    _ => false,
-                })
-            }),
-            WeakLinePathSymbol::CombinedLine(weak) => weak.upgrade().and_then(|symbol| {
-                symbol_set.iter().position(|candidate| match candidate {
-                    Symbol::CombinedLine(reference) => reference.as_ptr() == symbol.as_ptr(),
-                    _ => false,
-                })
-            }),
-        }
-        .map_or(-1, |index| index as i32);
+        let index = symbol_set.file_index(self.symbol);
 
         self.write_content(writer, Some(index))
     }
@@ -156,8 +163,8 @@ impl LineObject {
         }
         writer.write_event(Event::Start(start))?;
 
-        if !self.tags.is_empty() && symbol_index.is_some() {
-            super::write_tags(writer, &self.tags)?;
+        if !self.tags().is_empty() && symbol_index.is_some() {
+            super::write_tags(writer, self.tags())?;
         }
 
         let final_flags = if self.geometry.is_closed() {
@@ -174,9 +181,9 @@ impl LineObject {
     /// Parse a line object through its closing `object` element.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        symbol: WeakLinePathSymbol,
+        symbol: Option<LinePathSymbolId>,
     ) -> Result<Self> {
-        let mut tags = HashMap::new();
+        let mut tags = None;
         let mut file_coords = Vec::new();
         let mut buf = Vec::new();
 
@@ -217,7 +224,6 @@ mod tests {
     use crate::{
         NonNegativeF64, Result,
         objects::{BezierPath, BezierSegment, FlattenedPath},
-        symbols::WeakLinePathSymbol,
     };
 
     #[test]
@@ -232,7 +238,7 @@ mod tests {
             ]),
             NonNegativeF64::clamped_from(0.1),
         )?;
-        let line = LineObject::new(WeakLinePathSymbol::Line(std::rc::Weak::new()), path);
+        let line = LineObject::new(None, path);
 
         assert!(
             line.geometry()
@@ -254,7 +260,7 @@ mod tests {
         );
         assert!(matches!(reader.read_event()?, Event::Start(_)));
 
-        let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
+        let line = LineObject::parse(&mut reader, None)?;
         assert!(matches!(
             line.geometry().geometry().segments().next(),
             Some(BezierSegment::Bezier(_))
@@ -287,10 +293,7 @@ mod tests {
             vec![(0., 0.), (1., 0.), (2., 0.)].into(),
             vec![true, false, true],
         )?;
-        let mut line = LineObject::new(
-            WeakLinePathSymbol::Line(std::rc::Weak::new()),
-            flattened.clone(),
-        );
+        let mut line = LineObject::new(None, flattened.clone());
         assert!(
             line.geometry()
                 .geometry()
@@ -311,7 +314,7 @@ mod tests {
     fn parsed_empty_line_is_not_written() -> Result<()> {
         let mut reader = Reader::from_str(r#"<object><coords count="1">0 0;</coords></object>"#);
         assert!(matches!(reader.read_event()?, Event::Start(_)));
-        let line = LineObject::parse(&mut reader, WeakLinePathSymbol::Line(std::rc::Weak::new()))?;
+        let line = LineObject::parse(&mut reader, None)?;
 
         assert!(line.geometry().is_empty());
         let mut writer = Writer::new(Vec::new());

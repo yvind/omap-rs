@@ -7,13 +7,14 @@ use quick_xml::{
 use super::SymbolCommon;
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{self, try_get_attr_raw},
 };
 
 /// The framing mode for a text symbol.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FramingMode {
     /// No framing.
     #[default]
@@ -37,6 +38,7 @@ impl FramingMode {
 
 /// Line-based framing (halo) around text characters.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineFraming {
     /// Color of the framing line.
     pub color: SymbolColor,
@@ -46,6 +48,7 @@ pub struct LineFraming {
 
 /// Shadow framing behind text characters.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShadowFraming {
     /// Color of the shadow.
     pub color: SymbolColor,
@@ -55,6 +58,7 @@ pub struct ShadowFraming {
 
 /// A line drawn below the text (underline).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineBelow {
     /// Color of the line.
     pub color: SymbolColor,
@@ -66,6 +70,7 @@ pub struct LineBelow {
 
 /// A text symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TextSymbol {
     /// The common symbol fields
     pub common: SymbolCommon,
@@ -76,7 +81,6 @@ pub struct TextSymbol {
     /// Color of the text
     pub color: SymbolColor,
 
-    // OCD compatibility
     /// OCD custom tab positions in mm
     pub custom_tabs: Vec<NonNegativeF64>,
     /// OCD underlining
@@ -89,7 +93,7 @@ pub struct TextSymbol {
     /// this defines the font size in mm. How big the letters really are depends on the design of the font though
     pub font_size: NonNegativeF64,
     /// Spacing between paragraphs in mm.
-    pub paragraph_spacing: f64, // in mm
+    pub paragraph_spacing: f64,
     /// The framing mode (outline, shadow, or none).
     pub framing_mode: Option<FramingMode>,
 
@@ -186,30 +190,30 @@ impl TextSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         if let Some(underline) = &self.line_below
-            && let SymbolColor::Color(weak) = &underline.color
+            && let SymbolColor::Color(id) = &underline.color
         {
-            colors.push(weak.clone());
+            colors.push(*id);
         }
 
         if let Some(framing) = &self.framing_mode {
             match framing {
                 FramingMode::NoFraming => (),
                 FramingMode::LineFraming(line_framing) => {
-                    if let SymbolColor::Color(weak) = &line_framing.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &line_framing.color {
+                        colors.push(*id);
                     }
                 }
                 FramingMode::ShadowFraming(shadow_framing) => {
-                    if let SymbolColor::Color(weak) = &shadow_framing.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &shadow_framing.color {
+                        colors.push(*id);
                     }
                 }
             }
@@ -315,16 +319,11 @@ impl TextSymbol {
                         });
                     }
                     b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
-                    b"tabs" => {
-                        // Parse tab elements inside
-                    }
-                    b"tab" => {
-                        // tab text content parsed below
-                    }
+                    b"tabs" => {}
+                    b"tab" => {}
                     _ => {}
                 },
                 Event::Text(text) => {
-                    // Could be tab content
                     if let Ok(v) = str::from_utf8(text.as_ref())?.parse() {
                         custom_tabs.push(NonNegativeF64::from_file_value(v));
                     }
@@ -359,39 +358,13 @@ impl TextSymbol {
         })
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "text-symbol serialization maps a large file-format record"
-    )]
-    pub(super) fn write<W: std::io::Write>(
+    /// Write the type-specific body, between the halves of the shared
+    /// `<symbol>` frame written by [`Symbol::write`].
+    pub(super) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
-        index: usize,
     ) -> Result<()> {
-        let mut bs = BytesStart::new("symbol").with_attributes([
-            ("type", "8"),
-            ("code", self.common.code.to_string().as_str()),
-            ("name", self.common.name.as_str()),
-            ("id", index.to_string().as_str()),
-        ]);
-        if self.common.is_hidden {
-            bs.push_attribute(("is_hidden", "true"));
-        }
-        if self.common.is_helper_symbol {
-            bs.push_attribute(("is_helper_symbol", "true"));
-        }
-        if self.common.is_protected {
-            bs.push_attribute(("is_protected", "true"));
-        }
-        writer.write_event(Event::Start(bs))?;
-
-        if !self.common.description.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("description")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.common.description)))?;
-            writer.write_event(Event::End(BytesEnd::new("description")))?;
-        }
-
         writer.write_event(Event::Start(
             BytesStart::new("text_symbol").with_attributes([
                 ("icon_text", self.icon_text.as_str()),
@@ -399,7 +372,6 @@ impl TextSymbol {
             ]),
         ))?;
 
-        // font element
         let mut font = BytesStart::new("font").with_attributes([
             ("family", self.font_family.as_str()),
             ("size", self.font_size.to_file_value()?.to_string().as_str()),
@@ -416,7 +388,6 @@ impl TextSymbol {
         writer.write_event(Event::Empty(font))?;
 
         let ps_file = utils::to_file_value(self.paragraph_spacing)?;
-        // text element
         let mut text = BytesStart::new("text").with_attributes([
             ("color", self.color.priority(color_set).to_string().as_str()),
             ("line_spacing", self.line_spacing.get().to_string().as_str()),
@@ -431,7 +402,6 @@ impl TextSymbol {
         }
         writer.write_event(Event::Empty(text))?;
 
-        // framing
         if let Some(fm) = &self.framing_mode {
             match fm {
                 FramingMode::NoFraming => {}
@@ -464,7 +434,6 @@ impl TextSymbol {
             }
         }
 
-        // line_below
         if let Some(lb) = &self.line_below {
             writer.write_event(Event::Empty(BytesStart::new("line_below").with_attributes(
                 [
@@ -478,7 +447,6 @@ impl TextSymbol {
             )))?;
         }
 
-        // custom tabs
         if !self.custom_tabs.is_empty() {
             writer.write_event(Event::Start(
                 BytesStart::new("tabs")
@@ -496,12 +464,6 @@ impl TextSymbol {
 
         writer.write_event(Event::End(BytesEnd::new("text_symbol")))?;
 
-        if let Some(icon) = &self.common.custom_icon {
-            writer.write_event(Event::Empty(
-                BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
-            ))?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
     }
 }

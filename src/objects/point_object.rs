@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Weak};
+use std::collections::HashMap;
 
 use geo_types::{Coord, Point};
 use quick_xml::{
@@ -8,31 +8,58 @@ use quick_xml::{
 
 use crate::{
     CoordinateComponent, Error, ObjectKind, OmapSection, Result,
-    symbols::{PointSymbol, Symbol, SymbolSet},
+    symbols::{PointSymbolId, SymbolSet},
     utils::{from_file_coords, to_file_coords, transform_position, try_transform_position},
 };
 
 /// A point object placed at a single location on the map.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointObject {
-    /// The tags associated with the object
-    pub tags: HashMap<String, String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    #[expect(
+        clippy::box_collection,
+        reason = "the map header is 48 bytes inline and most objects carry no tags"
+    )]
+    tags: Option<Box<HashMap<String, String>>>,
     /// Rotation of the symbol in radians.
     pub rotation: f64,
-    /// Weak reference to the point symbol used to render this object.
-    pub symbol: Weak<RefCell<PointSymbol>>,
+    /// The point symbol used to render this object, or `None` for the
+    /// format's unknown-symbol sentinel.
+    pub symbol: Option<PointSymbolId>,
     geometry: Point,
 }
 
 impl PointObject {
     /// Create a new point object with the given symbol and position.
-    pub fn new(symbol: Weak<RefCell<PointSymbol>>, geometry: Point) -> Self {
+    pub fn new(symbol: Option<PointSymbolId>, geometry: Point) -> Self {
         Self {
-            tags: HashMap::new(),
+            tags: None,
             rotation: 0.0,
             symbol,
             geometry,
         }
+    }
+
+    /// Create a point object for use as a point-symbol element.
+    pub fn new_element(geometry: Point) -> Self {
+        Self::new(None, geometry)
+    }
+
+    /// The tags associated with the object.
+    pub fn tags(&self) -> &HashMap<String, String> {
+        match &self.tags {
+            Some(tags) => tags,
+            None => super::empty_tags(),
+        }
+    }
+
+    /// Mutably access the tags, allocating the map on first use.
+    pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
+        self.tags.get_or_insert_with(Box::default)
     }
 
     /// Get a shared reference to the point geometry.
@@ -81,24 +108,11 @@ impl PointObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let mut is_rotatable = false;
-        // Get index of symbol and if the symbol is rotatable
-        let index = if let Some(sym) = self.symbol.upgrade() {
-            is_rotatable = sym.try_borrow().map(|p| p.is_rotatable).unwrap_or(false);
-            symbol_set
-                .iter()
-                .position(|s| {
-                    if let Symbol::Point(s) = s {
-                        s.as_ptr() == sym.as_ptr()
-                    } else {
-                        false
-                    }
-                })
-                .map(|p| p as i32)
-                .unwrap_or(-1)
-        } else {
-            -1
-        };
+        let is_rotatable = self
+            .symbol
+            .and_then(|id| symbol_set.point_symbol(id))
+            .is_some_and(|symbol| symbol.is_rotatable);
+        let index = symbol_set.file_index(self.symbol);
 
         self.write_content(writer, Some(index), is_rotatable)?;
         Ok(())
@@ -126,9 +140,7 @@ impl PointObject {
         }
 
         if self.rotation.abs() > f64::EPSILON && is_rotatable {
-            // Map the rotation onto [-PI, PI]
-            // first shift the target to either (-TAU, 0] for negative or [0, TAU) for positive
-            // Take the modulus with TAU (negatives return negative values) and shift target back to [-PI, PI]
+            // Map the rotation onto [-PI, PI].
             let rot = (self.rotation + self.rotation.signum() * std::f64::consts::PI)
                 % std::f64::consts::TAU
                 - self.rotation.signum() * std::f64::consts::PI;
@@ -136,8 +148,8 @@ impl PointObject {
         }
         writer.write_event(Event::Start(bs))?;
         // elements are not allowed to have tags
-        if !self.tags.is_empty() && symbol_index.is_some() {
-            super::write_tags(writer, &self.tags)?;
+        if !self.tags().is_empty() && symbol_index.is_some() {
+            super::write_tags(writer, self.tags())?;
         }
         let file_coord = to_file_coords(self.geometry.0)?;
         writer.write_event(Event::Start(
@@ -156,10 +168,10 @@ impl PointObject {
     /// the `<coords>` start event. Reads through `</object>`.
     pub(crate) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
-        symbol: Weak<RefCell<PointSymbol>>,
+        symbol: Option<PointSymbolId>,
         rotation: f64,
     ) -> Result<Self> {
-        let mut tags = HashMap::new();
+        let mut tags = None;
         let mut point = None;
         let mut buf = Vec::new();
         loop {

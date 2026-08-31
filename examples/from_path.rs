@@ -11,8 +11,6 @@
     reason = "the example input is expected to give the named symbol its documented type"
 )]
 
-use std::{cell::RefCell, rc::Weak};
-
 use geo_types::{Coord, LineString};
 #[cfg(feature = "geo_ref")]
 use omap::NonNegativeF64;
@@ -24,7 +22,6 @@ use omap::{
     Code, Error, Omap,
     colors::Color,
     objects::{LineObject, TextGeometry, TextObject},
-    symbols::{TextSymbol, WeakLinePathSymbol},
 };
 
 fn main() -> Result<(), Error> {
@@ -100,44 +97,39 @@ fn main() -> Result<(), Error> {
     };
 
     println!("Map colors in order:");
-    for color in map.colors.iter() {
+    for color in map.colors.values() {
         match color {
-            Color::SpotColor(ref_cell) => {
-                let b = ref_cell.try_borrow().unwrap();
-                println!("{} with spot name {}", b.color_name, b.spotcolor_name);
+            Color::SpotColor(spot) => {
+                println!("{} with spot name {}", spot.color_name, spot.spotcolor_name);
             }
-            Color::MixedColor(ref_cell) => {
-                println!("{}", ref_cell.try_borrow().unwrap().color_name);
-            }
+            Color::MixedColor(mixed) => println!("{}", mixed.color_name),
         }
     }
 
     let erosion_gully = map
         .symbols
-        .symbol_by_code(Code::new(107, 0, 0))
-        .unwrap()
-        .unwrap()
-        .downgrade();
+        .find_by_code(Code::new(107, 0, 0))
+        .and_then(|symbol| symbol.as_line_path())
+        .unwrap();
 
     let mut ls = LineObject::new(
-        WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
+        Some(erosion_gully),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: -60., y: -50. }, Coord { x: 60., y: -50. }]),
     );
-    ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
+    ls.tags_mut()
+        .insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts.get_mut(0).unwrap().add_object(ls);
 
-    let weak_symbol = map
+    let contour_value = map
         .symbols
-        .symbol_by_name("Contour value")
-        .unwrap()
-        .unwrap()
-        .downgrade();
+        .find_by_name("Contour value")
+        .and_then(|symbol| symbol.as_text())
+        .expect("no text symbol named Contour value");
 
     let ts = TextObject::new(
-        Weak::<RefCell<TextSymbol>>::try_from(weak_symbol)
-            .expect("The symbol type of Contour value is not Text"),
+        Some(contour_value),
         TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
         "This is the middle of the map".to_owned(),
     );

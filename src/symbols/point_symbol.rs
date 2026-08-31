@@ -1,17 +1,15 @@
-use std::rc::Weak;
-
 use quick_xml::{
     Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{AreaSymbol, LineSymbol};
+use super::{AreaSymbol, LineSymbol, SymbolKind, symbol::SymbolPosition};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     objects::{AreaObject, LineObject, PointObject},
-    symbols::{SymbolCommon, WeakAreaPathSymbol, WeakLinePathSymbol},
+    symbols::SymbolCommon,
     utils::try_get_attr_raw,
 };
 
@@ -31,6 +29,7 @@ enum ElementObjectData {
 
 /// An element within a point symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Element {
     /// A nested point sub-symbol with its object.
     Point {
@@ -76,15 +75,15 @@ impl Element {
         writer.write_event(Event::Start(BytesStart::new("element")))?;
         match self {
             Self::Point { symbol, object } => {
-                symbol.write(writer, color_set, None, true)?;
+                symbol.write(writer, color_set, SymbolPosition::Element)?;
                 object.write_as_element(writer, symbol.is_rotatable)?;
             }
             Self::Line { symbol, object } => {
-                symbol.write(writer, color_set, None, true)?;
+                symbol.write(writer, color_set, SymbolPosition::Element)?;
                 object.write_as_element(writer)?;
             }
             Self::Area { symbol, object } => {
-                symbol.write(writer, color_set, None, true)?;
+                symbol.write(writer, color_set, SymbolPosition::Element)?;
                 object.write_as_element(writer)?;
             }
         }
@@ -125,28 +124,19 @@ impl Element {
                         });
                     }
                     b"object" => {
-                        // Parse the object based on what symbol we have
                         let obj_type = try_get_attr_raw(&e, "type")?.unwrap_or(6_u8);
                         object_data = Some(match obj_type {
                             0 => ElementObjectData::Point(Box::new(PointObject::parse(
-                                reader,
-                                Weak::new(),
-                                0.,
+                                reader, None, 0.,
                             )?)),
                             1 => match &symbol_data {
                                 Some(s) => match s {
-                                    ElementSymbolData::Line(_) => {
-                                        ElementObjectData::Line(Box::new(LineObject::parse(
-                                            reader,
-                                            WeakLinePathSymbol::Line(Weak::new()),
-                                        )?))
-                                    }
-                                    ElementSymbolData::Area(_) => {
-                                        ElementObjectData::Area(Box::new(AreaObject::parse(
-                                            reader,
-                                            WeakAreaPathSymbol::Area(Weak::new()),
-                                        )?))
-                                    }
+                                    ElementSymbolData::Line(_) => ElementObjectData::Line(
+                                        Box::new(LineObject::parse(reader, None)?),
+                                    ),
+                                    ElementSymbolData::Area(_) => ElementObjectData::Area(
+                                        Box::new(AreaObject::parse(reader, None)?),
+                                    ),
                                     ElementSymbolData::Point(_) => {
                                         return Err(Error::ElementSymbolObjectMismatch);
                                     }
@@ -203,6 +193,7 @@ impl Element {
 
 /// A point symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -290,14 +281,14 @@ impl PointSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.inner_color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.inner_color {
+            colors.push(*id);
         }
-        if let SymbolColor::Color(weak) = &self.outer_color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.outer_color {
+            colors.push(*id);
         }
 
         for element in &self.elements {
@@ -359,7 +350,6 @@ impl PointSymbol {
             }
         }
 
-        // Ignore elements without anything to render.
         elements.retain(|element| !element.is_empty());
 
         Ok(Self {
@@ -373,45 +363,28 @@ impl PointSymbol {
         })
     }
 
+    /// Write this symbol on its own, for the sub-symbol positions that
+    /// [`Symbol::write`] does not reach: private parts of a combined symbol,
+    /// and point-symbol elements.
     pub(super) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
-        index: Option<usize>,
-        is_element: bool,
+        position: SymbolPosition,
     ) -> Result<()> {
-        // Elements do not have codes so we should skip code writing if so
-        let code_str = if !is_element {
-            self.common.code.to_string()
-        } else {
-            String::new()
-        };
+        self.common
+            .write_open(writer, SymbolKind::Point.type_id(), position)?;
+        self.write_body(writer, color_set)?;
+        self.common.write_close(writer)
+    }
 
-        let mut bs = BytesStart::new("symbol").with_attributes([
-            ("type", "1"),
-            ("code", code_str.as_str()),
-            ("name", self.common.name.as_str()),
-        ]);
-        if let Some(id) = index {
-            bs.push_attribute(("id", id.to_string().as_str()));
-        }
-        if self.common.is_hidden {
-            bs.push_attribute(("is_hidden", "true"));
-        }
-        if self.common.is_helper_symbol {
-            bs.push_attribute(("is_helper_symbol", "true"));
-        }
-        if self.common.is_protected {
-            bs.push_attribute(("is_protected", "true"));
-        }
-        writer.write_event(Event::Start(bs))?;
-
-        if !self.common.description.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("description")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.common.description)))?;
-            writer.write_event(Event::End(BytesEnd::new("description")))?;
-        }
-
+    /// Write the type-specific body, between the halves of the shared
+    /// `<symbol>` frame written by [`Symbol::write`].
+    pub(super) fn write_body<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        color_set: &ColorSet,
+    ) -> Result<()> {
         let mut bs = BytesStart::new("point_symbol");
         if self.is_rotatable {
             bs.push_attribute(("rotatable", "true"));
@@ -446,12 +419,6 @@ impl PointSymbol {
 
         writer.write_event(Event::End(BytesEnd::new("point_symbol")))?;
 
-        if let Some(icon) = &self.common.custom_icon {
-            writer.write_event(Event::Empty(
-                BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
-            ))?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
     }
 }
@@ -461,7 +428,7 @@ mod tests {
     use geo_types::LineString;
     use quick_xml::Writer;
 
-    use super::{Element, PointSymbol};
+    use super::{Element, PointSymbol, SymbolPosition};
     use crate::{Code, Result, colors::ColorSet, objects::LineObject, symbols::LineSymbol};
 
     fn empty_line_element() -> Element {
@@ -479,7 +446,7 @@ mod tests {
         let mut symbol = PointSymbol::new(Code::default(), "");
         symbol.elements.push(empty_line_element());
         let mut writer = Writer::new(Vec::new());
-        symbol.write(&mut writer, &ColorSet::default(), None, false)?;
+        symbol.write(&mut writer, &ColorSet::default(), SymbolPosition::Private)?;
         let output = String::from_utf8(writer.into_inner())?;
 
         assert!(output.contains(r#"elements="0""#));

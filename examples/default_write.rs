@@ -14,7 +14,7 @@ use omap::{
     Code, Error, Omap,
     colors::Color,
     objects::LineObject,
-    symbols::{PublicOrPrivateSymbol, Symbol, WeakLinePathSymbol},
+    symbols::{PublicOrPrivateSymbol, Symbol},
 };
 
 fn main() -> Result<(), Error> {
@@ -35,77 +35,70 @@ fn main() -> Result<(), Error> {
     #[cfg(not(feature = "geo_ref"))]
     let mut map = Omap::default_15_000()?;
 
-    for color in map.colors.iter() {
+    for color in map.colors.values() {
         match color {
-            Color::SpotColor(ref_cell) => {
-                let b = ref_cell.try_borrow().unwrap();
-                println!("{} with spot name {}", b.color_name, b.spotcolor_name);
+            Color::SpotColor(spot) => {
+                println!("{} with spot name {}", spot.color_name, spot.spotcolor_name);
             }
-            Color::MixedColor(ref_cell) => {
-                println!("{}", ref_cell.try_borrow().unwrap().color_name);
-            }
+            Color::MixedColor(mixed) => println!("{}", mixed.color_name),
         }
     }
 
     let erosion_gully = map
         .symbols
-        .symbol_by_code(Code::new(107, 0, 0))
-        .unwrap()
-        .unwrap()
-        .downgrade();
+        .find_by_code(Code::new(107, 0, 0))
+        .and_then(|symbol| symbol.as_line_path())
+        .unwrap();
 
     let mut ls = LineObject::new(
-        WeakLinePathSymbol::try_from(erosion_gully).unwrap(),
+        Some(erosion_gully),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
-    ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
+    ls.tags_mut()
+        .insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts.get_mut(0).unwrap().add_object(ls);
 
     println!("\nCombined Line symbols:");
-    for symbol in map.symbols.iter() {
+    for symbol in map.symbols.values() {
         if let Symbol::CombinedLine(s) = symbol {
-            println!("{}", s.borrow().common.name);
+            println!("{}", s.common.name);
         }
     }
-    if let Ok(Some(s)) = map.symbols.symbol_by_name("Railway, Olive background") {
-        println!("{s:?}");
+    if let Some(s) = map.symbols.find_by_name("Railway, Olive background") {
+        println!("{:?}", s.symbol());
     }
 
     let mut num = 0;
-    for symbol in map.symbols.iter() {
-        if let Symbol::Line(s) = symbol {
-            let borrowed = s.borrow();
-
-            if let Some(_ss_) = &borrowed.start_symbol {
+    for symbol in map.symbols.values() {
+        if let Symbol::Line(ls) = symbol {
+            if let Some(_ss_) = &ls.start_symbol {
                 num += 1;
             }
-            if let Some(_ms_) = &borrowed.mid_symbol {
+            if let Some(_ms_) = &ls.mid_symbol {
                 num += 1;
             }
-            if let Some(_ds_) = &borrowed.dash_symbol {
+            if let Some(_ds_) = &ls.dash_symbol {
                 num += 1;
             }
-            if let Some(_es_) = &borrowed.end_symbol {
+            if let Some(_es_) = &ls.end_symbol {
                 num += 1;
             }
         }
         if let Symbol::CombinedLine(s) = symbol {
-            let borrowed = s.borrow();
-
-            for part in borrowed.components() {
-                if let PublicOrPrivateSymbol::Private(s) = part {
-                    if let Some(_ss_) = &s.start_symbol {
+            for part in s.components() {
+                if let PublicOrPrivateSymbol::Private(ls) = part {
+                    if let Some(_ss_) = &ls.start_symbol {
                         num += 1;
                     }
-                    if let Some(_ms_) = &s.mid_symbol {
+                    if let Some(_ms_) = &ls.mid_symbol {
                         num += 1;
                     }
-                    if let Some(_ds_) = &s.dash_symbol {
+                    if let Some(_ds_) = &ls.dash_symbol {
                         num += 1;
                     }
-                    if let Some(_es_) = &s.end_symbol {
+                    if let Some(_es_) = &ls.end_symbol {
                         num += 1;
                     }
                 }

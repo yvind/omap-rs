@@ -2,19 +2,20 @@ use std::str::FromStr;
 
 use quick_xml::{
     Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{PointSymbol, SymbolCommon};
+use super::{PointSymbol, SymbolCommon, SymbolKind, symbol::SymbolPosition};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
-    colors::{ColorSet, SymbolColor, WeakColor},
+    colors::{ColorId, ColorSet, SymbolColor},
     notes,
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
 
 /// A line symbol definition.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineSymbol {
     /// Common symbol properties.
     pub common: SymbolCommon,
@@ -23,13 +24,13 @@ pub struct LineSymbol {
     pub border: Option<BorderStyle>,
 
     /// Optional point symbol placed at the start of the line.
-    pub start_symbol: Option<PointSymbol>,
+    pub start_symbol: Option<Box<PointSymbol>>,
     /// Optional point symbol placed repeatedly along the line.
-    pub mid_symbol: Option<MidSymbol>,
+    pub mid_symbol: Option<Box<MidSymbol>>,
     /// Optional point symbol placed at the end of the line.
-    pub end_symbol: Option<PointSymbol>,
+    pub end_symbol: Option<Box<PointSymbol>>,
     /// Optional point symbol placed on dashes.
-    pub dash_symbol: Option<DashSymbol>,
+    pub dash_symbol: Option<Box<DashSymbol>>,
 
     /// The line colour.
     pub color: SymbolColor,
@@ -95,25 +96,25 @@ impl LineSymbol {
 
     /// Set the start symbol (builder-style).
     pub fn with_start_symbol(mut self, symbol: PointSymbol) -> Self {
-        self.start_symbol = Some(symbol);
+        self.start_symbol = Some(Box::new(symbol));
         self
     }
 
     /// Set the mid symbol (builder-style).
     pub fn with_mid_symbol(mut self, symbol: MidSymbol) -> Self {
-        self.mid_symbol = Some(symbol);
+        self.mid_symbol = Some(Box::new(symbol));
         self
     }
 
     /// Set the end symbol (builder-style).
     pub fn with_end_symbol(mut self, symbol: PointSymbol) -> Self {
-        self.end_symbol = Some(symbol);
+        self.end_symbol = Some(Box::new(symbol));
         self
     }
 
     /// Set the dash symbol (builder-style).
     pub fn with_dash_symbol(mut self, symbol: DashSymbol) -> Self {
-        self.dash_symbol = Some(symbol);
+        self.dash_symbol = Some(Box::new(symbol));
         self
     }
 
@@ -147,26 +148,26 @@ impl LineSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<WeakColor> {
+    pub fn colors(&self) -> Vec<ColorId> {
         let mut colors = Vec::new();
 
-        if let SymbolColor::Color(weak) = &self.color {
-            colors.push(weak.clone());
+        if let SymbolColor::Color(id) = &self.color {
+            colors.push(*id);
         }
 
         if let Some(border) = &self.border {
             match border {
                 BorderStyle::SymmetricBorder { both } => {
-                    if let SymbolColor::Color(weak) = &both.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &both.color {
+                        colors.push(*id);
                     }
                 }
                 BorderStyle::AsymmetricBorder { left, right } => {
-                    if let SymbolColor::Color(weak) = &left.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &left.color {
+                        colors.push(*id);
                     }
-                    if let SymbolColor::Color(weak) = &right.color {
-                        colors.push(weak.clone());
+                    if let SymbolColor::Color(id) = &right.color {
+                        colors.push(*id);
                     }
                 }
             }
@@ -191,6 +192,7 @@ impl LineSymbol {
 
 /// A dash symbol placed on dashes of a dashed line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DashSymbol {
     /// Whether to suppress the dash symbol at the line ends.
     pub suppress_dash_symbol_at_ends: bool,
@@ -202,6 +204,7 @@ pub struct DashSymbol {
 
 /// Point symbols placed at regular positions along a line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MidSymbol {
     /// Number of mid symbols per placement spot.
     pub mid_symbols_per_spot: u16,
@@ -221,6 +224,7 @@ pub struct MidSymbol {
 
 /// Cap style for line endpoints.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CapStyle {
     /// Flat cap (no extension beyond endpoint).
     #[default]
@@ -249,6 +253,7 @@ impl FromStr for CapStyle {
 
 /// Join style at line vertices.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum JoinStyle {
     /// Bevel join.
     Bevel = 0,
@@ -274,6 +279,7 @@ impl FromStr for JoinStyle {
 
 /// Placement of mid symbols relative to the line's dash pattern.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MidSymbolPlacement {
     /// Mid symbols on every dash
     #[default]
@@ -282,7 +288,6 @@ pub enum MidSymbolPlacement {
     CenterOfDashGroup = 1,
     /// Mid symbols on the main gap (i.e. not between dashes in a group)
     CenterOfGap = 2,
-    //NoMidSymbols = 99,
 }
 
 impl FromStr for MidSymbolPlacement {
@@ -300,6 +305,7 @@ impl FromStr for MidSymbolPlacement {
 
 /// Whether the border is symmetric (same on both sides) or asymmetric.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BorderStyle {
     /// Both sides share the same border definition.
     SymmetricBorder {
@@ -317,6 +323,7 @@ pub enum BorderStyle {
 
 /// A single border line definition alongside the main line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineSymbolBorder {
     /// Border colour.
     pub color: SymbolColor,
@@ -389,6 +396,7 @@ impl LineSymbolBorder {
 
 /// Dash parameters for a border line.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BorderDash {
     /// Length of each dash in mm.
     pub dash_length: NonNegativeF64,
@@ -398,6 +406,7 @@ pub struct BorderDash {
 
 /// The dash style of a line symbol.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DashStyle {
     /// The line is dashed.
     Dashed {
@@ -428,6 +437,7 @@ impl Default for DashStyle {
 
 /// Grouping of dashes in a dash style.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GroupDashes {
     /// Dashes are grouped together.
     Grouped {
@@ -591,28 +601,32 @@ impl LineSymbol {
             }
         };
 
-        let mid_symbol = mid_symbol_point.map(|ps| MidSymbol {
-            mid_symbols_per_spot,
-            mid_symbol_distance: NonNegativeF64::from_file_value(mid_symbol_distance),
-            minimum_mid_symbol_count,
-            minimum_mid_symbol_count_when_closed,
-            show_at_least_one_mid_symbol: show_at_least_one_symbol,
-            mid_symbol_placement,
-            mid_symbol: ps,
-        });
+        let mid_symbol = mid_symbol_point
+            .map(|ps| MidSymbol {
+                mid_symbols_per_spot,
+                mid_symbol_distance: NonNegativeF64::from_file_value(mid_symbol_distance),
+                minimum_mid_symbol_count,
+                minimum_mid_symbol_count_when_closed,
+                show_at_least_one_mid_symbol: show_at_least_one_symbol,
+                mid_symbol_placement,
+                mid_symbol: ps,
+            })
+            .map(Box::new);
 
-        let dash_symbol = dash_symbol_point.map(|ps| DashSymbol {
-            suppress_dash_symbol_at_ends,
-            scale_dash_symbol,
-            dash_symbol: ps,
-        });
+        let dash_symbol = dash_symbol_point
+            .map(|ps| DashSymbol {
+                suppress_dash_symbol_at_ends,
+                scale_dash_symbol,
+                dash_symbol: ps,
+            })
+            .map(Box::new);
 
         Ok(Self {
             common,
             border,
-            start_symbol,
+            start_symbol: start_symbol.map(Box::new),
             mid_symbol,
-            end_symbol,
+            end_symbol: end_symbol.map(Box::new),
             dash_symbol,
             color,
             line_width,
@@ -660,7 +674,6 @@ impl LineSymbol {
                 _ => {}
             }
         }
-        // If the point symbol is empty. Drop it
         if let Some(ps) = &result
             && ps.inner_color == SymbolColor::NoColor
             && ps.outer_color == SymbolColor::NoColor
@@ -709,49 +722,32 @@ impl LineSymbol {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "line-symbol serialization maps a large file-format record"
-    )]
+    /// Write this symbol on its own, for the sub-symbol positions that
+    /// [`Symbol::write`] does not reach: private parts of a combined symbol,
+    /// and point-symbol elements.
     pub(super) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
-        index: Option<usize>,
-        is_element: bool,
+        position: SymbolPosition,
     ) -> Result<()> {
-        // Elements do not have codes so we should skip code writing if so
-        let code_str = if !is_element {
-            self.common.code.to_string()
-        } else {
-            String::new()
-        };
+        self.common
+            .write_open(writer, SymbolKind::Line.type_id(), position)?;
+        self.write_body(writer, color_set)?;
+        self.common.write_close(writer)
+    }
 
-        let mut bs = BytesStart::new("symbol").with_attributes([
-            ("type", "2"),
-            ("code", code_str.as_str()),
-            ("name", self.common.name.as_str()),
-        ]);
-        if let Some(id) = index {
-            bs.push_attribute(("id", id.to_string().as_str()));
-        }
-        if self.common.is_hidden {
-            bs.push_attribute(("is_hidden", "true"));
-        }
-        if self.common.is_helper_symbol {
-            bs.push_attribute(("is_helper_symbol", "true"));
-        }
-        if self.common.is_protected {
-            bs.push_attribute(("is_protected", "true"));
-        }
-
-        writer.write_event(Event::Start(bs))?;
-        if !self.common.description.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("description")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.common.description)))?;
-            writer.write_event(Event::End(BytesEnd::new("description")))?;
-        }
-
+    /// Write the type-specific body, between the halves of the shared
+    /// `<symbol>` frame written by [`Symbol::write`].
+    #[expect(
+        clippy::too_many_lines,
+        reason = "line-symbol serialization maps a large file-format record"
+    )]
+    pub(super) fn write_body<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        color_set: &ColorSet,
+    ) -> Result<()> {
         let main_color = self.color.priority(color_set);
 
         let mut bs = BytesStart::new("line_symbol").with_attributes([
@@ -889,34 +885,30 @@ impl LineSymbol {
         }
         if let Some(start_symbol) = &self.start_symbol {
             writer.write_event(Event::Start(BytesStart::new("start_symbol")))?;
-            start_symbol.write(writer, color_set, None, true)?;
+            start_symbol.write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("start_symbol")))?;
         }
         if let Some(mid_symbol) = &self.mid_symbol {
             writer.write_event(Event::Start(BytesStart::new("mid_symbol")))?;
-            mid_symbol.mid_symbol.write(writer, color_set, None, true)?;
+            mid_symbol
+                .mid_symbol
+                .write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("mid_symbol")))?;
         }
         if let Some(dash_symbol) = &self.dash_symbol {
             writer.write_event(Event::Start(BytesStart::new("dash_symbol")))?;
             dash_symbol
                 .dash_symbol
-                .write(writer, color_set, None, true)?;
+                .write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("dash_symbol")))?;
         }
         if let Some(end_symbol) = &self.end_symbol {
             writer.write_event(Event::Start(BytesStart::new("end_symbol")))?;
-            end_symbol.write(writer, color_set, None, true)?;
+            end_symbol.write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("end_symbol")))?;
         }
         writer.write_event(Event::End(BytesEnd::new("line_symbol")))?;
 
-        if let Some(icon) = &self.common.custom_icon {
-            writer.write_event(Event::Empty(
-                BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
-            ))?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
     }
 }

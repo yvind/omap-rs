@@ -16,6 +16,7 @@ use crate::{
 
 /// The georeferencing information of the map. We assume the projected units are meters
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GeoRef {
     /// Map scale
     /// Remember to scale all map coordinates after changing this
@@ -105,7 +106,6 @@ impl GeoRef {
         self.crs_type.proj_string()
     }
 
-    // Returns Some(epsg_code) if the map is georeferenced using a epsg code or by a proj string containing the code
     /// Get the EPSG code for this CRS, if available.
     pub fn epsg_code(&self) -> Option<u16> {
         self.crs_type.epsg_code()
@@ -257,7 +257,6 @@ fn parse_projected_crs<R: std::io::BufRead>(
     let crs_type = if let Some(attr) = bytes_start.try_get_attribute(b"id")? {
         match attr.value.as_ref() {
             b"Gauss-Krueger, datum: Potsdam" => {
-                // get the parameter
                 let param_string = get_projected_crs_spec(reader, b"parameter")?;
                 CrsType::GaussKrueger(param_string.parse()?)
             }
@@ -383,10 +382,8 @@ impl GeoRef {
 
         let transform = Transform::from_horizontal_components(&local_crs, &geographic_crs)?;
 
-        // get geographic ref point
         let geographic_ref_point_deg = transform.convert(projected_ref_point)?;
 
-        // get magnetic declination
         let declination_deg = Self::get_declination(geographic_ref_point_deg, meters_above_sea)?;
         let auxiliary_scale_factor =
             Self::get_elevation_scale_factor(geographic_ref_point_deg, meters_above_sea);
@@ -445,7 +442,6 @@ impl GeoRef {
         let meridian_delta = projected_meridian.delta() / D;
         let parallel_delta = projected_parallel.delta() / D;
 
-        // Check determinant
         let determinant = parallel_delta.x * meridian_delta.y - parallel_delta.y * meridian_delta.x;
         if determinant < 0.00001 {
             Err(Error::ProjScaleToleranceError)?;

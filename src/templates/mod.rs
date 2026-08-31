@@ -21,6 +21,7 @@ use crate::{
 
 /// Default display settings for newly added templates.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TemplateDefaults {
     /// Whether to use metres-per-pixel (instead of DPI).
     pub use_meters_per_pixel: bool,
@@ -89,6 +90,7 @@ impl TemplateDefaults {
 
 /// A template entry pairing a template with its visibility settings.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TemplateEntry {
     /// The template data.
     pub template: Template,
@@ -105,6 +107,7 @@ impl TemplateEntry {
 
 /// All templates attached to the map, plus default display settings.
 #[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Templates {
     /// The template entries, ordered back-to-front.
     /// A [`TemplateEntry`] is a [Template] and [`TemplateVisibility`]
