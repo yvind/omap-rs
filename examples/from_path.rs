@@ -108,8 +108,8 @@ fn main() -> Result<(), Error> {
 
     let erosion_gully = map
         .symbols
-        .id_by_code(Code::new(107, 0, 0))
-        .and_then(|id| map.symbols.line_path_id(id))
+        .find_by_code(Code::new(107, 0, 0))
+        .and_then(|symbol| symbol.as_line_path())
         .unwrap();
 
     let mut ls = LineObject::new(
@@ -123,8 +123,8 @@ fn main() -> Result<(), Error> {
 
     let contour_value = map
         .symbols
-        .id_by_name("Contour value")
-        .and_then(|id| map.symbols.text_id(id))
+        .find_by_name("Contour value")
+        .and_then(|symbol| symbol.as_text())
         .expect("no text symbol named Contour value");
 
     let ts = TextObject::new(

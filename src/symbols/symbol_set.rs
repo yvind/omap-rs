@@ -13,7 +13,7 @@ use crate::{
     symbols::{
         AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedAreaSymbolId, CombinedLineSymbol,
         CombinedLineSymbolId, LinePathSymbolId, LineSymbol, PathSymbolId, PointSymbol,
-        PublicOrPrivateSymbol, SymbolId, TextSymbol,
+        PublicOrPrivateSymbol, SymbolId, SymbolRef, TextSymbol,
     },
     utils::{try_get_attr, try_get_attr_raw},
 };
@@ -27,22 +27,19 @@ use crate::{
 ///
 /// A [`SymbolId`] left over from a removed symbol is written as the format's
 /// `-1` unknown-symbol sentinel, exactly as a dangling weak reference was.
+///
+/// # A handle belongs to one set
+///
+/// Handles are slot keys, not pointers, so they carry no record of which set
+/// minted them. Using one against a *different* [`SymbolSet`] is not caught:
+/// it resolves to whatever occupies that slot, which is an unrelated symbol
+/// rather than a `None`. Keep a handle with the [`crate::Omap`] it came from.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SymbolSet {
     symbols: Arena<Symbol, SymbolKey>,
     /// The name of the symbol set.
     pub name: String,
-}
-
-/// The only places that know which [`Symbol`] variants a handle type accepts.
-macro_rules! narrow_id {
-    ($name:ident, $id:ident, $article:literal, $($pattern:pat_param)|+) => {
-        #[doc = concat!("Narrow a handle to ", $article, " symbol, or `None` if it names another kind.")]
-        pub fn $name(&self, id: SymbolId) -> Option<crate::symbols::$id> {
-            matches!(self.get(id)?, $($pattern)|+).then_some(crate::symbols::$id(id.0))
-        }
-    };
 }
 
 macro_rules! impl_typed_accessors {
@@ -114,9 +111,12 @@ impl SymbolSet {
         SymbolId(self.symbols.push(symbol.into()))
     }
 
-    /// Get a symbol by its handle.
-    pub fn get(&self, id: SymbolId) -> Option<&Symbol> {
-        self.symbols.get(id.0)
+    /// Resolve a handle, or `None` if it names a symbol no longer in this set.
+    ///
+    /// The result dereferences to the [`Symbol`] and narrows to a typed handle
+    /// through [`SymbolRef`]'s `as_*` methods.
+    pub fn get(&self, id: SymbolId) -> Option<SymbolRef<'_>> {
+        Some(SymbolRef::new(id, self.symbols.get(id.0)?))
     }
 
     /// Mutably get a symbol by its handle.
@@ -179,41 +179,6 @@ impl SymbolSet {
         CombinedLine
     );
 
-    narrow_id!(
-        path_id,
-        PathSymbolId,
-        "a path",
-        Symbol::Line(_) | Symbol::Area(_) | Symbol::CombinedLine(_) | Symbol::CombinedArea(_)
-    );
-    narrow_id!(
-        line_path_id,
-        LinePathSymbolId,
-        "a line path",
-        Symbol::Line(_) | Symbol::CombinedLine(_)
-    );
-    narrow_id!(
-        area_path_id,
-        AreaPathSymbolId,
-        "an area path",
-        Symbol::Area(_) | Symbol::CombinedArea(_)
-    );
-    narrow_id!(point_id, PointSymbolId, "a point", Symbol::Point(_));
-    narrow_id!(text_id, TextSymbolId, "a text", Symbol::Text(_));
-    narrow_id!(line_id, LineSymbolId, "a line", Symbol::Line(_));
-    narrow_id!(area_id, AreaSymbolId, "an area", Symbol::Area(_));
-    narrow_id!(
-        combined_line_id,
-        CombinedLineSymbolId,
-        "a combined line",
-        Symbol::CombinedLine(_)
-    );
-    narrow_id!(
-        combined_area_id,
-        CombinedAreaSymbolId,
-        "a combined area",
-        Symbol::CombinedArea(_)
-    );
-
     /// Remove and return the [`Symbol`] the handle names.
     pub fn remove(&mut self, id: SymbolId) -> Option<Symbol> {
         self.symbols.remove(id.0)
@@ -231,38 +196,22 @@ impl SymbolSet {
         self.symbols.remove_at(index)
     }
 
-    /// Find a symbol by its [Code]. The first match is returned.
-    pub fn symbol_by_code(&self, code: Code) -> Option<&Symbol> {
-        self.values().find(|s| s.common().code == code)
+    /// Find a symbol by its [`Code`]. The first match is returned.
+    pub fn find_by_code(&self, code: Code) -> Option<SymbolRef<'_>> {
+        self.iter().find(|symbol| symbol.common().code == code)
     }
 
-    /// Find a handle to a symbol by its [Code]. The first match is returned.
-    pub fn id_by_code(&self, code: Code) -> Option<SymbolId> {
-        self.iter()
-            .find(|(_, s)| s.common().code == code)
-            .map(|(id, _)| id)
-    }
-
-    /// Find a [Symbol] by its display name. The first match is returned.
-    pub fn symbol_by_name(&self, name: &str) -> Option<&Symbol> {
-        self.values().find(|s| s.common().name == name)
-    }
-
-    /// Find a handle to a [Symbol] by its display name. The first match is returned.
-    pub fn id_by_name(&self, name: &str) -> Option<SymbolId> {
-        self.iter()
-            .find(|(_, s)| s.common().name == name)
-            .map(|(id, _)| id)
+    /// Find a symbol by its display name. The first match is returned.
+    pub fn find_by_name(&self, name: &str) -> Option<SymbolRef<'_>> {
+        self.iter().find(|symbol| symbol.common().name == name)
     }
 
     /// Get the symbol at a file index.
-    pub fn symbol_at(&self, index: usize) -> Option<&Symbol> {
-        self.symbols.get_at(index)
-    }
-
-    /// Get a handle to the symbol at a file index.
-    pub fn id_at(&self, index: usize) -> Option<SymbolId> {
-        Some(SymbolId(self.symbols.id_at(index)?))
+    pub fn find_at(&self, index: usize) -> Option<SymbolRef<'_>> {
+        Some(SymbolRef::new(
+            SymbolId(self.symbols.id_at(index)?),
+            self.symbols.get_at(index)?,
+        ))
     }
 
     /// Get the file index of a symbol, or `None` if it is not in this set.
@@ -281,10 +230,10 @@ impl SymbolSet {
     }
 
     /// Iterate over the symbols and their handles, in file order.
-    pub fn iter(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
+    pub fn iter(&self) -> impl Iterator<Item = SymbolRef<'_>> {
         self.symbols
             .iter()
-            .map(|(raw, symbol)| (SymbolId(raw), symbol))
+            .map(|(raw, symbol)| SymbolRef::new(SymbolId(raw), symbol))
     }
 
     /// Iterate over the symbols in file order.
@@ -299,7 +248,7 @@ impl SymbolSet {
 
     /// Iterate over handles to every symbol, in file order.
     pub fn ids(&self) -> impl Iterator<Item = SymbolId> {
-        self.iter().map(|(id, _)| id)
+        self.iter().map(SymbolRef::id)
     }
 
     /// Sort the symbols by [`Code`]. Every handle stays valid.
@@ -375,7 +324,7 @@ impl SymbolSet {
         if !visited.insert(from) {
             return false;
         }
-        let components: Vec<SymbolId> = match self.get(from) {
+        let components: Vec<SymbolId> = match self.get(from).map(|symbol| symbol.symbol()) {
             Some(Symbol::CombinedArea(symbol)) => {
                 symbol.public_components().map(Into::into).collect()
             }
@@ -508,28 +457,25 @@ impl SymbolSet {
             if component_ids.is_empty() {
                 continue;
             }
-            let Some(target) = symbol_set.id_at(index) else {
+            let Some(target) = symbol_set.find_at(index) else {
                 continue;
             };
-            let combined_area = symbol_set.combined_area_id(target);
-            let combined_line = symbol_set.combined_line_id(target);
+            let combined_area = target.as_combined_area();
+            let combined_line = target.as_combined_line();
 
             for id in component_ids {
                 let component = symbol_set
-                    .id_at(id)
+                    .find_at(id)
                     .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
-                let kind = symbol_set
-                    .get(component)
-                    .ok_or(Error::SymbolSetIndexOutOfRange(id))?
-                    .kind();
+                let kind = component.kind();
 
                 if let Some(target) = combined_area {
-                    let Some(path) = symbol_set.path_id(component) else {
+                    let Some(path) = component.as_path() else {
                         return Err(Error::CombinedSymbolContainsPointOrText(kind));
                     };
                     symbol_set.add_area_component(target, PublicOrPrivateSymbol::Public(path))?;
                 } else if let Some(target) = combined_line {
-                    let Some(line) = symbol_set.line_path_id(component) else {
+                    let Some(line) = component.as_line_path() else {
                         return Err(Error::CombinedLineSymbolContainsNonLine(kind));
                     };
                     symbol_set.add_line_component(target, PublicOrPrivateSymbol::Public(line))?;

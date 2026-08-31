@@ -54,7 +54,7 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
         .symbols
         .iter()
         .enumerate()
-        .map(|(index, (_, symbol))| {
+        .map(|(index, symbol)| {
             let used = symbol
                 .colors(&map.symbols)
                 .into_iter()
@@ -153,7 +153,8 @@ fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
     let json = serde_json::to_string(&map).expect("serialize");
     let restored: Omap = serde_json::from_str(&json).expect("deserialize");
 
-    for (index, (id, symbol)) in map.symbols.iter().enumerate() {
+    for (index, symbol) in map.symbols.iter().enumerate() {
+        let id = symbol.id();
         assert_eq!(map.symbols.index_of(id), Some(index));
 
         // The original handle, used verbatim against the restored map.

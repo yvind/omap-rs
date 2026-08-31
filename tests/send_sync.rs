@@ -61,14 +61,15 @@ fn handles_survive_a_clone() -> Result<()> {
 
     let clone = map.clone();
     assert_eq!(
-        clone.symbols.get(id).map(|symbol| symbol.name()),
+        clone.symbols.get(id).map(|found| found.symbol().name()),
         Some(name.as_str())
     );
     assert_eq!(clone.symbols.index_of(id), map.symbols.index_of(id));
     Ok(())
 }
 
-/// A handle from one map must not silently resolve against another.
+/// A handle to a removed symbol stops resolving rather than naming whatever
+/// reused the slot.
 #[test]
 fn a_removed_symbol_stops_resolving() -> Result<()> {
     let mut map = Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))?;
@@ -80,5 +81,24 @@ fn a_removed_symbol_stops_resolving() -> Result<()> {
     assert!(!map.symbols.contains(id));
     assert!(map.symbols.get(id).is_none());
     assert!(map.symbols.index_of(id).is_none());
+    Ok(())
+}
+
+/// A handle carries no record of which set minted it, so one used against a
+/// different map resolves to whatever occupies that slot instead of `None`.
+/// Documented on [`omap::symbols::SymbolSet`]; pinned here so the day it stops
+/// being true is a deliberate change rather than a silent one.
+#[test]
+fn a_handle_does_not_know_which_map_it_came_from() -> Result<()> {
+    let a = Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))?;
+    let b = Omap::from_bytes(include_bytes!("../src/default_maps/issprom_4000.omap"))?;
+
+    let id = a.symbols.ids().next().ok_or(omap::Error::ObjectError)?;
+
+    assert!(a.symbols.get(id).is_some());
+    assert!(
+        b.symbols.get(id).is_some(),
+        "a foreign handle resolves rather than returning None"
+    );
     Ok(())
 }

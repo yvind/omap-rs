@@ -46,8 +46,8 @@ fn main() -> Result<(), Error> {
 
     let erosion_gully = map
         .symbols
-        .id_by_code(Code::new(107, 0, 0))
-        .and_then(|id| map.symbols.line_path_id(id))
+        .find_by_code(Code::new(107, 0, 0))
+        .and_then(|symbol| symbol.as_line_path())
         .unwrap();
 
     let mut ls = LineObject::new(
@@ -65,8 +65,8 @@ fn main() -> Result<(), Error> {
             println!("{}", s.common.name);
         }
     }
-    if let Some(s) = map.symbols.symbol_by_name("Railway, Olive background") {
-        println!("{s:?}");
+    if let Some(s) = map.symbols.find_by_name("Railway, Olive background") {
+        println!("{:?}", s.symbol());
     }
 
     let mut num = 0;

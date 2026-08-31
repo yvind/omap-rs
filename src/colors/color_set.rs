@@ -4,8 +4,8 @@ use quick_xml::{
 };
 
 use super::{
-    Cmyk, Color, ColorComponent, ColorId, ColorKey, MixedColor, MixedColorId, Rgb, SpotColor,
-    SpotColorId, color::ColorParseReturn,
+    Cmyk, Color, ColorComponent, ColorId, ColorKey, ColorRef, MixedColor, MixedColorId, Rgb,
+    SpotColor, SpotColorId, color::ColorParseReturn,
 };
 use crate::arena::Arena;
 use crate::utils::{UnitF64, try_get_attr_raw};
@@ -20,6 +20,13 @@ use crate::{Error, OmapSection, Result};
 ///
 /// A [`ColorId`] left over from a removed color contributes no color when the
 /// map is written, exactly as a dangling weak reference did.
+///
+/// # A handle belongs to one set
+///
+/// Handles are slot keys, not pointers, so they carry no record of which set
+/// minted them. Using one against a *different* [`ColorSet`] is not caught: it
+/// resolves to whatever occupies that slot, which is an unrelated color rather
+/// than a `None`. Keep a handle with the [`crate::Omap`] it came from.
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ColorSet(Arena<Color, ColorKey>);
@@ -87,8 +94,8 @@ impl ColorSet {
     }
 
     /// Get a color by its handle.
-    pub fn get(&self, id: ColorId) -> Option<&Color> {
-        self.0.get(id.0)
+    pub fn get(&self, id: ColorId) -> Option<ColorRef<'_>> {
+        Some(ColorRef::new(id, self.0.get(id.0)?))
     }
 
     /// Mutably get a color by its handle.
@@ -128,32 +135,9 @@ impl ColorSet {
         }
     }
 
-    /// Narrow a handle to a spot color, or `None` if it names a mixed color.
-    ///
-    /// Widening a handle is a [`From`]; narrowing one needs the set, because
-    /// the kind lives on the color rather than on the handle.
-    pub fn spot_id(&self, id: ColorId) -> Option<SpotColorId> {
-        matches!(self.get(id)?, Color::SpotColor(_)).then_some(SpotColorId(id.0))
-    }
-
-    /// Narrow a handle to a mixed color, or `None` if it names a spot color.
-    pub fn mixed_id(&self, id: ColorId) -> Option<MixedColorId> {
-        matches!(self.get(id)?, Color::MixedColor(_)).then_some(MixedColorId(id.0))
-    }
-
-    /// Get a color by its priority index.
-    pub fn color_by_priority(&self, priority: usize) -> Option<&Color> {
-        self.0.get_at(priority)
-    }
-
     /// Mutably get a color by its priority index.
     pub fn color_by_priority_mut(&mut self, priority: usize) -> Option<&mut Color> {
         self.0.get_at_mut(priority)
-    }
-
-    /// Get a handle to the color with the given priority index.
-    pub fn id_by_priority(&self, priority: usize) -> Option<ColorId> {
-        Some(ColorId(self.0.id_at(priority)?))
     }
 
     /// Get the priority index of a color, or `None` if it is not in this set.
@@ -161,16 +145,17 @@ impl ColorSet {
         self.0.position(id.0)
     }
 
-    /// Get the first color with an exact name match.
-    pub fn color_by_name(&self, name: &str) -> Option<&Color> {
-        self.0.values().find(|color| color.name() == name)
+    /// Find a color by exact name match. The first match is returned.
+    pub fn find_by_name(&self, name: &str) -> Option<ColorRef<'_>> {
+        self.iter().find(|color| color.name() == name)
     }
 
-    /// Get a handle to the first color with an exact name match.
-    pub fn id_by_name(&self, name: &str) -> Option<ColorId> {
-        self.iter()
-            .find(|(_, color)| color.name() == name)
-            .map(|(id, _)| id)
+    /// Get the color with the given priority index.
+    pub fn find_by_priority(&self, priority: usize) -> Option<ColorRef<'_>> {
+        Some(ColorRef::new(
+            ColorId(self.0.id_at(priority)?),
+            self.0.get_at(priority)?,
+        ))
     }
 
     /// Get the effective CMYK value of a color in this set.
@@ -194,8 +179,10 @@ impl ColorSet {
     }
 
     /// Iterate over the colors and their handles, in priority order.
-    pub fn iter(&self) -> impl Iterator<Item = (ColorId, &Color)> {
-        self.0.iter().map(|(raw, color)| (ColorId(raw), color))
+    pub fn iter(&self) -> impl Iterator<Item = ColorRef<'_>> {
+        self.0
+            .iter()
+            .map(|(raw, color)| ColorRef::new(ColorId(raw), color))
     }
 
     /// Iterate over the colors in priority order.
@@ -210,7 +197,7 @@ impl ColorSet {
 
     /// Iterate over handles to every color, in priority order.
     pub fn ids(&self) -> impl Iterator<Item = ColorId> {
-        self.iter().map(|(id, _)| id)
+        self.iter().map(ColorRef::id)
     }
 }
 
@@ -274,7 +261,7 @@ impl ColorSet {
                 .into_iter()
                 .filter_map(|(priority, factor)| {
                     let priority = usize::try_from(priority).ok()?;
-                    let color = color_set.spot_id(color_set.id_by_priority(priority)?)?;
+                    let color = color_set.find_by_priority(priority)?.as_spot()?;
                     Some(ColorComponent {
                         factor: UnitF64::clamped_from(factor),
                         color,

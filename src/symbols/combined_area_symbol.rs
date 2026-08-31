@@ -18,7 +18,10 @@ impl CombinedAreaSymbol {
         let mut min = f64::MAX;
         for part in self.components() {
             let area = match part {
-                PublicOrPrivateSymbol::Public(id) => match symbol_set.get(SymbolId::from(*id)) {
+                PublicOrPrivateSymbol::Public(id) => match symbol_set
+                    .get(SymbolId::from(*id))
+                    .map(|symbol| symbol.symbol())
+                {
                     Some(Symbol::Area(symbol)) => symbol.minimum_area.get(),
                     Some(Symbol::CombinedArea(symbol)) => symbol.minimum_area(symbol_set),
                     _ => 0.,

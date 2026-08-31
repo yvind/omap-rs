@@ -763,8 +763,8 @@ impl SymbolColor {
     pub fn from_index(index: i32, color_set: &ColorSet) -> Self {
         match index {
             -900 => Self::RegistrationBlack,
-            i if i >= 0 => match color_set.id_by_priority(i as usize) {
-                Some(id) => Self::Color(id),
+            i if i >= 0 => match color_set.find_by_priority(i as usize) {
+                Some(color) => Self::Color(color.id()),
                 None => Self::NoColor,
             },
             _ => Self::NoColor,

@@ -6,6 +6,7 @@ mod ids;
 mod line_symbol;
 mod point_symbol;
 mod symbol;
+mod symbol_ref;
 mod symbol_set;
 mod text_symbol;
 
@@ -22,6 +23,7 @@ pub use line_symbol::{
 };
 pub use point_symbol::{Element, PointSymbol};
 pub use symbol::{Symbol, SymbolCommon};
+pub use symbol_ref::SymbolRef;
 pub use symbol_set::SymbolSet;
 pub use text_symbol::{FramingMode, LineBelow, LineFraming, ShadowFraming, TextSymbol};
 
