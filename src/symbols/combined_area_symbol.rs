@@ -118,12 +118,12 @@ impl CombinedAreaSymbol {
                         2 => {
                             let line = LineSymbol::parse(reader, color_set, sub_common)?;
                             Self::skip_to_end_of_part(reader)?;
-                            return Ok(AreaOrLineSymbol::Line(Box::new(line)));
+                            return Ok(AreaOrLineSymbol::Line(line));
                         }
                         4 => {
                             let area = AreaSymbol::parse(reader, color_set, sub_common)?;
                             Self::skip_to_end_of_part(reader)?;
-                            return Ok(AreaOrLineSymbol::Area(Box::new(area)));
+                            return Ok(AreaOrLineSymbol::Area(area));
                         }
                         _ => {
                             return Err(Error::UnknownPrivatePartSymbolType(sym_type));

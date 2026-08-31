@@ -66,20 +66,20 @@ impl MapObject {
     /// Get the tags of the object
     pub fn tags(&self) -> &HashMap<String, String> {
         match self {
-            Self::Point(o) => &o.tags,
-            Self::Line(o) => &o.tags,
-            Self::Area(o) => &o.tags,
-            Self::Text(o) => &o.tags,
+            Self::Point(o) => o.tags(),
+            Self::Line(o) => o.tags(),
+            Self::Area(o) => o.tags(),
+            Self::Text(o) => o.tags(),
         }
     }
 
     /// Get mutable tags of the object
     pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
         match self {
-            Self::Point(o) => &mut o.tags,
-            Self::Line(o) => &mut o.tags,
-            Self::Area(o) => &mut o.tags,
-            Self::Text(o) => &mut o.tags,
+            Self::Point(o) => o.tags_mut(),
+            Self::Line(o) => o.tags_mut(),
+            Self::Area(o) => o.tags_mut(),
+            Self::Text(o) => o.tags_mut(),
         }
     }
 

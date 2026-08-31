@@ -43,9 +43,9 @@ impl PrivatePart for AreaOrLineSymbol {
     }
 }
 
-impl PrivatePart for Box<LineSymbol> {
+impl PrivatePart for LineSymbol {
     fn colors(&self) -> Vec<ColorId> {
-        (**self).colors()
+        Self::colors(self)
     }
 
     fn write_part<W: std::io::Write>(
@@ -53,7 +53,7 @@ impl PrivatePart for Box<LineSymbol> {
         writer: &mut Writer<W>,
         color_set: &ColorSet,
     ) -> Result<()> {
-        (**self).write(writer, color_set, SymbolPosition::Private)
+        self.write(writer, color_set, SymbolPosition::Private)
     }
 }
 
@@ -77,7 +77,7 @@ pub struct CombinedSymbol<Id, Private> {
 pub type CombinedAreaSymbol = CombinedSymbol<PathSymbolId, AreaOrLineSymbol>;
 
 /// A combined line symbol: a line or combined line public, a line private.
-pub type CombinedLineSymbol = CombinedSymbol<LinePathSymbolId, Box<LineSymbol>>;
+pub type CombinedLineSymbol = CombinedSymbol<LinePathSymbolId, LineSymbol>;
 
 impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
     /// Create a new empty combined symbol with the given code and name.

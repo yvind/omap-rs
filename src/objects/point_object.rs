@@ -16,8 +16,15 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointObject {
-    /// The tags associated with the object
-    pub tags: HashMap<String, String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    #[expect(
+        clippy::box_collection,
+        reason = "the map header is 48 bytes inline and most objects carry no tags"
+    )]
+    tags: Option<Box<HashMap<String, String>>>,
     /// Rotation of the symbol in radians.
     pub rotation: f64,
     /// The point symbol used to render this object, or `None` for the
@@ -30,11 +37,29 @@ impl PointObject {
     /// Create a new point object with the given symbol and position.
     pub fn new(symbol: Option<PointSymbolId>, geometry: Point) -> Self {
         Self {
-            tags: HashMap::new(),
+            tags: None,
             rotation: 0.0,
             symbol,
             geometry,
         }
+    }
+
+    /// Create a point object for use as a point-symbol element.
+    pub fn new_element(geometry: Point) -> Self {
+        Self::new(None, geometry)
+    }
+
+    /// The tags associated with the object.
+    pub fn tags(&self) -> &HashMap<String, String> {
+        match &self.tags {
+            Some(tags) => tags,
+            None => super::empty_tags(),
+        }
+    }
+
+    /// Mutably access the tags, allocating the map on first use.
+    pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
+        self.tags.get_or_insert_with(Box::default)
     }
 
     /// Get a shared reference to the point geometry.
@@ -123,8 +148,8 @@ impl PointObject {
         }
         writer.write_event(Event::Start(bs))?;
         // elements are not allowed to have tags
-        if !self.tags.is_empty() && symbol_index.is_some() {
-            super::write_tags(writer, &self.tags)?;
+        if !self.tags().is_empty() && symbol_index.is_some() {
+            super::write_tags(writer, self.tags())?;
         }
         let file_coord = to_file_coords(self.geometry.0)?;
         writer.write_event(Event::Start(
@@ -146,7 +171,7 @@ impl PointObject {
         symbol: Option<PointSymbolId>,
         rotation: f64,
     ) -> Result<Self> {
-        let mut tags = HashMap::new();
+        let mut tags = None;
         let mut point = None;
         let mut buf = Vec::new();
         loop {

@@ -42,21 +42,15 @@ pub enum PublicOrPrivateSymbol<W, P> {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AreaOrLineSymbol {
     /// An area sub-symbol.
-    Area(Box<AreaSymbol>),
+    Area(AreaSymbol),
     /// A line sub-symbol.
-    Line(Box<LineSymbol>),
+    Line(LineSymbol),
 }
 
 macro_rules! impl_from_area_or_line_symbol {
     ($symbol_ty:ty, $variant:ident) => {
         impl From<$symbol_ty> for AreaOrLineSymbol {
             fn from(value: $symbol_ty) -> Self {
-                AreaOrLineSymbol::$variant(Box::new(value))
-            }
-        }
-
-        impl From<Box<$symbol_ty>> for AreaOrLineSymbol {
-            fn from(value: Box<$symbol_ty>) -> Self {
                 AreaOrLineSymbol::$variant(value)
             }
         }

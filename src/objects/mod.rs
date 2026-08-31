@@ -562,7 +562,19 @@ fn parse_file_coords(text: &[u8], coords: &mut Vec<FileCoord>) -> Result<()> {
     Ok(())
 }
 
-fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<String, String>> {
+fn empty_tags() -> &'static HashMap<String, String> {
+    static EMPTY: std::sync::LazyLock<HashMap<String, String>> =
+        std::sync::LazyLock::new(HashMap::new);
+    &EMPTY
+}
+
+#[expect(
+    clippy::box_collection,
+    reason = "the map header is 48 bytes inline and most objects carry no tags"
+)]
+fn parse_tags<R: std::io::BufRead>(
+    reader: &mut Reader<R>,
+) -> Result<Option<Box<HashMap<String, String>>>> {
     let mut buf = Vec::new();
 
     let mut tags = HashMap::new();
@@ -586,7 +598,7 @@ fn parse_tags<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<HashMap<Str
             _ => (),
         }
     }
-    Ok(tags)
+    Ok((!tags.is_empty()).then(|| Box::new(tags)))
 }
 
 fn write_tags<W: std::io::Write>(

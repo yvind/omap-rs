@@ -20,8 +20,15 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LineObject {
-    /// The tags associated with the object.
-    pub tags: HashMap<String, String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    #[expect(
+        clippy::box_collection,
+        reason = "the map header is 48 bytes inline and most objects carry no tags"
+    )]
+    tags: Option<Box<HashMap<String, String>>>,
     /// The line or combined-line symbol used to render this object.
     pub symbol: Option<LinePathSymbolId>,
     geometry: BezierPath,
@@ -31,10 +38,23 @@ impl LineObject {
     /// Create a line object from a Bézier path, flattened path, or line string.
     pub fn new(symbol: Option<LinePathSymbolId>, geometry: impl Into<BezierPath>) -> Self {
         Self {
-            tags: HashMap::new(),
+            tags: None,
             symbol,
             geometry: geometry.into(),
         }
+    }
+
+    /// The tags associated with the object.
+    pub fn tags(&self) -> &HashMap<String, String> {
+        match &self.tags {
+            Some(tags) => tags,
+            None => super::empty_tags(),
+        }
+    }
+
+    /// Mutably access the tags, allocating the map on first use.
+    pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
+        self.tags.get_or_insert_with(Box::default)
     }
 
     /// Get the mixed straight/cubic geometry.
@@ -143,8 +163,8 @@ impl LineObject {
         }
         writer.write_event(Event::Start(start))?;
 
-        if !self.tags.is_empty() && symbol_index.is_some() {
-            super::write_tags(writer, &self.tags)?;
+        if !self.tags().is_empty() && symbol_index.is_some() {
+            super::write_tags(writer, self.tags())?;
         }
 
         let final_flags = if self.geometry.is_closed() {
@@ -163,7 +183,7 @@ impl LineObject {
         reader: &mut Reader<R>,
         symbol: Option<LinePathSymbolId>,
     ) -> Result<Self> {
-        let mut tags = HashMap::new();
+        let mut tags = None;
         let mut file_coords = Vec::new();
         let mut buf = Vec::new();
 

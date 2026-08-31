@@ -24,13 +24,13 @@ pub struct LineSymbol {
     pub border: Option<BorderStyle>,
 
     /// Optional point symbol placed at the start of the line.
-    pub start_symbol: Option<PointSymbol>,
+    pub start_symbol: Option<Box<PointSymbol>>,
     /// Optional point symbol placed repeatedly along the line.
-    pub mid_symbol: Option<MidSymbol>,
+    pub mid_symbol: Option<Box<MidSymbol>>,
     /// Optional point symbol placed at the end of the line.
-    pub end_symbol: Option<PointSymbol>,
+    pub end_symbol: Option<Box<PointSymbol>>,
     /// Optional point symbol placed on dashes.
-    pub dash_symbol: Option<DashSymbol>,
+    pub dash_symbol: Option<Box<DashSymbol>>,
 
     /// The line colour.
     pub color: SymbolColor,
@@ -96,25 +96,25 @@ impl LineSymbol {
 
     /// Set the start symbol (builder-style).
     pub fn with_start_symbol(mut self, symbol: PointSymbol) -> Self {
-        self.start_symbol = Some(symbol);
+        self.start_symbol = Some(Box::new(symbol));
         self
     }
 
     /// Set the mid symbol (builder-style).
     pub fn with_mid_symbol(mut self, symbol: MidSymbol) -> Self {
-        self.mid_symbol = Some(symbol);
+        self.mid_symbol = Some(Box::new(symbol));
         self
     }
 
     /// Set the end symbol (builder-style).
     pub fn with_end_symbol(mut self, symbol: PointSymbol) -> Self {
-        self.end_symbol = Some(symbol);
+        self.end_symbol = Some(Box::new(symbol));
         self
     }
 
     /// Set the dash symbol (builder-style).
     pub fn with_dash_symbol(mut self, symbol: DashSymbol) -> Self {
-        self.dash_symbol = Some(symbol);
+        self.dash_symbol = Some(Box::new(symbol));
         self
     }
 
@@ -601,28 +601,32 @@ impl LineSymbol {
             }
         };
 
-        let mid_symbol = mid_symbol_point.map(|ps| MidSymbol {
-            mid_symbols_per_spot,
-            mid_symbol_distance: NonNegativeF64::from_file_value(mid_symbol_distance),
-            minimum_mid_symbol_count,
-            minimum_mid_symbol_count_when_closed,
-            show_at_least_one_mid_symbol: show_at_least_one_symbol,
-            mid_symbol_placement,
-            mid_symbol: ps,
-        });
+        let mid_symbol = mid_symbol_point
+            .map(|ps| MidSymbol {
+                mid_symbols_per_spot,
+                mid_symbol_distance: NonNegativeF64::from_file_value(mid_symbol_distance),
+                minimum_mid_symbol_count,
+                minimum_mid_symbol_count_when_closed,
+                show_at_least_one_mid_symbol: show_at_least_one_symbol,
+                mid_symbol_placement,
+                mid_symbol: ps,
+            })
+            .map(Box::new);
 
-        let dash_symbol = dash_symbol_point.map(|ps| DashSymbol {
-            suppress_dash_symbol_at_ends,
-            scale_dash_symbol,
-            dash_symbol: ps,
-        });
+        let dash_symbol = dash_symbol_point
+            .map(|ps| DashSymbol {
+                suppress_dash_symbol_at_ends,
+                scale_dash_symbol,
+                dash_symbol: ps,
+            })
+            .map(Box::new);
 
         Ok(Self {
             common,
             border,
-            start_symbol,
+            start_symbol: start_symbol.map(Box::new),
             mid_symbol,
-            end_symbol,
+            end_symbol: end_symbol.map(Box::new),
             dash_symbol,
             color,
             line_width,

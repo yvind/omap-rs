@@ -98,34 +98,30 @@ impl SymbolCommon {
 }
 
 /// A symbol of any type.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "a line symbol carries four optional point sub-symbols inline; a symbol set holds a few hundred entries, so boxing would cost an indirection for no measurable gain"
-)]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Symbol {
     /// A line symbol.
-    Line(LineSymbol),
+    Line(Box<LineSymbol>),
     /// An area symbol.
-    Area(AreaSymbol),
+    Area(Box<AreaSymbol>),
     /// A point symbol.
-    Point(PointSymbol),
+    Point(Box<PointSymbol>),
     /// A text symbol.
-    Text(TextSymbol),
+    Text(Box<TextSymbol>),
     /// Combined symbols can be either `CombinedArea` or `CombinedLine`
     /// The difference is what object geometry to relate with the symbol
     /// Mapper does not discern between any line and area objects
-    CombinedArea(CombinedAreaSymbol),
+    CombinedArea(Box<CombinedAreaSymbol>),
     /// A combined line symbol.
-    CombinedLine(CombinedLineSymbol),
+    CombinedLine(Box<CombinedLineSymbol>),
 }
 
 macro_rules! impl_from_symbol {
     ($symbol_ty:ty, $variant:ident) => {
         impl From<$symbol_ty> for Symbol {
             fn from(value: $symbol_ty) -> Self {
-                Symbol::$variant(value)
+                Symbol::$variant(Box::new(value))
             }
         }
     };
@@ -261,16 +257,16 @@ impl Symbol {
         // Components can only be resolved once every symbol is parsed.
         let mut public_component_ids = Vec::new();
         let symbol = match symbol_type {
-            1 => Self::Point(PointSymbol::parse(reader, color_set, common)?),
-            2 => Self::Line(LineSymbol::parse(reader, color_set, common)?),
-            4 => Self::Area(AreaSymbol::parse(reader, color_set, common)?),
-            8 => Self::Text(TextSymbol::parse(reader, color_set, common)?),
+            1 => Self::Point(Box::new(PointSymbol::parse(reader, color_set, common)?)),
+            2 => Self::Line(Box::new(LineSymbol::parse(reader, color_set, common)?)),
+            4 => Self::Area(Box::new(AreaSymbol::parse(reader, color_set, common)?)),
+            8 => Self::Text(Box::new(TextSymbol::parse(reader, color_set, common)?)),
             16 => {
                 // Reclassified as a line symbol later if its components say so.
                 let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
                 public_component_ids.extend(component_ids);
 
-                Self::CombinedArea(symbol)
+                Self::CombinedArea(Box::new(symbol))
             }
             _ => {
                 return Err(Error::UnknownSymbolType(symbol_type));

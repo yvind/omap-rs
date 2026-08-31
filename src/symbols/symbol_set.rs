@@ -49,7 +49,7 @@ macro_rules! impl_typed_accessors {
         /// The handle needs no narrowing conversion before it is given to an
         /// object, because the symbol's type already fixed its kind.
         pub fn $add(&mut self, symbol: $symbol) -> crate::symbols::$id {
-            crate::symbols::$id(self.symbols.push(Symbol::$variant(symbol)))
+            crate::symbols::$id(self.symbols.push(Symbol::$variant(Box::new(symbol))))
         }
 
         /// Get a symbol of this kind by its handle. Cannot return another kind.
@@ -73,7 +73,7 @@ macro_rules! impl_typed_accessors {
             self.symbols
                 .iter()
                 .filter_map(|(raw, symbol)| match symbol {
-                    Symbol::$variant(symbol) => Some((crate::symbols::$id(raw), symbol)),
+                    Symbol::$variant(symbol) => Some((crate::symbols::$id(raw), &**symbol)),
                     _ => None,
                 })
         }
@@ -295,7 +295,7 @@ impl SymbolSet {
     pub fn add_line_component(
         &mut self,
         target: CombinedLineSymbolId,
-        component: PublicOrPrivateSymbol<LinePathSymbolId, Box<LineSymbol>>,
+        component: PublicOrPrivateSymbol<LinePathSymbolId, LineSymbol>,
     ) -> Result<()> {
         if let PublicOrPrivateSymbol::Public(public) = &component
             && self.would_cycle(target.into(), (*public).into())
@@ -444,7 +444,7 @@ impl SymbolSet {
                     converted.push_component(PublicOrPrivateSymbol::Private(line));
                 }
             }
-            symbols[idx] = Symbol::CombinedLine(converted);
+            symbols[idx] = Symbol::CombinedLine(Box::new(converted));
         }
 
         let mut symbol_set = Self {

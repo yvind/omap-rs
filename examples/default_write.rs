@@ -55,7 +55,8 @@ fn main() -> Result<(), Error> {
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );
-    ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
+    ls.tags_mut()
+        .insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts.get_mut(0).unwrap().add_object(ls);
 
@@ -71,37 +72,33 @@ fn main() -> Result<(), Error> {
 
     let mut num = 0;
     for symbol in map.symbols.values() {
-        if let Symbol::Line(s) = symbol {
-            let borrowed = s;
-
-            if let Some(_ss_) = &borrowed.start_symbol {
+        if let Symbol::Line(ls) = symbol {
+            if let Some(_ss_) = &ls.start_symbol {
                 num += 1;
             }
-            if let Some(_ms_) = &borrowed.mid_symbol {
+            if let Some(_ms_) = &ls.mid_symbol {
                 num += 1;
             }
-            if let Some(_ds_) = &borrowed.dash_symbol {
+            if let Some(_ds_) = &ls.dash_symbol {
                 num += 1;
             }
-            if let Some(_es_) = &borrowed.end_symbol {
+            if let Some(_es_) = &ls.end_symbol {
                 num += 1;
             }
         }
         if let Symbol::CombinedLine(s) = symbol {
-            let borrowed = s;
-
-            for part in borrowed.components() {
-                if let PublicOrPrivateSymbol::Private(s) = part {
-                    if let Some(_ss_) = &s.start_symbol {
+            for part in s.components() {
+                if let PublicOrPrivateSymbol::Private(ls) = part {
+                    if let Some(_ss_) = &ls.start_symbol {
                         num += 1;
                     }
-                    if let Some(_ms_) = &s.mid_symbol {
+                    if let Some(_ms_) = &ls.mid_symbol {
                         num += 1;
                     }
-                    if let Some(_ds_) = &s.dash_symbol {
+                    if let Some(_ds_) = &ls.dash_symbol {
                         num += 1;
                     }
-                    if let Some(_es_) = &s.end_symbol {
+                    if let Some(_es_) = &ls.end_symbol {
                         num += 1;
                     }
                 }

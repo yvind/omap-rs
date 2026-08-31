@@ -113,8 +113,15 @@ impl FromStr for VerticalAlign {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TextObject {
-    /// The tags associated with the object
-    pub tags: HashMap<String, String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    #[expect(
+        clippy::box_collection,
+        reason = "the map header is 48 bytes inline and most objects carry no tags"
+    )]
+    tags: Option<Box<HashMap<String, String>>>,
     /// Weak reference to the text symbol used to render this object.
     pub symbol: Option<TextSymbolId>,
     geometry: TextGeometry,
@@ -132,7 +139,7 @@ impl TextObject {
     /// Create a new text object with the given symbol, geometry, and text content.
     pub fn new(symbol: Option<TextSymbolId>, geometry: TextGeometry, text: String) -> Self {
         Self {
-            tags: HashMap::new(),
+            tags: None,
             symbol,
             geometry,
             text,
@@ -140,6 +147,19 @@ impl TextObject {
             v_align: VerticalAlign::default(),
             rotation: 0.0,
         }
+    }
+
+    /// The tags associated with the object.
+    pub fn tags(&self) -> &HashMap<String, String> {
+        match &self.tags {
+            Some(tags) => tags,
+            None => super::empty_tags(),
+        }
+    }
+
+    /// Mutably access the tags, allocating the map on first use.
+    pub fn tags_mut(&mut self) -> &mut HashMap<String, String> {
+        self.tags.get_or_insert_with(Box::default)
     }
 
     /// Get a shared reference to the text geometry.
@@ -225,8 +245,8 @@ impl TextObject {
             bs.push_attribute(("rotation", rot.to_string().as_str()));
         }
         writer.write_event(Event::Start(bs))?;
-        if !self.tags.is_empty() {
-            super::write_tags(writer, &self.tags)?;
+        if !self.tags().is_empty() {
+            super::write_tags(writer, self.tags())?;
         }
 
         match &self.geometry {
@@ -273,7 +293,7 @@ impl TextObject {
         rotation: f64,
     ) -> Result<Self> {
         let mut text_geo = TextGeometry::SingleAnchor(Coord::default());
-        let mut tags = HashMap::new();
+        let mut tags = None;
         let mut text = String::new();
         let mut buf = Vec::new();
         loop {

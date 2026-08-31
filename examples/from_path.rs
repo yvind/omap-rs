@@ -117,7 +117,8 @@ fn main() -> Result<(), Error> {
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: -60., y: -50. }, Coord { x: 60., y: -50. }]),
     );
-    ls.tags.insert("Some Key".to_owned(), "My value".to_owned());
+    ls.tags_mut()
+        .insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts.get_mut(0).unwrap().add_object(ls);
 
