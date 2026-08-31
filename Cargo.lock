@@ -514,7 +514,7 @@ dependencies = [
 
 [[package]]
 name = "omap"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "chrono",
  "geo-types",
