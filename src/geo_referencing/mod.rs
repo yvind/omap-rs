@@ -124,15 +124,12 @@ impl CrsType {
         match self {
             Self::Epsg(c) => Some(*c),
             Self::Proj4(string) => {
-                if let Some((_, code_str)) = string.split_once("+init=epsg:") {
-                    #[expect(clippy::unwrap_used)]
-                    let first_part = code_str.split_whitespace().next().unwrap();
-                    let code_opt = first_part.parse().ok();
-                    if let Some(code) = code_opt
-                        && (1024..=32767).contains(&code)
-                    {
-                        return Some(code);
-                    }
+                if let Some((_, code_str)) = string.split_once("+init=epsg:")
+                    && let Some(first_part) = code_str.split_whitespace().next()
+                    && let Ok(code) = first_part.parse()
+                    && (1024..=32767).contains(&code)
+                {
+                    return Some(code);
                 }
                 None
             }
@@ -190,13 +187,11 @@ impl CrsType {
             }
             Self::Utm(code) => {
                 let (proj_str, param_str) = if code.get() < 0 {
-                    // south
                     (
                         format!("+proj=utm +datum=WGS84 +zone={} +south", code.get().abs()),
                         format!("{} S", code.get().abs()),
                     )
                 } else {
-                    // north
                     (
                         format!("+proj=utm +datum=WGS84 +zone={}", code.get().abs()),
                         format!("{} N", code.get().abs()),
@@ -246,5 +241,38 @@ impl CrsType {
         };
 
         Ok(proj_wkt::parse_crs(definition.as_str())?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CrsType;
+
+    /// A PROJ string may end right after the marker, leaving nothing to parse.
+    #[test]
+    fn an_epsg_marker_without_a_usable_code_is_not_a_code() {
+        for string in [
+            "+init=epsg:",
+            "+init=epsg:   ",
+            "+proj=utm +init=epsg:",
+            "+init=epsg:notanumber",
+            "+init=epsg:0",
+            "+init=epsg:99999",
+        ] {
+            assert_eq!(
+                CrsType::Proj4(string.to_owned()).epsg_code(),
+                None,
+                "{string}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_epsg_marker_with_a_code_is_read() {
+        assert_eq!(
+            CrsType::Proj4("+init=epsg:25833 +units=m".to_owned()).epsg_code(),
+            Some(25833)
+        );
+        assert_eq!(CrsType::Epsg(4326).epsg_code(), Some(4326));
     }
 }

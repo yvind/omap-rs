@@ -655,9 +655,8 @@ impl Color {
                                                     .unwrap_or(0.);
                                             spotcolor_name = notes::parse(reader)?;
                                         }
-                                        // if the next events are called components we have a new mixed color
-                                        // we need to be carefull as the components that are refereneced may not be defined yet
-                                        // so we cannot complete the color components untill all colors have been read.
+                                        // Components may reference colors not yet read, so
+                                        // they are resolved once the whole set is parsed.
                                         b"component" => {
                                             let factor = try_get_attr_raw(&bytes_start, "factor")?
                                                 .unwrap_or(0.);

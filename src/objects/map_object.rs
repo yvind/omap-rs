@@ -6,11 +6,28 @@ use super::{AreaObject, LineObject, PointObject, TextObject};
 use crate::{
     Error, Result,
     objects::{HorizontalAlign, VerticalAlign},
-    symbols::{
-        AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolSet, TextSymbolId,
-    },
+    symbols::{Symbol, SymbolId, SymbolKind, SymbolSet},
     utils::parse_attr_raw,
 };
+
+/// Narrow the handle an object names to the kind that object can render.
+fn narrow<T>(
+    symbol: Option<SymbolId>,
+    symbols: &SymbolSet,
+    expected: &'static [SymbolKind],
+    narrow: impl FnOnce(SymbolId) -> Option<T>,
+) -> Result<Option<T>> {
+    let Some(id) = symbol else {
+        return Ok(None);
+    };
+    match narrow(id) {
+        Some(narrowed) => Ok(Some(narrowed)),
+        None => Err(Error::SymbolKindMismatch {
+            expected,
+            found: symbols.get(id).ok_or(Error::SymbolConversionError)?.kind(),
+        }),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -188,8 +205,7 @@ impl MapObject {
             object_type = ObjectType::Line;
         }
 
-        // Point-symbol elements carry their symbol inline rather than by index,
-        // and an object may name -1 for an unknown symbol. Both mean `None`.
+        // An inline element symbol, or the format's -1, both mean `None`.
         let symbol = if let Some(sid) = symbol_id
             && sid >= 0
         {
@@ -202,10 +218,11 @@ impl MapObject {
             None
         };
 
-        // Mapper does not discern between area and line objects. But we do because we want a Polygon or a LineString!
-        // Let's check the symbol for what the object must be
+        // Mapper does not distinguish area from line objects; the symbol does.
         if object_type == ObjectType::Area
-            && matches!(symbol, Some(SymbolId::Line(_) | SymbolId::CombinedLine(_)))
+            && symbol
+                .and_then(|id| symbols.get(id))
+                .is_some_and(|symbol| matches!(symbol, Symbol::Line(_) | Symbol::CombinedLine(_)))
         {
             object_type = ObjectType::Line;
         }
@@ -213,21 +230,35 @@ impl MapObject {
         match object_type {
             ObjectType::Point => Ok(Self::Point(PointObject::parse(
                 reader,
-                symbol.map(PointSymbolId::try_from).transpose()?,
+                narrow(symbol, symbols, &[SymbolKind::Point], |id| {
+                    symbols.point_id(id)
+                })?,
                 rotation,
             )?)),
             ObjectType::Line => Ok(Self::Line(LineObject::parse(
                 reader,
-                symbol.map(LinePathSymbolId::try_from).transpose()?,
+                narrow(
+                    symbol,
+                    symbols,
+                    &[SymbolKind::Line, SymbolKind::CombinedLine],
+                    |id| symbols.line_path_id(id),
+                )?,
             )?)),
             // do not bother sending rotation to the AreaObject as it is also given in the pattern rotation
             ObjectType::Area => Ok(Self::Area(AreaObject::parse(
                 reader,
-                symbol.map(AreaPathSymbolId::try_from).transpose()?,
+                narrow(
+                    symbol,
+                    symbols,
+                    &[SymbolKind::Area, SymbolKind::CombinedArea],
+                    |id| symbols.area_path_id(id),
+                )?,
             )?)),
             ObjectType::Text => Ok(Self::Text(TextObject::parse(
                 reader,
-                symbol.map(TextSymbolId::try_from).transpose()?,
+                narrow(symbol, symbols, &[SymbolKind::Text], |id| {
+                    symbols.text_id(id)
+                })?,
                 h_align,
                 v_align,
                 rotation,

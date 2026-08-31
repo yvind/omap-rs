@@ -208,10 +208,7 @@ impl TextObject {
             .symbol
             .and_then(|id| symbol_set.text_symbol(id))
             .is_some_and(|symbol| symbol.is_rotatable);
-        let index = self
-            .symbol
-            .and_then(|id| symbol_set.index_of(id.into()))
-            .map_or(-1, |index| index as i32);
+        let index = symbol_set.file_index(self.symbol);
 
         let mut bs = BytesStart::new("object").with_attributes([
             ("type", "4"),
@@ -221,9 +218,7 @@ impl TextObject {
         ]);
 
         if self.rotation.abs() > f64::EPSILON && is_rotatable {
-            // Map the rotation onto [-PI, PI]
-            // first shift the target to either (-TAU, 0] for negative or [0, TAU) for positive
-            // Take the modulus with TAU (negatives return negative values) and shift target back to [-PI, PI]
+            // Map the rotation onto [-PI, PI].
             let rot = (self.rotation + self.rotation.signum() * std::f64::consts::PI)
                 % std::f64::consts::TAU
                 - self.rotation.signum() * std::f64::consts::PI;
@@ -261,7 +256,6 @@ impl TextObject {
                 ])))?;
             }
         }
-        // Write text content
         writer.write_event(Event::Start(BytesStart::new("text")))?;
         writer.write_event(Event::Text(BytesText::new(&self.text)))?;
         writer.write_event(Event::End(BytesEnd::new("text")))?;
@@ -311,7 +305,6 @@ impl TextObject {
                     }
                 }
                 Event::Text(bytes_text) => {
-                    // parse the text location
                     let raw_xml = str::from_utf8(bytes_text.as_ref())?;
 
                     if let Some((coords_str, opt_wh)) = raw_xml.split_once(';') {
@@ -328,7 +321,6 @@ impl TextObject {
 
                         let coord = from_file_coords(Coord { x, y });
 
-                        // Parse second coord (box size) if present
                         let box_size = if !opt_wh.is_empty() {
                             // opt_wh might be "w h;" or "w h;rest..."
                             if let Some(wh_str) = opt_wh.split(';').next() {

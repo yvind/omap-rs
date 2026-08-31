@@ -40,7 +40,7 @@ fn a_map_can_be_moved_to_a_worker_thread() -> Result<()> {
 
     let counted = std::thread::spawn(move || map.symbols.len())
         .join()
-        .map_err(|_| omap::Error::ObjectError)?;
+        .map_err(|_panic| omap::Error::ObjectError)?;
 
     assert_eq!(counted, symbols);
     Ok(())

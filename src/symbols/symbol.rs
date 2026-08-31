@@ -1,16 +1,30 @@
-use quick_xml::{Reader, Writer, events::BytesStart};
+use quick_xml::{
+    Reader, Writer,
+    events::{BytesEnd, BytesStart, BytesText, Event},
+};
 
 use super::{
-    AreaSymbol, AreaSymbolId, CombinedAreaSymbol, CombinedAreaSymbolId, CombinedLineSymbol,
-    CombinedLineSymbolId, LineSymbol, LineSymbolId, PointSymbol, PointSymbolId, SymbolId,
-    SymbolSet, TextSymbol, TextSymbolId,
+    AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol, SymbolKind,
+    SymbolSet, TextSymbol,
 };
-use crate::arena::RawId;
+
 use crate::{
     Code, Error, Result,
     colors::{ColorId, ColorSet},
     utils::{parse_attr, parse_attr_raw},
 };
+
+/// Where a `<symbol>` element sits in the file, which decides whether its
+/// opening tag carries an index and a code.
+#[derive(Clone, Copy)]
+pub(super) enum SymbolPosition {
+    /// A symbol in the set: index and code.
+    Indexed(usize),
+    /// A private sub-symbol of a combined symbol: code only.
+    Private,
+    /// A point-symbol element: neither.
+    Element,
+}
 
 /// Common properties shared by all symbol types.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -30,6 +44,57 @@ pub struct SymbolCommon {
     pub is_protected: bool,
     /// base64 encoded symbol icon
     pub custom_icon: Option<String>,
+}
+
+impl SymbolCommon {
+    /// Write the `<symbol>` opening tag and the `<description>` that follows it.
+    pub(super) fn write_open<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        symbol_type: &str,
+        position: SymbolPosition,
+    ) -> Result<()> {
+        let code = match position {
+            SymbolPosition::Element => String::new(),
+            SymbolPosition::Indexed(_) | SymbolPosition::Private => self.code.to_string(),
+        };
+        let mut bs = BytesStart::new("symbol").with_attributes([
+            ("type", symbol_type),
+            ("code", code.as_str()),
+            ("name", self.name.as_str()),
+        ]);
+        if let SymbolPosition::Indexed(index) = position {
+            bs.push_attribute(("id", index.to_string().as_str()));
+        }
+        if self.is_hidden {
+            bs.push_attribute(("is_hidden", "true"));
+        }
+        if self.is_helper_symbol {
+            bs.push_attribute(("is_helper_symbol", "true"));
+        }
+        if self.is_protected {
+            bs.push_attribute(("is_protected", "true"));
+        }
+        writer.write_event(Event::Start(bs))?;
+
+        if !self.description.is_empty() {
+            writer.write_event(Event::Start(BytesStart::new("description")))?;
+            writer.write_event(Event::Text(BytesText::new(&self.description)))?;
+            writer.write_event(Event::End(BytesEnd::new("description")))?;
+        }
+        Ok(())
+    }
+
+    /// Write the `<icon>` and close the `<symbol>`.
+    pub(super) fn write_close<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+        if let Some(icon) = &self.custom_icon {
+            writer.write_event(Event::Empty(
+                BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
+            ))?;
+        }
+        writer.write_event(Event::End(BytesEnd::new("symbol")))?;
+        Ok(())
+    }
 }
 
 /// A symbol of any type.
@@ -134,6 +199,7 @@ impl Symbol {
         }
     }
 
+    impl_symbol_getter!(custom_icon -> Option<&str>, |s| s.custom_icon.as_deref());
     impl_symbol_getter!(has_custom_icon -> bool, |s| s.custom_icon.is_some());
     impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.custom_icon = icon);
     impl_symbol_getter!(code -> Code, |s| s.code);
@@ -149,14 +215,15 @@ impl Symbol {
     impl_symbol_getter!(description -> &str, |s| s.description.as_str());
     impl_symbol_setter!(set_description(description: String), |s| s.description = description);
 
-    pub(super) fn id_for(&self, raw: RawId) -> SymbolId {
+    /// The kind of this symbol, which is also the kind of any handle to it.
+    pub fn kind(&self) -> SymbolKind {
         match self {
-            Self::Line(_) => SymbolId::Line(LineSymbolId(raw)),
-            Self::Area(_) => SymbolId::Area(AreaSymbolId(raw)),
-            Self::Point(_) => SymbolId::Point(PointSymbolId(raw)),
-            Self::Text(_) => SymbolId::Text(TextSymbolId(raw)),
-            Self::CombinedArea(_) => SymbolId::CombinedArea(CombinedAreaSymbolId(raw)),
-            Self::CombinedLine(_) => SymbolId::CombinedLine(CombinedLineSymbolId(raw)),
+            Self::Line(_) => SymbolKind::Line,
+            Self::Area(_) => SymbolKind::Area,
+            Self::Point(_) => SymbolKind::Point,
+            Self::Text(_) => SymbolKind::Text,
+            Self::CombinedArea(_) => SymbolKind::CombinedArea,
+            Self::CombinedLine(_) => SymbolKind::CombinedLine,
         }
     }
 
@@ -168,7 +235,6 @@ impl Symbol {
         let mut id = usize::MAX;
         let mut symbol_type = u8::MAX;
         let mut common = SymbolCommon::default();
-        // Parse attributes
         for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
                 b"type" => symbol_type = parse_attr_raw(attr.value).unwrap_or(symbol_type),
@@ -192,8 +258,7 @@ impl Symbol {
             return Err(Error::MissingSymbolId);
         }
 
-        // We must record the component IDs for combined symbols
-        // and parse them after all symbols have been parsed
+        // Components can only be resolved once every symbol is parsed.
         let mut public_component_ids = Vec::new();
         let symbol = match symbol_type {
             1 => Self::Point(PointSymbol::parse(reader, color_set, common)?),
@@ -201,8 +266,7 @@ impl Symbol {
             4 => Self::Area(AreaSymbol::parse(reader, color_set, common)?),
             8 => Self::Text(TextSymbol::parse(reader, color_set, common)?),
             16 => {
-                // Assume the combined symbol is area for now
-                // Will be checked and corrected after all symbols have been parsed
+                // Reclassified as a line symbol later if its components say so.
                 let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
                 public_component_ids.extend(component_ids);
 
@@ -223,16 +287,21 @@ impl Symbol {
         color_set: &ColorSet,
         index: usize,
     ) -> Result<()> {
+        let common = self.common();
+        common.write_open(
+            writer,
+            self.kind().type_id(),
+            SymbolPosition::Indexed(index),
+        )?;
         match self {
-            // Line, area and point can be sub-symbols which do not have an index
-            Self::Line(symbol) => symbol.write(writer, color_set, Some(index), false),
-            Self::Area(symbol) => symbol.write(writer, color_set, Some(index), false),
-            Self::Point(symbol) => symbol.write(writer, color_set, Some(index), false),
-            Self::Text(symbol) => symbol.write(writer, color_set, index),
-            Self::CombinedArea(symbol) => symbol.write(writer, symbol_set, color_set, index),
-            Self::CombinedLine(symbol) => symbol.write(writer, symbol_set, color_set, index),
+            Self::Line(symbol) => symbol.write_body(writer, color_set),
+            Self::Area(symbol) => symbol.write_body(writer, color_set),
+            Self::Point(symbol) => symbol.write_body(writer, color_set),
+            Self::Text(symbol) => symbol.write_body(writer, color_set),
+            Self::CombinedArea(symbol) => symbol.write_body(writer, symbol_set, color_set),
+            Self::CombinedLine(symbol) => symbol.write_body(writer, symbol_set, color_set),
         }?;
-        Ok(())
+        common.write_close(writer)
     }
 }
 

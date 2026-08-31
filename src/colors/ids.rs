@@ -1,64 +1,40 @@
-use crate::arena::RawId;
-use crate::{Error, Result};
+slotmap::new_key_type! {
+    /// The arena slot a color handle names.
+    pub(crate) struct ColorKey;
+}
 
-macro_rules! typed_color_id {
-    ($name:ident, $variant:ident, $doc:literal) => {
-        #[doc = $doc]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-        pub struct $name(pub(crate) RawId);
+macro_rules! color_ids {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident => [$($wider:ident),* $(,)?];
+    )+) => {
+        $(
+            $(#[$meta])*
+            ///
+            /// Stops resolving once the color is removed, and is meaningless
+            /// against any other [`crate::Omap`].
+            #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+            pub struct $name(pub(crate) ColorKey);
 
-        impl From<$name> for ColorId {
-            fn from(value: $name) -> Self {
-                Self::$variant(value)
-            }
-        }
-
-        impl TryFrom<ColorId> for $name {
-            type Error = Error;
-
-            fn try_from(value: ColorId) -> Result<Self> {
-                if let ColorId::$variant(id) = value {
-                    Ok(id)
-                } else {
-                    Err(Error::ColorConversionError)
+            $(
+                impl From<$name> for $wider {
+                    fn from(value: $name) -> Self {
+                        Self(value.0)
+                    }
                 }
-            }
-        }
+            )*
+        )+
     };
 }
 
-/// A handle to a color of any kind in a [`crate::colors::ColorSet`].
-///
-/// Handles are [`Copy`] and compare by identity. A handle stays valid while the
-/// color it names is in the set, including across reordering, and stops
-/// resolving once that color is removed. It is meaningless against any other
-/// [`crate::Omap`].
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum ColorId {
-    /// A handle to a spot color.
-    Spot(SpotColorId),
-    /// A handle to a mixed color.
-    Mixed(MixedColorId),
-}
+color_ids! {
+    /// A handle to a color of any kind in a [`crate::colors::ColorSet`].
+    ColorId => [];
 
-typed_color_id!(
-    SpotColorId,
-    Spot,
-    "A handle to a [`crate::colors::SpotColor`]."
-);
-typed_color_id!(
-    MixedColorId,
-    Mixed,
-    "A handle to a [`crate::colors::MixedColor`]."
-);
+    /// A handle to a [`crate::colors::SpotColor`].
+    SpotColorId => [ColorId];
 
-impl ColorId {
-    pub(crate) fn raw(self) -> RawId {
-        match self {
-            Self::Spot(id) => id.0,
-            Self::Mixed(id) => id.0,
-        }
-    }
+    /// A handle to a [`crate::colors::MixedColor`].
+    MixedColorId => [ColorId];
 }

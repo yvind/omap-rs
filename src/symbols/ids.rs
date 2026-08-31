@@ -1,203 +1,100 @@
-use crate::arena::RawId;
-use crate::{Error, Result};
-
-macro_rules! typed_symbol_id {
-    ($name:ident, $variant:ident, $doc:literal) => {
-        #[doc = $doc]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-        pub struct $name(pub(crate) RawId);
-
-        impl From<$name> for SymbolId {
-            fn from(value: $name) -> Self {
-                Self::$variant(value)
-            }
-        }
-
-        impl TryFrom<SymbolId> for $name {
-            type Error = Error;
-
-            fn try_from(value: SymbolId) -> Result<Self> {
-                if let SymbolId::$variant(id) = value {
-                    Ok(id)
-                } else {
-                    Err(Error::SymbolConversionError)
-                }
-            }
-        }
-    };
+slotmap::new_key_type! {
+    /// The arena slot a symbol handle names.
+    pub(crate) struct SymbolKey;
 }
 
-/// A handle to a symbol of any kind in a [`crate::symbols::SymbolSet`].
-///
-/// Handles are [`Copy`] and compare by identity. A handle stays valid while the
-/// symbol it names is in the set, including across [`crate::symbols::SymbolSet::sort`],
-/// and stops resolving once that symbol is removed. It is meaningless against
-/// any other [`crate::Omap`].
+/// The kind of a symbol.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum SymbolId {
-    /// A handle to a line symbol.
-    Line(LineSymbolId),
-    /// A handle to an area symbol.
-    Area(AreaSymbolId),
-    /// A handle to a point symbol.
-    Point(PointSymbolId),
-    /// A handle to a text symbol.
-    Text(TextSymbolId),
-    /// A handle to a combined area symbol.
-    CombinedArea(CombinedAreaSymbolId),
-    /// A handle to a combined line symbol.
-    CombinedLine(CombinedLineSymbolId),
+pub enum SymbolKind {
+    /// A [`crate::symbols::LineSymbol`].
+    Line,
+    /// An [`crate::symbols::AreaSymbol`].
+    Area,
+    /// A [`crate::symbols::PointSymbol`].
+    Point,
+    /// A [`crate::symbols::TextSymbol`].
+    Text,
+    /// A [`crate::symbols::CombinedAreaSymbol`].
+    CombinedArea,
+    /// A [`crate::symbols::CombinedLineSymbol`].
+    CombinedLine,
 }
 
-typed_symbol_id!(
-    LineSymbolId,
-    Line,
-    "A handle to a [`crate::symbols::LineSymbol`]."
-);
-typed_symbol_id!(
-    AreaSymbolId,
-    Area,
-    "A handle to an [`crate::symbols::AreaSymbol`]."
-);
-typed_symbol_id!(
-    PointSymbolId,
-    Point,
-    "A handle to a [`crate::symbols::PointSymbol`]."
-);
-typed_symbol_id!(
-    TextSymbolId,
-    Text,
-    "A handle to a [`crate::symbols::TextSymbol`]."
-);
-typed_symbol_id!(
-    CombinedAreaSymbolId,
-    CombinedArea,
-    "A handle to a [`crate::symbols::CombinedAreaSymbol`]."
-);
-typed_symbol_id!(
-    CombinedLineSymbolId,
-    CombinedLine,
-    "A handle to a [`crate::symbols::CombinedLineSymbol`]."
-);
-
-impl SymbolId {
-    pub(crate) fn raw(self) -> RawId {
+impl SymbolKind {
+    /// The `type` attribute the `.omap` format stores for this kind. The format
+    /// has no combined line symbol, so both combined kinds write `16`.
+    pub(crate) fn type_id(self) -> &'static str {
         match self {
-            Self::Line(id) => id.0,
-            Self::Area(id) => id.0,
-            Self::Point(id) => id.0,
-            Self::Text(id) => id.0,
-            Self::CombinedArea(id) => id.0,
-            Self::CombinedLine(id) => id.0,
+            Self::Point => "1",
+            Self::Line => "2",
+            Self::Area => "4",
+            Self::Text => "8",
+            Self::CombinedArea | Self::CombinedLine => "16",
         }
     }
 }
 
-/// The symbol used to render a path object: a line, an area, or either
-/// combined form.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum PathSymbolId {
-    /// A standalone line symbol.
-    Line(LineSymbolId),
-    /// A standalone area symbol.
-    Area(AreaSymbolId),
-    /// A combined line symbol.
-    CombinedLine(CombinedLineSymbolId),
-    /// A combined area symbol.
-    CombinedArea(CombinedAreaSymbolId),
-}
-
-/// The symbol used to render a line object.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum LinePathSymbolId {
-    /// A standalone line symbol.
-    Line(LineSymbolId),
-    /// A combined line symbol.
-    CombinedLine(CombinedLineSymbolId),
-}
-
-/// The symbol used to render an area object.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum AreaPathSymbolId {
-    /// A standalone area symbol.
-    Area(AreaSymbolId),
-    /// A combined area symbol.
-    CombinedArea(CombinedAreaSymbolId),
-}
-
-macro_rules! group_conversions {
-    ($group:ident { $($variant:ident($typed:ident)),+ $(,)? }) => {
+/// Widening is a `From`; narrowing needs the set — see
+/// [`crate::symbols::SymbolSet::point_id`] and its siblings.
+macro_rules! symbol_ids {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident => [$($wider:ident),* $(,)?];
+    )+) => {
         $(
-            impl From<$typed> for $group {
-                fn from(value: $typed) -> Self {
-                    Self::$variant(value)
+            $(#[$meta])*
+            ///
+            /// Stops resolving once the symbol is removed, and is meaningless
+            /// against any other [`crate::Omap`].
+            #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+            pub struct $name(pub(crate) SymbolKey);
+
+            $(
+                impl From<$name> for $wider {
+                    fn from(value: $name) -> Self {
+                        Self(value.0)
+                    }
                 }
-            }
+            )*
         )+
-
-        impl From<$group> for SymbolId {
-            fn from(value: $group) -> Self {
-                match value {
-                    $($group::$variant(id) => Self::$variant(id),)+
-                }
-            }
-        }
-
-        impl TryFrom<SymbolId> for $group {
-            type Error = Error;
-
-            fn try_from(value: SymbolId) -> Result<Self> {
-                match value {
-                    $(SymbolId::$variant(id) => Ok(Self::$variant(id)),)+
-                    _ => Err(Error::SymbolConversionError),
-                }
-            }
-        }
     };
 }
 
-group_conversions!(PathSymbolId {
-    Line(LineSymbolId),
-    Area(AreaSymbolId),
-    CombinedLine(CombinedLineSymbolId),
-    CombinedArea(CombinedAreaSymbolId),
-});
-group_conversions!(LinePathSymbolId {
-    Line(LineSymbolId),
-    CombinedLine(CombinedLineSymbolId),
-});
-group_conversions!(AreaPathSymbolId {
-    Area(AreaSymbolId),
-    CombinedArea(CombinedAreaSymbolId),
-});
+symbol_ids! {
+    /// A handle to a symbol of any kind in a [`crate::symbols::SymbolSet`].
+    SymbolId => [];
 
-macro_rules! narrow_from_path {
-    ($group:ident { $($variant:ident),+ $(,)? }) => {
-        impl From<$group> for PathSymbolId {
-            fn from(value: $group) -> Self {
-                match value {
-                    $($group::$variant(id) => Self::$variant(id),)+
-                }
-            }
-        }
+    /// A handle to the symbol used to render a path object: a line, an area, or
+    /// either combined form.
+    PathSymbolId => [SymbolId];
 
-        impl TryFrom<PathSymbolId> for $group {
-            type Error = Error;
+    /// A handle to the symbol used to render a line object: a
+    /// [`crate::symbols::LineSymbol`] or a
+    /// [`crate::symbols::CombinedLineSymbol`].
+    LinePathSymbolId => [PathSymbolId, SymbolId];
 
-            fn try_from(value: PathSymbolId) -> Result<Self> {
-                match value {
-                    $(PathSymbolId::$variant(id) => Ok(Self::$variant(id)),)+
-                    _ => Err(Error::SymbolConversionError),
-                }
-            }
-        }
-    };
+    /// A handle to the symbol used to render an area object: an
+    /// [`crate::symbols::AreaSymbol`] or a
+    /// [`crate::symbols::CombinedAreaSymbol`].
+    AreaPathSymbolId => [PathSymbolId, SymbolId];
+
+    /// A handle to a [`crate::symbols::PointSymbol`].
+    PointSymbolId => [SymbolId];
+
+    /// A handle to a [`crate::symbols::TextSymbol`].
+    TextSymbolId => [SymbolId];
+
+    /// A handle to a [`crate::symbols::LineSymbol`].
+    LineSymbolId => [LinePathSymbolId, PathSymbolId, SymbolId];
+
+    /// A handle to a [`crate::symbols::CombinedLineSymbol`].
+    CombinedLineSymbolId => [LinePathSymbolId, PathSymbolId, SymbolId];
+
+    /// A handle to an [`crate::symbols::AreaSymbol`].
+    AreaSymbolId => [AreaPathSymbolId, PathSymbolId, SymbolId];
+
+    /// A handle to a [`crate::symbols::CombinedAreaSymbol`].
+    CombinedAreaSymbolId => [AreaPathSymbolId, PathSymbolId, SymbolId];
 }
-
-narrow_from_path!(LinePathSymbolId { Line, CombinedLine });
-narrow_from_path!(AreaPathSymbolId { Area, CombinedArea });

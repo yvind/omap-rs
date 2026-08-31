@@ -32,12 +32,21 @@ const DEFAULT_ISOM_15000: &[u8] = include_bytes!("default_maps/isom_15000.omap")
 const DEFAULT_ISOM_10000: &[u8] = include_bytes!("default_maps/isom_10000.omap");
 const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.omap");
 
+/// The scale denominators the bundled default maps are drawn at.
+/// Unwrap on consts is compile time
+#[cfg(feature = "geo_ref")]
+const SCALE_15_000: NonZeroU32 = NonZeroU32::new(15_000).unwrap();
+#[cfg(feature = "geo_ref")]
+const SCALE_10_000: NonZeroU32 = NonZeroU32::new(10_000).unwrap();
+#[cfg(feature = "geo_ref")]
+const SCALE_4_000: NonZeroU32 = NonZeroU32::new(4_000).unwrap();
+
 /// All objects are in map coordinates i.e given in mm of paper
 /// relative the ref point with positive y towards the magnetic north
 ///
 /// The Undo/Redo history and printer information is ignored
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Omap {
     /// Free-text notes embedded in the file.
     pub notes: String,
@@ -68,13 +77,7 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(
-            projected_ref_point,
-            crs,
-            meters_above_sea,
-            #[expect(clippy::unwrap_used)]
-            NonZeroU32::new(15_000).unwrap(),
-        )?;
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_15_000)?;
         let mut omap = Self::from_bytes(DEFAULT_ISOM_15000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -92,13 +95,7 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(
-            projected_ref_point,
-            crs,
-            meters_above_sea,
-            #[expect(clippy::unwrap_used)]
-            NonZeroU32::new(10_000).unwrap(),
-        )?;
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_10_000)?;
         let mut omap = Self::from_bytes(DEFAULT_ISOM_10000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -116,13 +113,7 @@ impl Omap {
         crs: CrsType,
         meters_above_sea: f64,
     ) -> Result<Self> {
-        let geo_ref = GeoRef::initialize(
-            projected_ref_point,
-            crs,
-            meters_above_sea,
-            #[expect(clippy::unwrap_used)]
-            NonZeroU32::new(4_000).unwrap(),
-        )?;
+        let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_4_000)?;
         let mut omap = Self::from_bytes(DEFAULT_ISSPROM_4000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
@@ -198,13 +189,11 @@ impl Omap {
         let mut reader = Reader::from_reader(BufReader::new(reader));
         reader.config_mut().expand_empty_elements = true;
 
-        // these must be parsed successfully
         let mut georef = None;
         let mut colors = None;
         let mut symbols = None;
         let mut parts = None;
 
-        // these have sensible defaults and are not worth bailing over if parsing fails
         let mut notes = String::new();
         let mut templates = Templates::default();
         let mut view = View::default();
@@ -285,12 +274,14 @@ impl Omap {
 
     /// Write the map to anything that implements [`Write`]
     ///
-    /// Takes a mutable borrow of self as the symbol set is sorted by [`crate::Code`] before writing
+    /// Symbols are written in the order the symbol set holds them. Call
+    /// [`crate::symbols::SymbolSet::sort`] first to write them by
+    /// [`crate::Code`].
     ///
     /// # Errors
     ///
     /// Returns an error if any of the map data cannot be serialized.
-    pub fn to_writer<W: Write>(&mut self, writer: &mut W) -> Result<()> {
+    pub fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let mut writer = Writer::new(writer);
 
         XmlDeclaration::write(&mut writer)?;
@@ -303,9 +294,6 @@ impl Omap {
 
         self.geo_referencing.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
-
-        // sort the symbols, important to do this before writing symbols and parts
-        self.symbols.sort();
 
         // write colors
         self.colors.write(&mut writer)?;
@@ -340,10 +328,9 @@ impl Omap {
     ///
     /// Returns an error if the temporary file cannot be created, map data
     /// cannot be serialized, or the temporary file cannot replace `path`.
-    pub fn to_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
+    pub fn to_file(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
 
-        // create temp file for safe writing
         let parent = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -450,43 +437,32 @@ impl Omap {
         self.try_transform(transform)
     }
 
-    /// Renumber every handle so that its index is also its position, dropping
-    /// references to symbols and colors that are no longer in their set.
+    /// Drop every reference to a symbol or color that is no longer in its set.
     ///
-    /// A freshly parsed map is already in this form, and stays in it as long as
-    /// nothing is removed from either set. Only [`crate::symbols::SymbolSet::remove`]
-    /// and the [`ColorSet`] removals break it, by leaving a gap that a later
-    /// insertion fills at a different position.
+    /// A dangling symbol reference becomes `None`, which writes as the format's
+    /// `-1`; a dangling color reference becomes
+    /// [`crate::colors::SymbolColor::NoColor`]; and a dangling combined-symbol
+    /// component or mixed-color component is dropped.
     ///
-    /// Handles taken before this call do not survive it. A dangling symbol
-    /// reference becomes `None`, which writes as the format's `-1`; a dangling
-    /// color reference becomes [`crate::colors::SymbolColor::NoColor`]; and a
-    /// dangling combined-symbol component or mixed-color component is dropped.
-    ///
-    /// This is what makes the map serializable — see the `serde` feature.
-    pub fn compact(&mut self) {
-        let remap = crate::compact::Remap {
-            symbols: self.symbols.compact_arena(),
-            colors: self.colors.compact_arena(),
+    /// Handles you already hold stay valid across this call — only the map's own
+    /// references to removed values change. [`Omap::validate`] reports the
+    /// references this removes.
+    pub fn prune_dangling_references(&mut self) {
+        let live = crate::prune::Live {
+            symbols: self.symbols.ids().map(|id| id.0).collect(),
+            colors: self.colors.ids().map(|id| id.0).collect(),
         };
 
-        use crate::compact::Compact as _;
+        use crate::prune::Prune as _;
         for color in self.colors.values_mut() {
-            color.compact(&remap);
+            color.prune(&live);
         }
         for symbol in self.symbols.values_mut() {
-            symbol.compact(&remap);
+            symbol.prune(&live);
         }
         for object in self.iter_all_objects_mut() {
-            object.compact(&remap);
+            object.prune(&live);
         }
-    }
-
-    /// Is every handle's index already its position?
-    ///
-    /// True for a map that has never had a symbol or color removed.
-    pub fn is_compact(&self) -> bool {
-        self.symbols.is_compact() && self.colors.is_compact()
     }
 
     /// Validate references between objects, symbols, and colors.
@@ -589,17 +565,18 @@ mod tests {
     #[test]
     fn validate_reports_the_dangling_object_location() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
-        let symbol = map.symbols.add_symbol(crate::symbols::PointSymbol::new(
-            crate::Code::new(1, 0, 0),
-            "dot",
-        ));
-        let point = crate::symbols::PointSymbolId::try_from(symbol)?;
+        let point = map
+            .symbols
+            .add_point_symbol(crate::symbols::PointSymbol::new(
+                crate::Code::new(1, 0, 0),
+                "dot",
+            ));
 
         let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
         part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
         assert!(map.validate().is_ok(), "a live handle must validate");
 
-        let _removed = map.symbols.remove(symbol);
+        let _removed = map.symbols.remove(point.into());
         assert!(
             matches!(
                 map.validate(),
@@ -638,50 +615,34 @@ mod tests {
         fs::remove_file(path)?;
         Ok(())
     }
-}
 
-/// Serializing borrows the map, but the representation requires compacted
-/// handles. A map that is already compacted -- the usual case -- serializes in
-/// place; otherwise a compacted copy is made for the duration.
-#[cfg(feature = "serde")]
-#[derive(serde::Serialize)]
-struct OmapFields<'a> {
-    notes: &'a String,
-    geo_referencing: &'a GeoRef,
-    colors: &'a ColorSet,
-    symbols: &'a SymbolSet,
-    parts: &'a MapParts,
-    templates: &'a Templates,
-    view: &'a View,
-}
+    /// A dangling reference must prune to `None`, never to whatever value later
+    /// takes the removed symbol's place.
+    #[test]
+    fn pruning_drops_references_to_removed_symbols() -> Result<()> {
+        let mut map = Omap::from_bytes(super::DEFAULT_ISOM_15000)?;
+        let point = map
+            .symbols
+            .iter_point_symbols()
+            .next()
+            .map(|(id, _)| id)
+            .unwrap();
 
-#[cfg(feature = "serde")]
-impl<'a> From<&'a Omap> for OmapFields<'a> {
-    fn from(map: &'a Omap) -> Self {
-        Self {
-            notes: &map.notes,
-            geo_referencing: &map.geo_referencing,
-            colors: &map.colors,
-            symbols: &map.symbols,
-            parts: &map.parts,
-            templates: &map.templates,
-            view: &map.view,
-        }
-    }
-}
+        let part = map.parts.get_mut(0).unwrap();
+        part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
 
-#[cfg(feature = "serde")]
-impl serde::Serialize for Omap {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        if self.is_compact() {
-            OmapFields::from(self).serialize(serializer)
-        } else {
-            let mut compacted = self.clone();
-            compacted.compact();
-            OmapFields::from(&compacted).serialize(serializer)
-        }
+        let _removed = map.symbols.remove(point.into());
+        assert!(map.validate().is_err(), "the object now dangles");
+
+        map.prune_dangling_references();
+
+        let object = map.iter_all_objects().last().unwrap();
+        assert_eq!(
+            object.symbol(),
+            None,
+            "a dangling reference must prune to None"
+        );
+        assert!(map.validate().is_ok());
+        Ok(())
     }
 }

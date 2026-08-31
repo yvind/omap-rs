@@ -5,7 +5,7 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::Symbol;
+use super::{Symbol, SymbolKey};
 use crate::arena::Arena;
 use crate::{
     Code, Error, OmapSection, Result,
@@ -30,13 +30,31 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SymbolSet {
-    symbols: Arena<Symbol>,
+    symbols: Arena<Symbol, SymbolKey>,
     /// The name of the symbol set.
     pub name: String,
 }
 
+/// The only places that know which [`Symbol`] variants a handle type accepts.
+macro_rules! narrow_id {
+    ($name:ident, $id:ident, $article:literal, $($pattern:pat_param)|+) => {
+        #[doc = concat!("Narrow a handle to ", $article, " symbol, or `None` if it names another kind.")]
+        pub fn $name(&self, id: SymbolId) -> Option<crate::symbols::$id> {
+            matches!(self.get(id)?, $($pattern)|+).then_some(crate::symbols::$id(id.0))
+        }
+    };
+}
+
 macro_rules! impl_typed_accessors {
-    ($get:ident, $get_mut:ident, $iter:ident, $id:ident, $symbol:ident, $variant:ident) => {
+    ($add:ident, $get:ident, $get_mut:ident, $iter:ident, $id:ident, $symbol:ident, $variant:ident) => {
+        /// Add a symbol of this kind, returning the handle for that kind.
+        ///
+        /// The handle needs no narrowing conversion before it is given to an
+        /// object, because the symbol's type already fixed its kind.
+        pub fn $add(&mut self, symbol: $symbol) -> crate::symbols::$id {
+            crate::symbols::$id(self.symbols.push(Symbol::$variant(symbol)))
+        }
+
         /// Get a symbol of this kind by its handle. Cannot return another kind.
         pub fn $get(&self, id: crate::symbols::$id) -> Option<&$symbol> {
             match self.symbols.get(id.0) {
@@ -85,31 +103,29 @@ impl SymbolSet {
 
     /// Returns `true` if `id` names a symbol still in this set.
     pub fn contains(&self, id: SymbolId) -> bool {
-        self.symbols.contains(id.raw())
+        self.symbols.contains(id.0)
     }
 
-    /// Add a new symbol to the [`SymbolSet`]
+    /// Add a new symbol of a kind known only at run time.
+    ///
+    /// Prefer the per-kind adders, such as [`SymbolSet::add_point_symbol`],
+    /// which return the handle for that kind and so need no narrowing.
     pub fn add_symbol(&mut self, symbol: impl Into<Symbol>) -> SymbolId {
-        let symbol = symbol.into();
-        let raw = self.symbols.push(symbol);
-        #[expect(
-            clippy::unwrap_used,
-            reason = "the handle was just returned by the push that created it"
-        )]
-        self.symbols.get(raw).unwrap().id_for(raw)
+        SymbolId(self.symbols.push(symbol.into()))
     }
 
     /// Get a symbol by its handle.
     pub fn get(&self, id: SymbolId) -> Option<&Symbol> {
-        self.symbols.get(id.raw())
+        self.symbols.get(id.0)
     }
 
     /// Mutably get a symbol by its handle.
     pub fn get_mut(&mut self, id: SymbolId) -> Option<&mut Symbol> {
-        self.symbols.get_mut(id.raw())
+        self.symbols.get_mut(id.0)
     }
 
     impl_typed_accessors!(
+        add_point_symbol,
         point_symbol,
         point_symbol_mut,
         iter_point_symbols,
@@ -118,6 +134,7 @@ impl SymbolSet {
         Point
     );
     impl_typed_accessors!(
+        add_line_symbol,
         line_symbol,
         line_symbol_mut,
         iter_line_symbols,
@@ -126,6 +143,7 @@ impl SymbolSet {
         Line
     );
     impl_typed_accessors!(
+        add_area_symbol,
         area_symbol,
         area_symbol_mut,
         iter_area_symbols,
@@ -134,6 +152,7 @@ impl SymbolSet {
         Area
     );
     impl_typed_accessors!(
+        add_text_symbol,
         text_symbol,
         text_symbol_mut,
         iter_text_symbols,
@@ -142,6 +161,7 @@ impl SymbolSet {
         Text
     );
     impl_typed_accessors!(
+        add_combined_area_symbol,
         combined_area_symbol,
         combined_area_symbol_mut,
         iter_combined_area_symbols,
@@ -150,6 +170,7 @@ impl SymbolSet {
         CombinedArea
     );
     impl_typed_accessors!(
+        add_combined_line_symbol,
         combined_line_symbol,
         combined_line_symbol_mut,
         iter_combined_line_symbols,
@@ -158,9 +179,44 @@ impl SymbolSet {
         CombinedLine
     );
 
+    narrow_id!(
+        path_id,
+        PathSymbolId,
+        "a path",
+        Symbol::Line(_) | Symbol::Area(_) | Symbol::CombinedLine(_) | Symbol::CombinedArea(_)
+    );
+    narrow_id!(
+        line_path_id,
+        LinePathSymbolId,
+        "a line path",
+        Symbol::Line(_) | Symbol::CombinedLine(_)
+    );
+    narrow_id!(
+        area_path_id,
+        AreaPathSymbolId,
+        "an area path",
+        Symbol::Area(_) | Symbol::CombinedArea(_)
+    );
+    narrow_id!(point_id, PointSymbolId, "a point", Symbol::Point(_));
+    narrow_id!(text_id, TextSymbolId, "a text", Symbol::Text(_));
+    narrow_id!(line_id, LineSymbolId, "a line", Symbol::Line(_));
+    narrow_id!(area_id, AreaSymbolId, "an area", Symbol::Area(_));
+    narrow_id!(
+        combined_line_id,
+        CombinedLineSymbolId,
+        "a combined line",
+        Symbol::CombinedLine(_)
+    );
+    narrow_id!(
+        combined_area_id,
+        CombinedAreaSymbolId,
+        "a combined area",
+        Symbol::CombinedArea(_)
+    );
+
     /// Remove and return the [`Symbol`] the handle names.
     pub fn remove(&mut self, id: SymbolId) -> Option<Symbol> {
-        self.symbols.remove(id.raw())
+        self.symbols.remove(id.0)
     }
 
     /// Remove and return the first [`Symbol`] with the given [`Code`].
@@ -206,8 +262,7 @@ impl SymbolSet {
 
     /// Get a handle to the symbol at a file index.
     pub fn id_at(&self, index: usize) -> Option<SymbolId> {
-        let symbol = self.symbols.get_at(index)?;
-        Some(symbol.id_for(self.symbols.id_at(index)?))
+        Some(SymbolId(self.symbols.id_at(index)?))
     }
 
     /// Get the file index of a symbol, or `None` if it is not in this set.
@@ -215,14 +270,21 @@ impl SymbolSet {
     /// This is the integer the `.omap` format stores for every reference to the
     /// symbol, and the lookup every write performs.
     pub fn index_of(&self, id: SymbolId) -> Option<usize> {
-        self.symbols.position(id.raw())
+        self.symbols.position(id.0)
+    }
+
+    /// The integer the `.omap` format stores for a symbol reference. No symbol,
+    /// or a removed one, is the format's `-1` sentinel.
+    pub fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
+        id.and_then(|id| self.index_of(id.into()))
+            .map_or(-1, |index| index as i32)
     }
 
     /// Iterate over the symbols and their handles, in file order.
     pub fn iter(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
         self.symbols
             .iter()
-            .map(|(raw, symbol)| (symbol.id_for(raw), symbol))
+            .map(|(raw, symbol)| (SymbolId(raw), symbol))
     }
 
     /// Iterate over the symbols in file order.
@@ -264,7 +326,7 @@ impl SymbolSet {
         component: PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>,
     ) -> Result<()> {
         if let PublicOrPrivateSymbol::Public(public) = &component
-            && self.would_cycle(SymbolId::CombinedArea(target), *public)
+            && self.would_cycle(target.into(), *public)
         {
             return Err(Error::CyclicSymbolDefinition);
         }
@@ -287,7 +349,7 @@ impl SymbolSet {
         component: PublicOrPrivateSymbol<LinePathSymbolId, Box<LineSymbol>>,
     ) -> Result<()> {
         if let PublicOrPrivateSymbol::Public(public) = &component
-            && self.would_cycle(SymbolId::CombinedLine(target), (*public).into())
+            && self.would_cycle(target.into(), (*public).into())
         {
             return Err(Error::CyclicSymbolDefinition);
         }
@@ -378,12 +440,8 @@ impl SymbolSet {
             .collect::<Option<Vec<_>>>()
             .ok_or(Error::SymbolCountMismatch)?;
 
-        // Before linking public components, identify CombinedArea symbols
-        // that should actually be CombinedLine symbols.
-        // At this point, only private parts are populated in the CombinedAreaSymbols.
-
-        // Step 1: Initial candidates — CombinedArea symbols with no private Area parts
-        // and whose public component IDs don't reference Area/Point/Text symbols.
+        // The format has no combined line symbol, so one arrives as a combined area
+        // symbol that references only lines. Only private parts are populated yet.
         let mut candidate_indices: Vec<usize> = Vec::new();
         for (i, symbol) in symbols.iter().enumerate() {
             if let Symbol::CombinedArea(combined) = symbol {
@@ -407,9 +465,8 @@ impl SymbolSet {
             }
         }
 
-        // Step 2: Iteratively remove candidates that reference CombinedArea symbols
-        // that aren't themselves candidates (those are true area symbols).
-        // A candidate referencing another candidate's CombinedArea is fine — both will be converted.
+        // Referencing a combined area symbol that is not itself a candidate
+        // disqualifies a candidate; referencing a fellow candidate does not.
         loop {
             let prev_len = candidate_indices.len();
             let current_candidates = candidate_indices.clone();
@@ -424,8 +481,6 @@ impl SymbolSet {
             }
         }
 
-        // Step 3: Convert candidates from CombinedArea to CombinedLine.
-        // Only private parts need to be moved; public parts will be linked in Step 4.
         for &idx in &candidate_indices {
             let Symbol::CombinedArea(combined) = &mut symbols[idx] else {
                 continue;
@@ -448,8 +503,7 @@ impl SymbolSet {
             name: symbol_set_name,
         };
 
-        // Step 4: Link public components for all combined symbols.
-        // This runs after conversion so the handles name the correct types.
+        // After conversion, so the handles name the correct types.
         for (index, component_ids) in components.into_iter().enumerate() {
             if component_ids.is_empty() {
                 continue;
@@ -457,24 +511,30 @@ impl SymbolSet {
             let Some(target) = symbol_set.id_at(index) else {
                 continue;
             };
+            let combined_area = symbol_set.combined_area_id(target);
+            let combined_line = symbol_set.combined_line_id(target);
+
             for id in component_ids {
                 let component = symbol_set
                     .id_at(id)
                     .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
-                match target {
-                    SymbolId::CombinedArea(target) => {
-                        let component = PathSymbolId::try_from(component)
-                            .map_err(|_| Error::CombinedSymbolContainsPointOrText)?;
-                        symbol_set
-                            .add_area_component(target, PublicOrPrivateSymbol::Public(component))?;
-                    }
-                    SymbolId::CombinedLine(target) => {
-                        let component = LinePathSymbolId::try_from(component)
-                            .map_err(|_| Error::CombinedLineSymbolContainsNonLine)?;
-                        symbol_set
-                            .add_line_component(target, PublicOrPrivateSymbol::Public(component))?;
-                    }
-                    _ => return Err(Error::ComponentsInNonCombinedSymbol),
+                let kind = symbol_set
+                    .get(component)
+                    .ok_or(Error::SymbolSetIndexOutOfRange(id))?
+                    .kind();
+
+                if let Some(target) = combined_area {
+                    let Some(path) = symbol_set.path_id(component) else {
+                        return Err(Error::CombinedSymbolContainsPointOrText(kind));
+                    };
+                    symbol_set.add_area_component(target, PublicOrPrivateSymbol::Public(path))?;
+                } else if let Some(target) = combined_line {
+                    let Some(line) = symbol_set.line_path_id(component) else {
+                        return Err(Error::CombinedLineSymbolContainsNonLine(kind));
+                    };
+                    symbol_set.add_line_component(target, PublicOrPrivateSymbol::Public(line))?;
+                } else {
+                    return Err(Error::ComponentsInNonCombinedSymbol);
                 }
             }
         }
@@ -498,17 +558,5 @@ impl SymbolSet {
         }
         writer.write_event(Event::End(BytesEnd::new("symbols")))?;
         Ok(())
-    }
-}
-
-impl SymbolSet {
-    pub(crate) fn compact_arena(
-        &mut self,
-    ) -> std::collections::HashMap<crate::arena::RawId, crate::arena::RawId> {
-        self.symbols.compact()
-    }
-
-    pub(crate) fn is_compact(&self) -> bool {
-        self.symbols.is_compact()
     }
 }

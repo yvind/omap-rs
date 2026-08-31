@@ -22,7 +22,6 @@ use omap::{
     Code, Error, Omap,
     colors::Color,
     objects::{LineObject, TextGeometry, TextObject},
-    symbols::{LinePathSymbolId, TextSymbolId},
 };
 
 fn main() -> Result<(), Error> {
@@ -107,10 +106,14 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    let erosion_gully = map.symbols.id_by_code(Code::new(107, 0, 0)).unwrap();
+    let erosion_gully = map
+        .symbols
+        .id_by_code(Code::new(107, 0, 0))
+        .and_then(|id| map.symbols.line_path_id(id))
+        .unwrap();
 
     let mut ls = LineObject::new(
-        Some(LinePathSymbolId::try_from(erosion_gully).unwrap()),
+        Some(erosion_gully),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: -60., y: -50. }, Coord { x: 60., y: -50. }]),
     );
@@ -118,13 +121,14 @@ fn main() -> Result<(), Error> {
 
     map.parts.get_mut(0).unwrap().add_object(ls);
 
-    let contour_value = map.symbols.id_by_name("Contour value").unwrap();
+    let contour_value = map
+        .symbols
+        .id_by_name("Contour value")
+        .and_then(|id| map.symbols.text_id(id))
+        .expect("no text symbol named Contour value");
 
     let ts = TextObject::new(
-        Some(
-            TextSymbolId::try_from(contour_value)
-                .expect("The symbol type of Contour value is not Text"),
-        ),
+        Some(contour_value),
         TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
         "This is the middle of the map".to_owned(),
     );

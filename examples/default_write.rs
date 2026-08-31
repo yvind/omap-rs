@@ -14,7 +14,7 @@ use omap::{
     Code, Error, Omap,
     colors::Color,
     objects::LineObject,
-    symbols::{LinePathSymbolId, PublicOrPrivateSymbol, Symbol},
+    symbols::{PublicOrPrivateSymbol, Symbol},
 };
 
 fn main() -> Result<(), Error> {
@@ -44,10 +44,14 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    let erosion_gully = map.symbols.id_by_code(Code::new(107, 0, 0)).unwrap();
+    let erosion_gully = map
+        .symbols
+        .id_by_code(Code::new(107, 0, 0))
+        .and_then(|id| map.symbols.line_path_id(id))
+        .unwrap();
 
     let mut ls = LineObject::new(
-        Some(LinePathSymbolId::try_from(erosion_gully).unwrap()),
+        Some(erosion_gully),
         // geometry coordinates are always in mm of paper
         LineString::new(vec![Coord { x: 0., y: 0. }, Coord { x: 200., y: 100. }]),
     );

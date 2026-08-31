@@ -87,10 +87,7 @@ impl PointObject {
             .symbol
             .and_then(|id| symbol_set.point_symbol(id))
             .is_some_and(|symbol| symbol.is_rotatable);
-        let index = self
-            .symbol
-            .and_then(|id| symbol_set.index_of(id.into()))
-            .map_or(-1, |index| index as i32);
+        let index = symbol_set.file_index(self.symbol);
 
         self.write_content(writer, Some(index), is_rotatable)?;
         Ok(())
@@ -118,9 +115,7 @@ impl PointObject {
         }
 
         if self.rotation.abs() > f64::EPSILON && is_rotatable {
-            // Map the rotation onto [-PI, PI]
-            // first shift the target to either (-TAU, 0] for negative or [0, TAU) for positive
-            // Take the modulus with TAU (negatives return negative values) and shift target back to [-PI, PI]
+            // Map the rotation onto [-PI, PI].
             let rot = (self.rotation + self.rotation.signum() * std::f64::consts::PI)
                 % std::f64::consts::TAU
                 - self.rotation.signum() * std::f64::consts::PI;

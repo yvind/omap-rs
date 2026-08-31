@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     Error, NonNegativeF64, OmapSection, Result,
-    symbols::{AreaPathSymbolId, SymbolId, SymbolSet},
+    symbols::{AreaPathSymbolId, SymbolSet},
     utils::{from_file_coords, to_file_coords, try_get_attr_raw, try_transform_position},
 };
 
@@ -395,10 +395,7 @@ impl AreaObject {
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
     ) -> Result<()> {
-        let index = self
-            .symbol
-            .and_then(|id| symbol_set.index_of(SymbolId::from(id)))
-            .map_or(-1, |index| index as i32);
+        let index = symbol_set.file_index(self.symbol);
 
         self.write_content(writer, Some(index))
     }

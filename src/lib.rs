@@ -6,7 +6,6 @@
 mod arena;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
-mod compact;
 mod format_info;
 /// Coordinate-reference-system and projection helpers.
 pub mod geo_referencing;
@@ -17,6 +16,7 @@ pub mod objects;
 pub mod omap;
 /// Map parts (layers) and their contained objects.
 pub mod parts;
+mod prune;
 /// Symbol definitions: point, line, area, text, and combined symbols.
 pub mod symbols;
 /// Background-template support (images, tracks, GDAL/OGR layers).
@@ -268,9 +268,6 @@ pub enum Error {
     /// An invalid color definition.
     #[error("Color definition error")]
     ColorError,
-    /// Tried to convert a color handle to an incompatible kind.
-    #[error("Tried to convert a color handle to an incompatible kind")]
-    ColorConversionError,
     /// A symbol definition would create a cycle.
     #[error("cyclic symbol definition")]
     CyclicSymbolDefinition,
@@ -278,11 +275,11 @@ pub enum Error {
     #[error("symbol set index {0} out of range")]
     SymbolSetIndexOutOfRange(usize),
     /// A combined area symbol references a point or text symbol.
-    #[error("combined area symbol contains a point or text symbol")]
-    CombinedSymbolContainsPointOrText,
+    #[error("a combined area symbol cannot contain {0:?} symbols")]
+    CombinedSymbolContainsPointOrText(symbols::SymbolKind),
     /// A combined line symbol references a non-line symbol.
-    #[error("combined line symbol contains a non-line symbol")]
-    CombinedLineSymbolContainsNonLine,
+    #[error("a combined line symbol cannot contain {0:?} symbols")]
+    CombinedLineSymbolContainsNonLine(symbols::SymbolKind),
     /// A clipping option value is unknown.
     #[error("unknown clipping option")]
     UnknownClippingOption,
@@ -359,8 +356,16 @@ pub enum Error {
     /// Only affine transforms within the same projection are available without the `geo_ref` feature
     #[error("Failed to get a coordinate transform between the old and new GeoRef")]
     CannotGetTransformBetweenDifferentGeoRef,
-    /// Tried to call try into on non-compatible symbols
-    #[error("Tried to call try into on non-compatible symbols")]
+    /// A handle does not name a symbol of the kind the operation requires.
+    #[error("expected a symbol handle of kind {expected:?}, found {found:?}")]
+    SymbolKindMismatch {
+        /// The kinds the target handle type accepts.
+        expected: &'static [symbols::SymbolKind],
+        /// The kind the handle actually names.
+        found: symbols::SymbolKind,
+    },
+    /// A handle does not resolve to a symbol of the required kind in this set.
+    #[error("the handle does not name a symbol of the required kind in this set")]
     SymbolConversionError,
     /// Tried to do a transform to WGS84, but the transform could not be done as no there were no available transform between the map coordinates and WGS84
     #[cfg(feature = "geo_ref")]

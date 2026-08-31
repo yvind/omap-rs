@@ -15,6 +15,7 @@ geo-types = "0.7"
 thiserror = "2"
 quick-xml = "0.41"
 linestring2bezier = "0.8.0"
+slotmap = "1.1.1"
 
 proj-wkt = { version = "0.10.0", optional = true }
 proj-core = { version = "0.10.0", features = ["geo-types"], optional = true }
@@ -33,7 +34,7 @@ geo_ref = [
     "dep:chrono",
 ]
 
-serde = ["dep:serde", "geo-types/serde", "linestring2bezier/serde"]
+serde = ["dep:serde", "geo-types/serde", "linestring2bezier/serde", "slotmap/serde"]
 
 [package.metadata.docs.rs]
 all-features = true

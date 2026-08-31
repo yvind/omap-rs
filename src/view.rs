@@ -495,10 +495,8 @@ impl View {
             writer.write_event(Event::End(BytesEnd::new("templates")))?;
         }
 
-        // </map_view>
         writer.write_event(Event::End(BytesEnd::new("map_view")))?;
 
-        // </view>
         writer.write_event(Event::End(BytesEnd::new("view")))?;
 
         Ok(())

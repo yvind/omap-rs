@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 use quick_xml::{
     Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
+    events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{PointSymbol, SymbolCommon};
+use super::{PointSymbol, SymbolCommon, SymbolKind, symbol::SymbolPosition};
 use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorId, ColorSet, SymbolColor},
@@ -288,7 +288,6 @@ pub enum MidSymbolPlacement {
     CenterOfDashGroup = 1,
     /// Mid symbols on the main gap (i.e. not between dashes in a group)
     CenterOfGap = 2,
-    //NoMidSymbols = 99,
 }
 
 impl FromStr for MidSymbolPlacement {
@@ -671,7 +670,6 @@ impl LineSymbol {
                 _ => {}
             }
         }
-        // If the point symbol is empty. Drop it
         if let Some(ps) = &result
             && ps.inner_color == SymbolColor::NoColor
             && ps.outer_color == SymbolColor::NoColor
@@ -720,49 +718,32 @@ impl LineSymbol {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "line-symbol serialization maps a large file-format record"
-    )]
+    /// Write this symbol on its own, for the sub-symbol positions that
+    /// [`Symbol::write`] does not reach: private parts of a combined symbol,
+    /// and point-symbol elements.
     pub(super) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
-        index: Option<usize>,
-        is_element: bool,
+        position: SymbolPosition,
     ) -> Result<()> {
-        // Elements do not have codes so we should skip code writing if so
-        let code_str = if !is_element {
-            self.common.code.to_string()
-        } else {
-            String::new()
-        };
+        self.common
+            .write_open(writer, SymbolKind::Line.type_id(), position)?;
+        self.write_body(writer, color_set)?;
+        self.common.write_close(writer)
+    }
 
-        let mut bs = BytesStart::new("symbol").with_attributes([
-            ("type", "2"),
-            ("code", code_str.as_str()),
-            ("name", self.common.name.as_str()),
-        ]);
-        if let Some(id) = index {
-            bs.push_attribute(("id", id.to_string().as_str()));
-        }
-        if self.common.is_hidden {
-            bs.push_attribute(("is_hidden", "true"));
-        }
-        if self.common.is_helper_symbol {
-            bs.push_attribute(("is_helper_symbol", "true"));
-        }
-        if self.common.is_protected {
-            bs.push_attribute(("is_protected", "true"));
-        }
-
-        writer.write_event(Event::Start(bs))?;
-        if !self.common.description.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("description")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.common.description)))?;
-            writer.write_event(Event::End(BytesEnd::new("description")))?;
-        }
-
+    /// Write the type-specific body, between the halves of the shared
+    /// `<symbol>` frame written by [`Symbol::write`].
+    #[expect(
+        clippy::too_many_lines,
+        reason = "line-symbol serialization maps a large file-format record"
+    )]
+    pub(super) fn write_body<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+        color_set: &ColorSet,
+    ) -> Result<()> {
         let main_color = self.color.priority(color_set);
 
         let mut bs = BytesStart::new("line_symbol").with_attributes([
@@ -900,34 +881,30 @@ impl LineSymbol {
         }
         if let Some(start_symbol) = &self.start_symbol {
             writer.write_event(Event::Start(BytesStart::new("start_symbol")))?;
-            start_symbol.write(writer, color_set, None, true)?;
+            start_symbol.write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("start_symbol")))?;
         }
         if let Some(mid_symbol) = &self.mid_symbol {
             writer.write_event(Event::Start(BytesStart::new("mid_symbol")))?;
-            mid_symbol.mid_symbol.write(writer, color_set, None, true)?;
+            mid_symbol
+                .mid_symbol
+                .write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("mid_symbol")))?;
         }
         if let Some(dash_symbol) = &self.dash_symbol {
             writer.write_event(Event::Start(BytesStart::new("dash_symbol")))?;
             dash_symbol
                 .dash_symbol
-                .write(writer, color_set, None, true)?;
+                .write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("dash_symbol")))?;
         }
         if let Some(end_symbol) = &self.end_symbol {
             writer.write_event(Event::Start(BytesStart::new("end_symbol")))?;
-            end_symbol.write(writer, color_set, None, true)?;
+            end_symbol.write(writer, color_set, SymbolPosition::Element)?;
             writer.write_event(Event::End(BytesEnd::new("end_symbol")))?;
         }
         writer.write_event(Event::End(BytesEnd::new("line_symbol")))?;
 
-        if let Some(icon) = &self.common.custom_icon {
-            writer.write_event(Event::Empty(
-                BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
-            ))?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("symbol")))?;
         Ok(())
     }
 }

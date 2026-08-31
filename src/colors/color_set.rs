@@ -4,8 +4,8 @@ use quick_xml::{
 };
 
 use super::{
-    Cmyk, Color, ColorComponent, ColorId, MixedColor, MixedColorId, Rgb, SpotColor, SpotColorId,
-    color::ColorParseReturn,
+    Cmyk, Color, ColorComponent, ColorId, ColorKey, MixedColor, MixedColorId, Rgb, SpotColor,
+    SpotColorId, color::ColorParseReturn,
 };
 use crate::arena::Arena;
 use crate::utils::{UnitF64, try_get_attr_raw};
@@ -22,7 +22,7 @@ use crate::{Error, OmapSection, Result};
 /// map is written, exactly as a dangling weak reference did.
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ColorSet(Arena<Color>);
+pub struct ColorSet(Arena<Color, ColorKey>);
 
 impl ColorSet {
     /// Create a new [`ColorSet`]
@@ -56,9 +56,7 @@ impl ColorSet {
 
     /// Append a new color with the lowest priority.
     pub fn push(&mut self, color: impl Into<Color>) -> ColorId {
-        let color = color.into();
-        let kind = ColorKind::of(&color);
-        kind.id(self.0.push(color))
+        ColorId(self.0.push(color.into()))
     }
 
     /// Insert a new color into the `ColorSet` with priority `index`, fails if `index > self.len()`
@@ -70,9 +68,7 @@ impl ColorSet {
         if index > self.len() {
             return Err(Error::ColorError);
         }
-        let color = color.into();
-        let kind = ColorKind::of(&color);
-        Ok(kind.id(self.0.insert(index, color)))
+        Ok(ColorId(self.0.insert(index, color.into())))
     }
 
     /// Remove a color by its priority index.
@@ -82,22 +78,22 @@ impl ColorSet {
 
     /// Remove a color by its handle.
     pub fn remove(&mut self, id: ColorId) -> Option<Color> {
-        self.0.remove(id.raw())
+        self.0.remove(id.0)
     }
 
     /// Returns `true` if `id` names a color still in this set.
     pub fn contains(&self, id: ColorId) -> bool {
-        self.0.contains(id.raw())
+        self.0.contains(id.0)
     }
 
     /// Get a color by its handle.
     pub fn get(&self, id: ColorId) -> Option<&Color> {
-        self.0.get(id.raw())
+        self.0.get(id.0)
     }
 
     /// Mutably get a color by its handle.
     pub fn get_mut(&mut self, id: ColorId) -> Option<&mut Color> {
-        self.0.get_mut(id.raw())
+        self.0.get_mut(id.0)
     }
 
     /// Get a spot color by its handle. Cannot return a mixed color.
@@ -132,6 +128,19 @@ impl ColorSet {
         }
     }
 
+    /// Narrow a handle to a spot color, or `None` if it names a mixed color.
+    ///
+    /// Widening a handle is a [`From`]; narrowing one needs the set, because
+    /// the kind lives on the color rather than on the handle.
+    pub fn spot_id(&self, id: ColorId) -> Option<SpotColorId> {
+        matches!(self.get(id)?, Color::SpotColor(_)).then_some(SpotColorId(id.0))
+    }
+
+    /// Narrow a handle to a mixed color, or `None` if it names a spot color.
+    pub fn mixed_id(&self, id: ColorId) -> Option<MixedColorId> {
+        matches!(self.get(id)?, Color::MixedColor(_)).then_some(MixedColorId(id.0))
+    }
+
     /// Get a color by its priority index.
     pub fn color_by_priority(&self, priority: usize) -> Option<&Color> {
         self.0.get_at(priority)
@@ -144,13 +153,12 @@ impl ColorSet {
 
     /// Get a handle to the color with the given priority index.
     pub fn id_by_priority(&self, priority: usize) -> Option<ColorId> {
-        let color = self.0.get_at(priority)?;
-        Some(ColorKind::of(color).id(self.0.id_at(priority)?))
+        Some(ColorId(self.0.id_at(priority)?))
     }
 
     /// Get the priority index of a color, or `None` if it is not in this set.
     pub fn priority_of(&self, id: ColorId) -> Option<usize> {
-        self.0.position(id.raw())
+        self.0.position(id.0)
     }
 
     /// Get the first color with an exact name match.
@@ -187,9 +195,7 @@ impl ColorSet {
 
     /// Iterate over the colors and their handles, in priority order.
     pub fn iter(&self) -> impl Iterator<Item = (ColorId, &Color)> {
-        self.0
-            .iter()
-            .map(|(raw, color)| (ColorKind::of(color).id(raw), color))
+        self.0.iter().map(|(raw, color)| (ColorId(raw), color))
     }
 
     /// Iterate over the colors in priority order.
@@ -197,7 +203,7 @@ impl ColorSet {
         self.0.values()
     }
 
-    /// Mutably iterate over the colors in priority order.
+    /// Mutably iterate over the colors, in no particular order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Color> {
         self.0.values_mut()
     }
@@ -205,29 +211,6 @@ impl ColorSet {
     /// Iterate over handles to every color, in priority order.
     pub fn ids(&self) -> impl Iterator<Item = ColorId> {
         self.iter().map(|(id, _)| id)
-    }
-}
-
-#[derive(Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-enum ColorKind {
-    Spot,
-    Mixed,
-}
-
-impl ColorKind {
-    fn of(color: &Color) -> Self {
-        match color {
-            Color::SpotColor(_) => Self::Spot,
-            Color::MixedColor(_) => Self::Mixed,
-        }
-    }
-
-    fn id(self, raw: crate::arena::RawId) -> ColorId {
-        match self {
-            Self::Spot => ColorId::Spot(SpotColorId(raw)),
-            Self::Mixed => ColorId::Mixed(MixedColorId(raw)),
-        }
     }
 }
 
@@ -291,9 +274,7 @@ impl ColorSet {
                 .into_iter()
                 .filter_map(|(priority, factor)| {
                     let priority = usize::try_from(priority).ok()?;
-                    let ColorId::Spot(color) = color_set.id_by_priority(priority)? else {
-                        return None;
-                    };
+                    let color = color_set.spot_id(color_set.id_by_priority(priority)?)?;
                     Some(ColorComponent {
                         factor: UnitF64::clamped_from(factor),
                         color,
@@ -322,17 +303,5 @@ impl ColorSet {
         }
         writer.write_event(Event::End(BytesEnd::new("colors")))?;
         Ok(())
-    }
-}
-
-impl ColorSet {
-    pub(crate) fn compact_arena(
-        &mut self,
-    ) -> std::collections::HashMap<crate::arena::RawId, crate::arena::RawId> {
-        self.0.compact()
-    }
-
-    pub(crate) fn is_compact(&self) -> bool {
-        self.0.is_compact()
     }
 }

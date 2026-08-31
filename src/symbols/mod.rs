@@ -1,6 +1,7 @@
 mod area_symbol;
 mod combined_area_symbol;
 mod combined_line_symbol;
+mod combined_symbol;
 mod ids;
 mod line_symbol;
 mod point_symbol;
@@ -9,11 +10,11 @@ mod symbol_set;
 mod text_symbol;
 
 pub use area_symbol::{AreaSymbol, ClippingOption, FillPattern};
-pub use combined_area_symbol::CombinedAreaSymbol;
-pub use combined_line_symbol::CombinedLineSymbol;
+pub use combined_symbol::{CombinedAreaSymbol, CombinedLineSymbol, CombinedSymbol};
+pub(crate) use ids::SymbolKey;
 pub use ids::{
     AreaPathSymbolId, AreaSymbolId, CombinedAreaSymbolId, CombinedLineSymbolId, LinePathSymbolId,
-    LineSymbolId, PathSymbolId, PointSymbolId, SymbolId, TextSymbolId,
+    LineSymbolId, PathSymbolId, PointSymbolId, SymbolId, SymbolKind, TextSymbolId,
 };
 pub use line_symbol::{
     BorderDash, BorderStyle, CapStyle, DashStyle, DashSymbol, GroupDashes, JoinStyle, LineSymbol,

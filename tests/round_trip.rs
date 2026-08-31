@@ -17,7 +17,7 @@ fn corpus() -> [(&'static str, &'static [u8]); 4] {
 }
 
 fn round_trip(bytes: &[u8]) -> Result<Vec<u8>> {
-    let mut map = Omap::from_bytes(bytes)?;
+    let map = Omap::from_bytes(bytes)?;
     let mut out = Vec::new();
     map.to_writer(&mut out)?;
     Ok(out)

@@ -37,8 +37,7 @@ impl FromStr for Code {
     fn from_str(value: &str) -> Result<Self> {
         let mut parts = value.split('.');
 
-        #[expect(clippy::unwrap_used)]
-        let major = parts.next().unwrap().parse()?;
+        let major = parts.next().ok_or(Error::BadCode)?.parse()?;
         let minor = if let Some(part) = parts.next() {
             part.parse()?
         } else {
@@ -74,7 +73,6 @@ impl std::fmt::Display for Code {
     }
 }
 
-// parse helpers
 /// Do not use this for fields with user text as it will not unescape xml-codes
 pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Result<T> {
     let e = match T::from_str(std::str::from_utf8(value.as_ref())?) {

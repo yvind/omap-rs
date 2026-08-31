@@ -1,7 +1,8 @@
-//! The serde representation is normalized and index-based: each set is a plain
-//! ordered list and each handle is the integer the `.omap` format itself
-//! stores. The check that matters is that a map survives a serde round trip
-//! well enough to still write the same `.omap` bytes.
+//! Each set serializes as its slot-keyed values plus the order those slots
+//! appear in, so a handle carries its own generation and round-trips verbatim.
+//! The checks that matter are that a map survives a serde round trip well
+//! enough to still write the same `.omap` bytes, and that a handle taken
+//! beforehand still resolves against the restored map.
 
 #![cfg(feature = "serde")]
 #![expect(
@@ -9,7 +10,6 @@
     reason = "a test asserting a round trip should fail loudly at the point it breaks"
 )]
 
-use omap::geo_types::Point;
 use omap::{Omap, Result};
 
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
@@ -122,7 +122,7 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
 #[test]
 fn the_reference_graph_survives_a_json_round_trip() -> Result<()> {
     for (name, bytes) in corpus() {
-        let mut map = Omap::from_bytes(bytes)?;
+        let map = Omap::from_bytes(bytes)?;
         // Sorting happens on write, so do it first to compare like with like.
         let mut sink = Vec::new();
         map.to_writer(&mut sink)?;
@@ -144,8 +144,9 @@ fn the_reference_graph_survives_a_json_round_trip() -> Result<()> {
     Ok(())
 }
 
-/// Handles are serialized as the file index, so they must come back naming the
-/// same symbols and colours.
+/// A handle carries its own slot generation, so the handle you held before a
+/// round trip must still resolve afterwards — not merely some handle at the
+/// same index.
 #[test]
 fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
     let map = Omap::from_bytes(ISOM_15000)?;
@@ -154,99 +155,53 @@ fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
 
     for (index, (id, symbol)) in map.symbols.iter().enumerate() {
         assert_eq!(map.symbols.index_of(id), Some(index));
-        let restored_id = restored.symbols.id_at(index).expect("same index exists");
-        let restored_symbol = restored.symbols.get(restored_id).expect("resolves");
+
+        // The original handle, used verbatim against the restored map.
+        let restored_symbol = restored.symbols.get(id).expect("the old handle resolves");
         assert_eq!(restored_symbol.name(), symbol.name());
         assert_eq!(restored_symbol.common().code, symbol.common().code);
-    }
-    Ok(())
-}
-
-#[test]
-fn a_parsed_map_is_already_compact() -> Result<()> {
-    for (name, bytes) in corpus() {
-        let map = Omap::from_bytes(bytes)?;
-        assert!(
-            map.is_compact(),
-            "{name}: a freshly parsed map should need no compaction"
+        assert_eq!(
+            restored.symbols.index_of(id),
+            Some(index),
+            "a handle must keep its position across a round trip"
         );
     }
     Ok(())
 }
 
-/// Removing a symbol leaves a gap, so handles stop matching positions. Once
-/// compacted the map serializes, and references to the removed symbol are gone
-/// rather than silently pointing at whatever took its place.
+/// A removal leaves a gap in the slot keys. Nothing needs compacting away: the
+/// gap round-trips, the survivors keep their handles, and the removed symbol
+/// stays removed.
 #[test]
-fn removal_is_compacted_away_before_serializing() -> Result<()> {
+fn a_removal_survives_a_round_trip_without_pruning() -> Result<()> {
     let mut map = Omap::from_bytes(ISOM_15000)?;
     let doomed = map.symbols.ids().nth(3).expect("a fourth symbol");
     let survivor = map.symbols.ids().nth(4).expect("a fifth symbol");
-    let survivor_name = map
-        .symbols
-        .get(survivor)
-        .expect("survivor resolves")
-        .name()
-        .to_owned();
 
     let _removed = map.symbols.remove(doomed);
-    map.symbols.add_symbol(omap::symbols::PointSymbol::new(
+    let added = map.symbols.add_symbol(omap::symbols::PointSymbol::new(
         omap::Code::new(9, 9, 9),
         "added",
     ));
-    assert!(
-        !map.is_compact(),
-        "a removal followed by an insertion should break compactness"
-    );
 
-    // Serializing an uncompacted map must still work: it compacts a copy.
-    let json = serde_json::to_string(&map).expect("serialize uncompacted");
+    let json = serde_json::to_string(&map).expect("serialize after a removal");
     let restored: Omap = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(restored.symbols.len(), map.symbols.len());
-    assert!(restored.is_compact());
-    assert!(restored.validate().is_ok(), "restored map must validate");
 
-    map.compact();
-    assert!(map.is_compact());
+    assert_eq!(restored.symbols.len(), map.symbols.len());
+    assert!(restored.validate().is_ok(), "restored map must validate");
     assert!(
-        map.symbols.get(doomed).is_none(),
+        restored.symbols.get(doomed).is_none(),
         "the removed symbol must not come back"
     );
-    assert!(map.validate().is_ok());
-
-    // The survivor is still present, found by name rather than by the old
-    // handle, which compaction deliberately invalidates.
-    assert!(map.symbols.symbol_by_name(&survivor_name).is_some());
-    Ok(())
-}
-
-#[test]
-fn compacting_drops_references_to_removed_symbols() -> Result<()> {
-    let mut map = Omap::from_bytes(ISOM_15000)?;
-    let point = map
-        .symbols
-        .iter_point_symbols()
-        .next()
-        .map(|(id, _)| id)
-        .expect("a point symbol");
-
-    let part = map.parts.get_mut(0).expect("a map part");
-    part.add_object(omap::objects::PointObject::new(
-        Some(point),
-        Point::new(1.0, 2.0),
-    ));
-
-    let _removed = map.symbols.remove(point.into());
-    assert!(map.validate().is_err(), "the object now dangles");
-
-    map.compact();
-
-    let object = map.iter_all_objects().last().expect("the added object");
-    assert_eq!(
-        object.symbol(),
-        None,
-        "a dangling reference must compact to None, not to whatever took the slot"
+    assert!(
+        restored.symbols.get(survivor).is_some(),
+        "a handle taken before the round trip must still resolve"
     );
-    assert!(map.validate().is_ok());
+    assert_eq!(
+        restored.symbols.index_of(survivor),
+        map.symbols.index_of(survivor),
+        "the survivor must keep its file index"
+    );
+    assert!(restored.symbols.get(added).is_some());
     Ok(())
 }
