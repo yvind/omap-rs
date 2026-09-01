@@ -115,7 +115,7 @@ impl MapPart {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), b"object") {
+                    if matches!(bytes_start.local_name().as_ref(), "object") {
                         let object = MapObject::parse(reader, &bytes_start, symbols, false)?;
                         if object.geometry_is_empty() {
                             continue;
@@ -124,7 +124,7 @@ impl MapPart {
                     }
                 }
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"part") {
+                    if matches!(bytes_end.local_name().as_ref(), "part") {
                         break;
                     }
                 }

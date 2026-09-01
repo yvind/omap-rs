@@ -203,11 +203,11 @@ impl Omap {
             match reader.read_event_into(&mut xml_buf)? {
                 Event::Decl(dec) => XmlDeclaration::parse(dec)?,
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    b"map" => OmapVersion::parse(&bytes_start)?,
-                    b"notes" => notes = notes::parse(&mut reader).unwrap_or_default(),
-                    b"georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
-                    b"colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
-                    b"symbols" => {
+                    "map" => OmapVersion::parse(&bytes_start)?,
+                    "notes" => notes = notes::parse(&mut reader).unwrap_or_default(),
+                    "georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
+                    "colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
+                    "symbols" => {
                         if let Some(colors) = &colors {
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
                         } else {
@@ -217,7 +217,7 @@ impl Omap {
                             });
                         }
                     }
-                    b"parts" => {
+                    "parts" => {
                         if let Some(symbols) = &symbols {
                             parts = Some(MapParts::parse(&mut reader, symbols)?);
                         } else {
@@ -227,17 +227,17 @@ impl Omap {
                             });
                         }
                     }
-                    b"templates" => {
+                    "templates" => {
                         templates = Templates::parse(&mut reader, &bytes_start).unwrap_or_default();
                     }
-                    b"view" => {
+                    "view" => {
                         view = View::parse(&mut reader, &bytes_start, &mut templates)
                             .unwrap_or_default();
                     }
                     _ => (),
                 },
                 Event::End(bytes_end) => {
-                    if bytes_end.local_name().as_ref() == b"map" {
+                    if bytes_end.local_name().as_ref() == "map" {
                         break;
                     }
                 }

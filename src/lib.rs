@@ -268,6 +268,14 @@ pub enum Error {
     /// An invalid color definition.
     #[error("Color definition error")]
     ColorError,
+    /// A handle does not name a color of the kind the operation requires.
+    #[error("expected a color handle of kind {expected:?}, found {found:?}")]
+    ColorKindMismatch {
+        /// The kinds the target handle type accepts.
+        expected: &'static [colors::ColorKind],
+        /// The kind the handle actually names.
+        found: colors::ColorKind,
+    },
     /// A symbol definition would create a cycle.
     #[error("cyclic symbol definition")]
     CyclicSymbolDefinition,

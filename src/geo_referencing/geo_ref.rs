@@ -207,11 +207,11 @@ impl GeoRef {
 
             match event {
                 Event::Start(bs) => match bs.local_name().as_ref() {
-                    b"projected_crs" => {
+                    "projected_crs" => {
                         (crs_type, projected_ref_point) = parse_projected_crs(reader, &bs)?;
                     }
-                    b"geographic_crs" => geographic_ref_point_deg = parse_geographic_crs(reader)?,
-                    b"ref_point" => {
+                    "geographic_crs" => geographic_ref_point_deg = parse_geographic_crs(reader)?,
+                    "ref_point" => {
                         // for some reason in mm and not µm, but y is flipped
                         map_ref_point = Coord {
                             x: try_get_attr_raw(&bs, "x")?.unwrap_or(map_ref_point.x),
@@ -223,7 +223,7 @@ impl GeoRef {
                     _ => (),
                 },
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"georeferencing") {
+                    if matches!(bytes_end.local_name().as_ref(), "georeferencing") {
                         break;
                     }
                 }
@@ -254,28 +254,28 @@ fn parse_projected_crs<R: std::io::BufRead>(
 ) -> Result<(CrsType, Coord)> {
     let mut buf = Vec::new();
 
-    let crs_type = if let Some(attr) = bytes_start.try_get_attribute(b"id")? {
+    let crs_type = if let Some(attr) = bytes_start.try_get_attribute("id")? {
         match attr.value.as_ref() {
-            b"Gauss-Krueger, datum: Potsdam" => {
-                let param_string = get_projected_crs_spec(reader, b"parameter")?;
+            "Gauss-Krueger, datum: Potsdam" => {
+                let param_string = get_projected_crs_spec(reader, "parameter")?;
                 CrsType::GaussKrueger(param_string.parse()?)
             }
-            b"EPSG" => {
-                let param_string = get_projected_crs_spec(reader, b"parameter")?;
+            "EPSG" => {
+                let param_string = get_projected_crs_spec(reader, "parameter")?;
                 CrsType::Epsg(u16::from_str(param_string.as_str())?)
             }
-            b"UTM" => {
-                let param_string = get_projected_crs_spec(reader, b"parameter")?;
+            "UTM" => {
+                let param_string = get_projected_crs_spec(reader, "parameter")?;
                 CrsType::Utm(param_string.parse()?)
             }
-            b"Local" => CrsType::Local,
+            "Local" => CrsType::Local,
             _ => {
-                let spec_string = get_projected_crs_spec(reader, b"spec")?;
+                let spec_string = get_projected_crs_spec(reader, "spec")?;
                 CrsType::Proj4(spec_string)
             }
         }
     } else {
-        let spec_string = get_projected_crs_spec(reader, b"spec")?;
+        let spec_string = get_projected_crs_spec(reader, "spec")?;
         CrsType::Proj4(spec_string)
     };
 
@@ -285,7 +285,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
 
         match event {
             Event::Start(bs) => {
-                if matches!(bs.local_name().as_ref(), b"ref_point") {
+                if matches!(bs.local_name().as_ref(), "ref_point") {
                     proj_ref_point = Coord {
                         x: try_get_attr_raw(&bs, "x")?.unwrap_or(proj_ref_point.x),
                         y: try_get_attr_raw(&bs, "y")?.unwrap_or(proj_ref_point.y),
@@ -293,7 +293,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
                 }
             }
             Event::End(bytes_end) => {
-                if matches!(bytes_end.local_name().as_ref(), b"projected_crs") {
+                if matches!(bytes_end.local_name().as_ref(), "projected_crs") {
                     break;
                 }
             }
@@ -315,7 +315,7 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
 
         match event {
             Event::Start(bs) => {
-                if matches!(bs.local_name().as_ref(), b"ref_point_deg") {
+                if matches!(bs.local_name().as_ref(), "ref_point_deg") {
                     geo_ref_point = Coord {
                         x: try_get_attr_raw(&bs, "lon")?.unwrap_or(geo_ref_point.x),
                         y: try_get_attr_raw(&bs, "lat")?.unwrap_or(geo_ref_point.y),
@@ -323,7 +323,7 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
                 }
             }
             Event::End(bytes_end) => {
-                if matches!(bytes_end.local_name().as_ref(), b"geographic_crs") {
+                if matches!(bytes_end.local_name().as_ref(), "geographic_crs") {
                     break;
                 }
             }
@@ -338,7 +338,7 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
 
 fn get_projected_crs_spec<R: std::io::BufRead>(
     reader: &mut Reader<R>,
-    event_name: &[u8],
+    event_name: &str,
 ) -> Result<String> {
     let mut buf = Vec::new();
     loop {

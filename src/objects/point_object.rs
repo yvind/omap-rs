@@ -177,17 +177,17 @@ impl PointObject {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"object") {
+                    if matches!(bytes_end.local_name().as_ref(), "object") {
                         break;
                     }
                 }
                 Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), b"tags") {
+                    if matches!(bytes_start.local_name().as_ref(), "tags") {
                         tags = super::parse_tags(reader)?;
                     }
                 }
                 Event::Text(bytes_text) => {
-                    let raw_xml = str::from_utf8(bytes_text.as_ref())?;
+                    let raw_xml = bytes_text.as_ref();
 
                     for vertex in raw_xml.split_terminator(';') {
                         let mut split = vertex.split_whitespace();

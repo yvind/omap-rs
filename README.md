@@ -98,7 +98,7 @@ fn main() -> Result<(), Error> {
     // stops resolving once the symbol is removed.
     let erosion_gully = map
         .symbols
-        .id_by_code(Code::new(107, 0, 0))
+        .find_by_code(Code::new(107, 0, 0))
         .expect("the default symbol set contains erosion gully");
 
     // O-mapper makes no difference between line objects and area objects, but we do.

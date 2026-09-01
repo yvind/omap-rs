@@ -506,8 +506,8 @@ impl LineSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => common.description = notes::parse(reader)?,
-                    b"line_symbol" => {
+                    "description" => common.description = notes::parse(reader)?,
+                    "line_symbol" => {
                         let color_index = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(color_index, color_set);
                         line_width = NonNegativeF64::from_file_value(
@@ -552,25 +552,25 @@ impl LineSymbol {
                         scale_dash_symbol =
                             try_get_attr_raw(&e, "scale_dash_symbol")?.unwrap_or(true);
                     }
-                    b"start_symbol" => {
+                    "start_symbol" => {
                         start_symbol = Self::parse_sub_point_symbol(reader, color_set)?;
                     }
-                    b"mid_symbol" => {
+                    "mid_symbol" => {
                         mid_symbol_point = Self::parse_sub_point_symbol(reader, color_set)?;
                     }
-                    b"end_symbol" => {
+                    "end_symbol" => {
                         end_symbol = Self::parse_sub_point_symbol(reader, color_set)?;
                     }
-                    b"dash_symbol" => {
+                    "dash_symbol" => {
                         dash_symbol_point = Self::parse_sub_point_symbol(reader, color_set)?;
                     }
-                    b"borders" => {
+                    "borders" => {
                         border = Self::parse_borders(reader, &e, color_set)?;
                     }
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
+                    "icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::End(e) if e.local_name().as_ref() == "symbol" => {
                     break;
                 }
                 Event::Eof => {
@@ -648,15 +648,14 @@ impl LineSymbol {
         let mut result = None;
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::Start(e) if e.local_name().as_ref() == "symbol" => {
                     let mut sub_common = SymbolCommon::default();
                     for attr in e.attributes().filter_map(std::result::Result::ok) {
                         match attr.key.local_name().as_ref() {
-                            b"name" => {
-                                sub_common.name =
-                                    parse_attr(attr, e.decoder()).unwrap_or(sub_common.name);
+                            "name" => {
+                                sub_common.name = parse_attr(attr).unwrap_or(sub_common.name);
                             }
-                            b"code" => {
+                            "code" => {
                                 sub_common.code = parse_attr_raw(attr.value).unwrap_or_default();
                             }
                             _ => {}
@@ -665,7 +664,7 @@ impl LineSymbol {
                     result = Some(PointSymbol::parse(reader, color_set, sub_common)?);
                 }
                 Event::End(e) => match e.local_name().as_ref() {
-                    b"start_symbol" | b"mid_symbol" | b"end_symbol" | b"dash_symbol" => break,
+                    "start_symbol" | "mid_symbol" | "end_symbol" | "dash_symbol" => break,
                     _ => (),
                 },
                 Event::Eof => {
@@ -696,7 +695,7 @@ impl LineSymbol {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) if e.local_name().as_ref() == b"border" => {
+                Event::Start(e) if e.local_name().as_ref() == "border" => {
                     let b = LineSymbolBorder::parse(&e, color_set)?;
                     if left.is_none() {
                         left = Some(b);
@@ -704,7 +703,7 @@ impl LineSymbol {
                         right = Some(b);
                     }
                 }
-                Event::End(e) if e.local_name().as_ref() == b"borders" => {
+                Event::End(e) if e.local_name().as_ref() == "borders" => {
                     break;
                 }
                 Event::Eof => {

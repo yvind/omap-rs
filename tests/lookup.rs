@@ -1,7 +1,13 @@
 //! Every lookup hands back a `SymbolRef`: the symbol for reading, the handle
-//! for storing, and the `as_*` narrowing that composes with any lookup key.
+//! for storing, and narrowing through `TryFrom` or the `as_*` helpers.
 
-use omap::{Code, Omap, Result, colors::ColorRef, symbols::Symbol};
+use omap::{
+    Code, Omap, Result,
+    colors::{ColorId, ColorKind, ColorRef, MixedColorId, SpotColorId},
+    symbols::{
+        LinePathSymbolId, LineSymbolId, PathSymbolId, PointSymbolId, Symbol, SymbolId, SymbolKind,
+    },
+};
 
 fn erosion_gully() -> Code {
     Code::new(107, 0, 0)
@@ -86,6 +92,34 @@ fn narrowing_to_the_wrong_kind_is_none() -> Result<()> {
 }
 
 #[test]
+fn narrowing_uses_try_from() -> Result<()> {
+    let map = isom()?;
+    let found = map
+        .symbols
+        .find_by_code(erosion_gully())
+        .ok_or(omap::Error::ObjectError)?;
+
+    let line = LineSymbolId::try_from(found)?;
+    let line_path = LinePathSymbolId::try_from(found)?;
+    let path = PathSymbolId::try_from(found)?;
+    let untyped = SymbolId::try_from(found)?;
+
+    assert_eq!(SymbolId::from(line), found.id());
+    assert_eq!(SymbolId::from(line_path), found.id());
+    assert_eq!(SymbolId::from(path), found.id());
+    assert_eq!(untyped, found.id());
+
+    assert!(matches!(
+        PointSymbolId::try_from(found),
+        Err(omap::Error::SymbolKindMismatch {
+            expected: &[SymbolKind::Point],
+            found: SymbolKind::Line,
+        })
+    ));
+    Ok(())
+}
+
+#[test]
 fn narrowing_from_a_bare_handle_goes_through_get() -> Result<()> {
     let map = isom()?;
     let id = map
@@ -159,5 +193,35 @@ fn a_color_lookup_yields_the_handle_and_the_color() -> Result<()> {
         Some(found.id())
     );
     assert!(found.as_spot().is_some() || found.as_mixed().is_some());
+    Ok(())
+}
+
+#[test]
+fn color_narrowing_uses_try_from() -> Result<()> {
+    let map = isom()?;
+    let spot = map
+        .colors
+        .iter()
+        .find(|color| color.kind() == ColorKind::Spot)
+        .ok_or(omap::Error::ColorError)?;
+    let mixed = map
+        .colors
+        .iter()
+        .find(|color| color.kind() == ColorKind::Mixed)
+        .ok_or(omap::Error::ColorError)?;
+
+    let spot_id = SpotColorId::try_from(spot)?;
+    let mixed_id = MixedColorId::try_from(mixed)?;
+    assert_eq!(ColorId::from(spot_id), spot.id());
+    assert_eq!(ColorId::from(mixed_id), mixed.id());
+    assert_eq!(ColorId::try_from(spot)?, spot.id());
+
+    assert!(matches!(
+        MixedColorId::try_from(spot),
+        Err(omap::Error::ColorKindMismatch {
+            expected: &[ColorKind::Mixed],
+            found: ColorKind::Spot,
+        })
+    ));
     Ok(())
 }

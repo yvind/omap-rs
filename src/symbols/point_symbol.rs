@@ -102,7 +102,7 @@ impl Element {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"symbol" => {
+                    "symbol" => {
                         let sym_type = try_get_attr_raw(&e, "type")?.unwrap_or(0_u8);
                         symbol_data = Some(match sym_type {
                             1 => ElementSymbolData::Point(Box::new(PointSymbol::parse(
@@ -123,7 +123,7 @@ impl Element {
                             _ => return Err(Error::UnknownElementSymbolType(sym_type)),
                         });
                     }
-                    b"object" => {
+                    "object" => {
                         let obj_type = try_get_attr_raw(&e, "type")?.unwrap_or(6_u8);
                         object_data = Some(match obj_type {
                             0 => ElementObjectData::Point(Box::new(PointObject::parse(
@@ -148,7 +148,7 @@ impl Element {
                     }
                     _ => {}
                 },
-                Event::End(e) if e.local_name().as_ref() == b"element" => {
+                Event::End(e) if e.local_name().as_ref() == "element" => {
                     break;
                 }
                 Event::Eof => {
@@ -318,8 +318,8 @@ impl PointSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => common.description = notes::parse(reader)?,
-                    b"point_symbol" => {
+                    "description" => common.description = notes::parse(reader)?,
+                    "point_symbol" => {
                         is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(is_rotatable);
                         inner_radius = NonNegativeF64::from_file_value(
                             try_get_attr_raw(&e, "inner_radius")?.unwrap_or(0),
@@ -336,11 +336,11 @@ impl PointSymbol {
                             color_set,
                         );
                     }
-                    b"element" => elements.push(Element::parse_element(reader, color_set)?),
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
+                    "element" => elements.push(Element::parse_element(reader, color_set)?),
+                    "icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::End(e) if e.local_name().as_ref() == "symbol" => {
                     break;
                 }
                 Event::Eof => {

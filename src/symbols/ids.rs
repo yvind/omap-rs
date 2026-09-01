@@ -35,12 +35,12 @@ impl SymbolKind {
     }
 }
 
-/// Widening is a `From`; narrowing needs the set — see
-/// [`crate::symbols::SymbolSet::point_id`] and its siblings.
+/// Widening a typed handle is infallible. Narrowing a [`crate::symbols::SymbolRef`]
+/// checks the kind of the referenced symbol.
 macro_rules! symbol_ids {
     ($(
         $(#[$meta:meta])*
-        $name:ident => [$($wider:ident),* $(,)?];
+        $name:ident($($kind:ident),+ $(,)?) => [$($wider:ident),* $(,)?];
     )+) => {
         $(
             $(#[$meta])*
@@ -58,43 +58,60 @@ macro_rules! symbol_ids {
                     }
                 }
             )*
+
+            impl TryFrom<crate::symbols::SymbolRef<'_>> for $name {
+                type Error = crate::Error;
+
+                fn try_from(value: crate::symbols::SymbolRef<'_>) -> crate::Result<Self> {
+                    const EXPECTED: &[SymbolKind] = &[$(SymbolKind::$kind),+];
+                    let found = value.kind();
+                    if EXPECTED.contains(&found) {
+                        Ok(Self(value.id().0))
+                    } else {
+                        Err(crate::Error::SymbolKindMismatch {
+                            expected: EXPECTED,
+                            found,
+                        })
+                    }
+                }
+            }
         )+
     };
 }
 
 symbol_ids! {
     /// A handle to a symbol of any kind in a [`crate::symbols::SymbolSet`].
-    SymbolId => [];
+    SymbolId(Line, Area, Point, Text, CombinedArea, CombinedLine) => [];
 
     /// A handle to the symbol used to render a path object: a line, an area, or
     /// either combined form.
-    PathSymbolId => [SymbolId];
+    PathSymbolId(Line, Area, CombinedLine, CombinedArea) => [SymbolId];
 
     /// A handle to the symbol used to render a line object: a
     /// [`crate::symbols::LineSymbol`] or a
     /// [`crate::symbols::CombinedLineSymbol`].
-    LinePathSymbolId => [PathSymbolId, SymbolId];
+    LinePathSymbolId(Line, CombinedLine) => [PathSymbolId, SymbolId];
 
     /// A handle to the symbol used to render an area object: an
     /// [`crate::symbols::AreaSymbol`] or a
     /// [`crate::symbols::CombinedAreaSymbol`].
-    AreaPathSymbolId => [PathSymbolId, SymbolId];
+    AreaPathSymbolId(Area, CombinedArea) => [PathSymbolId, SymbolId];
 
     /// A handle to a [`crate::symbols::PointSymbol`].
-    PointSymbolId => [SymbolId];
+    PointSymbolId(Point) => [SymbolId];
 
     /// A handle to a [`crate::symbols::TextSymbol`].
-    TextSymbolId => [SymbolId];
+    TextSymbolId(Text) => [SymbolId];
 
     /// A handle to a [`crate::symbols::LineSymbol`].
-    LineSymbolId => [LinePathSymbolId, PathSymbolId, SymbolId];
+    LineSymbolId(Line) => [LinePathSymbolId, PathSymbolId, SymbolId];
 
     /// A handle to a [`crate::symbols::CombinedLineSymbol`].
-    CombinedLineSymbolId => [LinePathSymbolId, PathSymbolId, SymbolId];
+    CombinedLineSymbolId(CombinedLine) => [LinePathSymbolId, PathSymbolId, SymbolId];
 
     /// A handle to an [`crate::symbols::AreaSymbol`].
-    AreaSymbolId => [AreaPathSymbolId, PathSymbolId, SymbolId];
+    AreaSymbolId(Area) => [AreaPathSymbolId, PathSymbolId, SymbolId];
 
     /// A handle to a [`crate::symbols::CombinedAreaSymbol`].
-    CombinedAreaSymbolId => [AreaPathSymbolId, PathSymbolId, SymbolId];
+    CombinedAreaSymbolId(CombinedArea) => [AreaPathSymbolId, PathSymbolId, SymbolId];
 }

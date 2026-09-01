@@ -59,11 +59,11 @@ impl CombinedAreaSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => common.description = notes::parse(reader)?,
-                    b"combined_symbol" => {
+                    "description" => common.description = notes::parse(reader)?,
+                    "combined_symbol" => {
                         // num_parts attribute is informational, we parse dynamically
                     }
-                    b"part" => {
+                    "part" => {
                         let is_private = try_get_attr_raw(&e, "private")?.unwrap_or(false);
                         if is_private {
                             let sym = Self::parse_private_part(reader, color_set)?;
@@ -76,10 +76,10 @@ impl CombinedAreaSymbol {
                             }
                         }
                     }
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
+                    "icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
                     _ => {}
                 },
-                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::End(e) if e.local_name().as_ref() == "symbol" => {
                     break;
                 }
                 Event::Eof => {
@@ -99,16 +99,15 @@ impl CombinedAreaSymbol {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::Start(e) if e.local_name().as_ref() == "symbol" => {
                     let sym_type: u8 = try_get_attr_raw(&e, "type")?.unwrap_or(0);
                     let mut sub_common = SymbolCommon::default();
                     for attr in e.attributes().filter_map(std::result::Result::ok) {
                         match attr.key.local_name().as_ref() {
-                            b"name" => {
-                                sub_common.name =
-                                    parse_attr(attr, e.decoder()).unwrap_or(sub_common.name);
+                            "name" => {
+                                sub_common.name = parse_attr(attr).unwrap_or(sub_common.name);
                             }
-                            b"code" => {
+                            "code" => {
                                 sub_common.code = parse_attr_raw(attr.value).unwrap_or_default();
                             }
                             _ => {}
@@ -130,7 +129,7 @@ impl CombinedAreaSymbol {
                         }
                     }
                 }
-                Event::End(e) if e.local_name().as_ref() == b"part" => {
+                Event::End(e) if e.local_name().as_ref() == "part" => {
                     return Err(Error::EmptyPrivatePart);
                 }
                 Event::Eof => {
@@ -145,7 +144,7 @@ impl CombinedAreaSymbol {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::End(e) if e.local_name().as_ref() == b"part" => {
+                Event::End(e) if e.local_name().as_ref() == "part" => {
                     return Ok(());
                 }
                 Event::Eof => {

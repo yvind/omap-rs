@@ -9,7 +9,7 @@ pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor};
 pub use color_ref::ColorRef;
 pub use color_set::ColorSet;
 pub(crate) use ids::ColorKey;
-pub use ids::{ColorId, MixedColorId, SpotColorId};
+pub use ids::{ColorId, ColorKind, MixedColorId, SpotColorId};
 use quick_xml::{
     Writer,
     events::{BytesStart, Event},

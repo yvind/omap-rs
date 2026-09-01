@@ -300,8 +300,8 @@ impl TextObject {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     match bytes_start.local_name().as_ref() {
-                        b"tags" => tags = super::parse_tags(reader)?,
-                        b"size" => {
+                        "tags" => tags = super::parse_tags(reader)?,
+                        "size" => {
                             // Override box size from <size> element (takes precedence)
                             let w = try_get_attr_raw(&bytes_start, "width")?.unwrap_or(0);
                             let h = try_get_attr_raw(&bytes_start, "height")?.unwrap_or(0);
@@ -310,22 +310,22 @@ impl TextObject {
                                 wb.height = NonNegativeF64::from_file_value(h);
                             }
                         }
-                        b"coords" => match try_get_attr_raw::<u8>(&bytes_start, "count")? {
+                        "coords" => match try_get_attr_raw::<u8>(&bytes_start, "count")? {
                             Some(1) => text_geo = TextGeometry::SingleAnchor(Coord::default()),
                             Some(2) => text_geo = TextGeometry::WrapBox(WrapBox::default()),
                             _ => return Err(Error::ObjectError),
                         },
-                        b"text" => text = notes::parse(reader)?,
+                        "text" => text = notes::parse(reader)?,
                         _ => (),
                     }
                 }
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"object") {
+                    if matches!(bytes_end.local_name().as_ref(), "object") {
                         break;
                     }
                 }
                 Event::Text(bytes_text) => {
-                    let raw_xml = str::from_utf8(bytes_text.as_ref())?;
+                    let raw_xml = bytes_text.as_ref();
 
                     if let Some((coords_str, opt_wh)) = raw_xml.split_once(';') {
                         let mut split = coords_str.split_whitespace();

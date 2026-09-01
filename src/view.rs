@@ -33,12 +33,12 @@ impl TemplateVisibility {
         let mut tv = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"opacity" => {
+                "opacity" => {
                     tv.opacity = UnitF64::clamped_from(
                         parse_attr_raw(attr.value).unwrap_or_else(|_| tv.opacity.get()),
                     );
                 }
-                b"visible" => tv.visible = attr.as_bool().unwrap_or(tv.visible),
+                "visible" => tv.visible = attr.as_bool().unwrap_or(tv.visible),
                 _ => (),
             }
         }
@@ -242,19 +242,19 @@ impl Grid {
         let mut g = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"color" => g.color = parse_attr_raw(attr.value).unwrap_or(g.color),
-                b"display" => g.display = parse_attr_raw(attr.value).unwrap_or(g.display),
-                b"alignment" => g.alignment = parse_attr_raw(attr.value).unwrap_or(g.alignment),
-                b"unit" => g.unit = parse_attr_raw(attr.value).unwrap_or(g.unit),
-                b"additional_rotation" => {
+                "color" => g.color = parse_attr_raw(attr.value).unwrap_or(g.color),
+                "display" => g.display = parse_attr_raw(attr.value).unwrap_or(g.display),
+                "alignment" => g.alignment = parse_attr_raw(attr.value).unwrap_or(g.alignment),
+                "unit" => g.unit = parse_attr_raw(attr.value).unwrap_or(g.unit),
+                "additional_rotation" => {
                     g.additional_rotation =
                         parse_attr_raw(attr.value).unwrap_or(g.additional_rotation);
                 }
-                b"h_spacing" => g.h_spacing = parse_attr_raw(attr.value).unwrap_or(g.h_spacing),
-                b"v_spacing" => g.v_spacing = parse_attr_raw(attr.value).unwrap_or(g.v_spacing),
-                b"h_offset" => g.h_offset = parse_attr_raw(attr.value).unwrap_or(g.h_offset),
-                b"v_offset" => g.v_offset = parse_attr_raw(attr.value).unwrap_or(g.v_offset),
-                b"snapping_enabled" => {
+                "h_spacing" => g.h_spacing = parse_attr_raw(attr.value).unwrap_or(g.h_spacing),
+                "v_spacing" => g.v_spacing = parse_attr_raw(attr.value).unwrap_or(g.v_spacing),
+                "h_offset" => g.h_offset = parse_attr_raw(attr.value).unwrap_or(g.h_offset),
+                "v_offset" => g.v_offset = parse_attr_raw(attr.value).unwrap_or(g.v_offset),
+                "snapping_enabled" => {
                     g.snapping_enabled = attr.as_bool().unwrap_or(g.snapping_enabled);
                 }
                 _ => (),
@@ -354,11 +354,11 @@ impl View {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bs) => match bs.local_name().as_ref() {
-                    b"grid" => view.grid = Grid::parse_attrs(&bs),
-                    b"map_view" => view.parse_map_view(reader, &bs, templates)?,
+                    "grid" => view.grid = Grid::parse_attrs(&bs),
+                    "map_view" => view.parse_map_view(reader, &bs, templates)?,
                     _ => {}
                 },
-                Event::End(be) if be.local_name().as_ref() == b"view" => break,
+                Event::End(be) if be.local_name().as_ref() == "view" => break,
                 Event::Eof => break,
                 _ => {}
             }
@@ -397,15 +397,15 @@ impl View {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bs) => match bs.local_name().as_ref() {
-                    b"map" => {
+                    "map" => {
                         self.map_visibility = TemplateVisibility::parse_map_attrs(&bs);
                     }
-                    b"templates" if !templates.is_empty() => {
+                    "templates" if !templates.is_empty() => {
                         Self::parse_template_visibilities(reader, templates)?;
                     }
                     _ => {}
                 },
-                Event::End(be) if be.local_name().as_ref() == b"map_view" => break,
+                Event::End(be) if be.local_name().as_ref() == "map_view" => break,
                 Event::Eof => break,
                 _ => {}
             }
@@ -421,7 +421,7 @@ impl View {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(bs) if bs.local_name().as_ref() == b"ref" => {
+                Event::Start(bs) if bs.local_name().as_ref() == "ref" => {
                     if let Ok(Some(index)) = try_get_attr_raw::<usize>(&bs, "template")
                         && index < templates.len()
                     {
@@ -429,7 +429,7 @@ impl View {
                             TemplateVisibility::parse_map_attrs(&bs);
                     }
                 }
-                Event::End(be) if be.local_name().as_ref() == b"templates" => break,
+                Event::End(be) if be.local_name().as_ref() == "templates" => break,
                 Event::Eof => break,
                 _ => {}
             }

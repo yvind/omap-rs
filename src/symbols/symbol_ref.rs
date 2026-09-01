@@ -5,7 +5,8 @@ use super::{Symbol, SymbolId};
 /// A symbol together with the handle that names it.
 ///
 /// What every lookup hands back. It dereferences to the [`Symbol`] for reading
-/// and narrows to a typed handle through the `as_*` methods, so a lookup and a
+/// and can be narrowed through each typed handle's [`TryFrom`] implementation.
+/// The `as_*` convenience methods wrap those conversions, so a lookup and a
 /// narrowing compose in one expression:
 ///
 /// ```
@@ -26,12 +27,11 @@ pub struct SymbolRef<'a> {
     symbol: &'a Symbol,
 }
 
-/// The only place that knows which [`Symbol`] variants a handle type accepts.
 macro_rules! narrow {
-    ($name:ident, $id:ident, $article:literal, $($pattern:pat_param)|+) => {
+    ($name:ident, $id:ident, $article:literal) => {
         #[doc = concat!("Narrow to ", $article, " handle, or `None` if this names another kind.")]
         pub fn $name(self) -> Option<crate::symbols::$id> {
-            matches!(self.symbol, $($pattern)|+).then_some(crate::symbols::$id(self.id.0))
+            crate::symbols::$id::try_from(self).ok()
         }
     };
 }
@@ -51,40 +51,15 @@ impl<'a> SymbolRef<'a> {
         self.symbol
     }
 
-    narrow!(
-        as_path,
-        PathSymbolId,
-        "a path",
-        Symbol::Line(_) | Symbol::Area(_) | Symbol::CombinedLine(_) | Symbol::CombinedArea(_)
-    );
-    narrow!(
-        as_line_path,
-        LinePathSymbolId,
-        "a line path",
-        Symbol::Line(_) | Symbol::CombinedLine(_)
-    );
-    narrow!(
-        as_area_path,
-        AreaPathSymbolId,
-        "an area path",
-        Symbol::Area(_) | Symbol::CombinedArea(_)
-    );
-    narrow!(as_point, PointSymbolId, "a point", Symbol::Point(_));
-    narrow!(as_text, TextSymbolId, "a text", Symbol::Text(_));
-    narrow!(as_line, LineSymbolId, "a line", Symbol::Line(_));
-    narrow!(as_area, AreaSymbolId, "an area", Symbol::Area(_));
-    narrow!(
-        as_combined_line,
-        CombinedLineSymbolId,
-        "a combined line",
-        Symbol::CombinedLine(_)
-    );
-    narrow!(
-        as_combined_area,
-        CombinedAreaSymbolId,
-        "a combined area",
-        Symbol::CombinedArea(_)
-    );
+    narrow!(as_path, PathSymbolId, "a path");
+    narrow!(as_line_path, LinePathSymbolId, "a line path");
+    narrow!(as_area_path, AreaPathSymbolId, "an area path");
+    narrow!(as_point, PointSymbolId, "a point");
+    narrow!(as_text, TextSymbolId, "a text");
+    narrow!(as_line, LineSymbolId, "a line");
+    narrow!(as_area, AreaSymbolId, "an area");
+    narrow!(as_combined_line, CombinedLineSymbolId, "a combined line");
+    narrow!(as_combined_area, CombinedAreaSymbolId, "a combined area");
 }
 
 impl Deref for SymbolRef<'_> {

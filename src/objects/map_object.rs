@@ -6,26 +6,19 @@ use super::{AreaObject, LineObject, PointObject, TextObject};
 use crate::{
     Error, Result,
     objects::{HorizontalAlign, VerticalAlign},
-    symbols::{SymbolId, SymbolKind, SymbolRef, SymbolSet},
+    symbols::{
+        AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolRef, SymbolSet,
+        TextSymbolId,
+    },
     utils::parse_attr_raw,
 };
 
 /// Narrow the handle an object names to the kind that object can render.
-fn narrow<'a, T>(
-    symbol: Option<SymbolRef<'a>>,
-    expected: &'static [SymbolKind],
-    narrow: impl FnOnce(SymbolRef<'a>) -> Option<T>,
-) -> Result<Option<T>> {
-    let Some(symbol) = symbol else {
-        return Ok(None);
-    };
-    match narrow(symbol) {
-        Some(narrowed) => Ok(Some(narrowed)),
-        None => Err(Error::SymbolKindMismatch {
-            expected,
-            found: symbol.kind(),
-        }),
-    }
+fn narrow<'a, T>(symbol: Option<SymbolRef<'a>>) -> Result<Option<T>>
+where
+    T: TryFrom<SymbolRef<'a>, Error = Error>,
+{
+    symbol.map(T::try_from).transpose()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -182,16 +175,16 @@ impl MapObject {
 
         for attr in bytes_start.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"type" => match attr.value.as_ref() {
-                    b"0" => object_type = Some(ObjectType::Point),
-                    b"1" => object_type = Some(ObjectType::Area),
-                    b"4" => object_type = Some(ObjectType::Text),
+                "type" => match attr.value.as_ref() {
+                    "0" => object_type = Some(ObjectType::Point),
+                    "1" => object_type = Some(ObjectType::Area),
+                    "4" => object_type = Some(ObjectType::Text),
                     _ => (),
                 },
-                b"symbol" => symbol_id = parse_attr_raw::<i32>(attr.value).ok(),
-                b"rotation" => rotation = parse_attr_raw(attr.value).unwrap_or(rotation),
-                b"h_align" => h_align = parse_attr_raw(attr.value).unwrap_or(h_align),
-                b"v_align" => v_align = parse_attr_raw(attr.value).unwrap_or(v_align),
+                "symbol" => symbol_id = parse_attr_raw::<i32>(attr.value).ok(),
+                "rotation" => rotation = parse_attr_raw(attr.value).unwrap_or(rotation),
+                "h_align" => h_align = parse_attr_raw(attr.value).unwrap_or(h_align),
+                "v_align" => v_align = parse_attr_raw(attr.value).unwrap_or(v_align),
                 _ => (),
             }
         }
@@ -219,7 +212,7 @@ impl MapObject {
 
         // Mapper does not distinguish area from line objects; the symbol does.
         if object_type == ObjectType::Area
-            && symbol.is_some_and(|symbol| symbol.as_line_path().is_some())
+            && symbol.is_some_and(|symbol| LinePathSymbolId::try_from(symbol).is_ok())
         {
             object_type = ObjectType::Line;
         }
@@ -227,29 +220,21 @@ impl MapObject {
         match object_type {
             ObjectType::Point => Ok(Self::Point(PointObject::parse(
                 reader,
-                narrow(symbol, &[SymbolKind::Point], SymbolRef::as_point)?,
+                narrow::<PointSymbolId>(symbol)?,
                 rotation,
             )?)),
             ObjectType::Line => Ok(Self::Line(LineObject::parse(
                 reader,
-                narrow(
-                    symbol,
-                    &[SymbolKind::Line, SymbolKind::CombinedLine],
-                    SymbolRef::as_line_path,
-                )?,
+                narrow::<LinePathSymbolId>(symbol)?,
             )?)),
             // do not bother sending rotation to the AreaObject as it is also given in the pattern rotation
             ObjectType::Area => Ok(Self::Area(AreaObject::parse(
                 reader,
-                narrow(
-                    symbol,
-                    &[SymbolKind::Area, SymbolKind::CombinedArea],
-                    SymbolRef::as_area_path,
-                )?,
+                narrow::<AreaPathSymbolId>(symbol)?,
             )?)),
             ObjectType::Text => Ok(Self::Text(TextObject::parse(
                 reader,
-                narrow(symbol, &[SymbolKind::Text], SymbolRef::as_text)?,
+                narrow::<TextSymbolId>(symbol)?,
                 h_align,
                 v_align,
                 rotation,

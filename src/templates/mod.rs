@@ -49,22 +49,22 @@ impl TemplateDefaults {
         let mut d = Self::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"use_meters_per_pixel" => {
+                "use_meters_per_pixel" => {
                     d.use_meters_per_pixel = attr.as_bool().unwrap_or(d.use_meters_per_pixel);
                 }
-                b"meters_per_pixel" => {
+                "meters_per_pixel" => {
                     d.meters_per_pixel = parse_attr_raw(attr.value)
                         .unwrap_or_else(|_| d.meters_per_pixel.get())
                         .try_into()
                         .unwrap_or_default();
                 }
-                b"dpi" => {
+                "dpi" => {
                     d.dpi = parse_attr_raw(attr.value)
                         .unwrap_or_else(|_| d.dpi.get())
                         .try_into()
                         .unwrap_or_default();
                 }
-                b"scale" => d.scale = parse_attr_raw(attr.value).unwrap_or(d.scale),
+                "scale" => d.scale = parse_attr_raw(attr.value).unwrap_or(d.scale),
                 _ => {}
             }
         }
@@ -176,15 +176,15 @@ impl Templates {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bs) => match bs.local_name().as_ref() {
-                    b"template" => {
+                    "template" => {
                         templates.push(Template::parse(reader, &bs)?);
                     }
-                    b"defaults" => {
+                    "defaults" => {
                         defaults = TemplateDefaults::parse_attrs(&bs);
                     }
                     _ => {}
                 },
-                Event::End(be) if be.local_name().as_ref() == b"templates" => break,
+                Event::End(be) if be.local_name().as_ref() == "templates" => break,
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::Templates));
                 }

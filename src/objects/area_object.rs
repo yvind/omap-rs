@@ -488,28 +488,28 @@ impl AreaObject {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(start) => match start.local_name().as_ref() {
-                    b"coords" => {
+                    "coords" => {
                         let count = try_get_attr_raw(&start, "count")
                             .ok()
                             .flatten()
                             .unwrap_or(0);
                         file_coords.reserve(count);
                     }
-                    b"pattern" => {
+                    "pattern" => {
                         pattern_rotation.rotation = try_get_attr_raw(&start, "rotation")
                             .ok()
                             .flatten()
                             .unwrap_or(pattern_rotation.rotation);
                     }
-                    b"tags" => tags = super::parse_tags(reader)?,
-                    b"coord" => {
+                    "tags" => tags = super::parse_tags(reader)?,
+                    "coord" => {
                         let x = try_get_attr_raw(&start, "x")?.unwrap_or(0);
                         let y = try_get_attr_raw(&start, "y")?.unwrap_or(0);
                         pattern_rotation.coord = from_file_coords(Coord { x, y });
                     }
                     _ => (),
                 },
-                Event::End(end) if end.local_name().as_ref() == b"object" => break,
+                Event::End(end) if end.local_name().as_ref() == "object" => break,
                 Event::Text(text) => super::parse_file_coords(text.as_ref(), &mut file_coords)?,
                 Event::Eof => return Err(Error::UnexpectedEof(OmapSection::AreaObject)),
                 _ => (),

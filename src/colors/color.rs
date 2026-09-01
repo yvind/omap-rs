@@ -1,4 +1,4 @@
-use super::{Cmyk, CmykMode, ColorId, ColorSet, Rgb, RgbMode, SpotColorId};
+use super::{Cmyk, CmykMode, ColorId, ColorKind, ColorSet, Rgb, RgbMode, SpotColorId};
 use crate::{Error, NonNegativeF64, OmapSection, Result};
 use crate::{
     notes,
@@ -418,6 +418,14 @@ pub enum Color {
 }
 
 impl Color {
+    /// The kind of this color.
+    pub fn kind(&self) -> ColorKind {
+        match self {
+            Self::SpotColor(_) => ColorKind::Spot,
+            Self::MixedColor(_) => ColorKind::Mixed,
+        }
+    }
+
     /// Get the effective CMYK value of this color.
     ///
     /// Takes the [`ColorSet`] that owns any component spot colors.
@@ -543,32 +551,32 @@ impl Color {
 
         for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"name" => {
-                    if let Ok(n) = parse_attr::<String>(attr, element.decoder()) {
+                "name" => {
+                    if let Ok(n) = parse_attr::<String>(attr) {
                         name.push_str(&n);
                     }
                 }
-                b"c" => {
+                "c" => {
                     cmyk.c = UnitF64::clamped_from(
                         parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.c.get()),
                     );
                 }
-                b"m" => {
+                "m" => {
                     cmyk.m = UnitF64::clamped_from(
                         parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.m.get()),
                     );
                 }
-                b"y" => {
+                "y" => {
                     cmyk.y = UnitF64::clamped_from(
                         parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.y.get()),
                     );
                 }
-                b"k" => {
+                "k" => {
                     cmyk.k = UnitF64::clamped_from(
                         parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.k.get()),
                     );
                 }
-                b"priority" => id = parse_attr_raw(attr.value).unwrap_or(id),
+                "priority" => id = parse_attr_raw(attr.value).unwrap_or(id),
                 _ => (),
             }
         }
@@ -587,27 +595,27 @@ impl Color {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    b"cmyk" => {
+                    "cmyk" => {
                         if let Some(mode) = bytes_start
                             .try_get_attribute("method")
                             .ok()
                             .flatten()
                             .and_then(|s| match s.value.as_ref() {
-                                b"custom" => Some(CmykMode::Cmyk(cmyk)),
-                                b"spotcolor" => Some(CmykMode::FromSpotColors),
-                                b"rgb" => Some(CmykMode::FromRgb),
+                                "custom" => Some(CmykMode::Cmyk(cmyk)),
+                                "spotcolor" => Some(CmykMode::FromSpotColors),
+                                "rgb" => Some(CmykMode::FromRgb),
                                 _ => None,
                             })
                         {
                             cmyk_mode = mode;
                         }
                     }
-                    b"rgb" => {
+                    "rgb" => {
                         if let Some(mode) = bytes_start
                             .try_get_attribute("method")?
                             .map(|s| -> Result<Option<RgbMode>> {
                                 match s.value.as_ref() {
-                                    b"custom" => {
+                                    "custom" => {
                                         let r = UnitF64::clamped_from(
                                             try_get_attr_raw(&bytes_start, "r")?.unwrap_or(0.),
                                         );
@@ -619,8 +627,8 @@ impl Color {
                                         );
                                         Ok(Some(RgbMode::Rgb(Rgb { r, g, b })))
                                     }
-                                    b"spotcolor" => Ok(Some(RgbMode::FromSpotColors)),
-                                    b"cmyk" => Ok(Some(RgbMode::FromCmyk)),
+                                    "spotcolor" => Ok(Some(RgbMode::FromSpotColors)),
+                                    "cmyk" => Ok(Some(RgbMode::FromCmyk)),
                                     _ => Ok(None),
                                 }
                             })
@@ -630,7 +638,7 @@ impl Color {
                             rgb_mode = mode;
                         }
                     }
-                    b"spotcolors" => {
+                    "spotcolors" => {
                         knockout = try_get_attr_raw(&bytes_start, "knockout")
                             .ok()
                             .flatten()
@@ -641,7 +649,7 @@ impl Color {
                                 Event::Start(bytes_start) => {
                                     // if the next event is called namedcolor we've got a new spotcolor
                                     match bytes_start.local_name().as_ref() {
-                                        b"namedcolor" => {
+                                        "namedcolor" => {
                                             is_spotcolor = true;
                                             spot_angle =
                                                 try_get_attr_raw(&bytes_start, "screen_angle")
@@ -657,7 +665,7 @@ impl Color {
                                         }
                                         // Components may reference colors not yet read, so
                                         // they are resolved once the whole set is parsed.
-                                        b"component" => {
+                                        "component" => {
                                             let factor = try_get_attr_raw(&bytes_start, "factor")?
                                                 .unwrap_or(0.);
 
@@ -670,7 +678,7 @@ impl Color {
                                     }
                                 }
                                 Event::End(bytes_end)
-                                    if bytes_end.local_name().as_ref() == b"spotcolors" =>
+                                    if bytes_end.local_name().as_ref() == "spotcolors" =>
                                 {
                                     break;
                                 }
@@ -683,7 +691,7 @@ impl Color {
                     }
                     _ => (),
                 },
-                Event::End(bytes_end) if bytes_end.local_name().as_ref() == b"color" => {
+                Event::End(bytes_end) if bytes_end.local_name().as_ref() == "color" => {
                     break;
                 }
                 Event::Eof => return Err(Error::UnexpectedEof(OmapSection::Color)),

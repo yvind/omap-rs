@@ -233,17 +233,17 @@ impl Symbol {
         let mut common = SymbolCommon::default();
         for attr in element.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"type" => symbol_type = parse_attr_raw(attr.value).unwrap_or(symbol_type),
-                b"name" => common.name = parse_attr(attr, element.decoder()).unwrap_or(common.name),
-                b"code" => common.code = parse_attr_raw(attr.value).unwrap_or(common.code),
-                b"id" => id = parse_attr_raw(attr.value).unwrap_or(id),
-                b"is_helper_symbol" => {
+                "type" => symbol_type = parse_attr_raw(attr.value).unwrap_or(symbol_type),
+                "name" => common.name = parse_attr(attr).unwrap_or(common.name),
+                "code" => common.code = parse_attr_raw(attr.value).unwrap_or(common.code),
+                "id" => id = parse_attr_raw(attr.value).unwrap_or(id),
+                "is_helper_symbol" => {
                     common.is_helper_symbol = attr.as_bool().unwrap_or(false);
                 }
-                b"is_hidden" => {
+                "is_hidden" => {
                     common.is_hidden = attr.as_bool().unwrap_or(false);
                 }
-                b"is_protected" => {
+                "is_protected" => {
                     common.is_protected = attr.as_bool().unwrap_or(false);
                 }
                 _ => {}

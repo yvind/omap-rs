@@ -190,17 +190,17 @@ impl LineObject {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(start) => match start.local_name().as_ref() {
-                    b"coords" => {
+                    "coords" => {
                         let count = try_get_attr_raw(&start, "count")
                             .ok()
                             .flatten()
                             .unwrap_or(0);
                         file_coords.reserve(count);
                     }
-                    b"tags" => tags = super::parse_tags(reader)?,
+                    "tags" => tags = super::parse_tags(reader)?,
                     _ => (),
                 },
-                Event::End(end) if end.local_name().as_ref() == b"object" => break,
+                Event::End(end) if end.local_name().as_ref() == "object" => break,
                 Event::Text(text) => super::parse_file_coords(text.as_ref(), &mut file_coords)?,
                 Event::Eof => return Err(Error::UnexpectedEof(OmapSection::LineObject)),
                 _ => (),

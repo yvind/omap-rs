@@ -3,10 +3,22 @@ slotmap::new_key_type! {
     pub(crate) struct ColorKey;
 }
 
+/// The kind of a color.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ColorKind {
+    /// A [`crate::colors::SpotColor`].
+    Spot,
+    /// A [`crate::colors::MixedColor`].
+    Mixed,
+}
+
+/// Widening a typed handle is infallible. Narrowing a [`crate::colors::ColorRef`]
+/// checks the kind of the referenced color.
 macro_rules! color_ids {
     ($(
         $(#[$meta:meta])*
-        $name:ident => [$($wider:ident),* $(,)?];
+        $name:ident($($kind:ident),+ $(,)?) => [$($wider:ident),* $(,)?];
     )+) => {
         $(
             $(#[$meta])*
@@ -24,17 +36,34 @@ macro_rules! color_ids {
                     }
                 }
             )*
+
+            impl TryFrom<crate::colors::ColorRef<'_>> for $name {
+                type Error = crate::Error;
+
+                fn try_from(value: crate::colors::ColorRef<'_>) -> crate::Result<Self> {
+                    const EXPECTED: &[ColorKind] = &[$(ColorKind::$kind),+];
+                    let found = value.kind();
+                    if EXPECTED.contains(&found) {
+                        Ok(Self(value.id().0))
+                    } else {
+                        Err(crate::Error::ColorKindMismatch {
+                            expected: EXPECTED,
+                            found,
+                        })
+                    }
+                }
+            }
         )+
     };
 }
 
 color_ids! {
     /// A handle to a color of any kind in a [`crate::colors::ColorSet`].
-    ColorId => [];
+    ColorId(Spot, Mixed) => [];
 
     /// A handle to a [`crate::colors::SpotColor`].
-    SpotColorId => [ColorId];
+    SpotColorId(Spot) => [ColorId];
 
     /// A handle to a [`crate::colors::MixedColor`].
-    MixedColorId => [ColorId];
+    MixedColorId(Mixed) => [ColorId];
 }

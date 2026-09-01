@@ -48,8 +48,7 @@ impl XmlDeclaration {
         }
 
         let encoding = decl.encoding().ok_or(Error::MissingXmlEncoding)??;
-        let encoding = std::str::from_utf8(encoding.as_ref())?;
-        let _ = Encoding::from_str(encoding)?;
+        let _ = Encoding::from_str(encoding.as_ref())?;
         Ok(())
     }
 

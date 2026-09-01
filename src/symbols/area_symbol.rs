@@ -112,7 +112,7 @@ impl FillPattern {
                 let mut buf = Vec::new();
                 loop {
                     match reader.read_event_into(&mut buf)? {
-                        Event::End(e) if e.local_name().as_ref() == b"pattern" => {
+                        Event::End(e) if e.local_name().as_ref() == "pattern" => {
                             break;
                         }
                         Event::Eof => {
@@ -139,15 +139,15 @@ impl FillPattern {
                 let mut buf = Vec::new();
                 loop {
                     match reader.read_event_into(&mut buf)? {
-                        Event::Start(e) if e.local_name().as_ref() == b"symbol" => {
+                        Event::Start(e) if e.local_name().as_ref() == "symbol" => {
                             let mut sub_common = SymbolCommon::default();
                             for attr in e.attributes().filter_map(std::result::Result::ok) {
                                 match attr.key.local_name().as_ref() {
-                                    b"name" => {
-                                        sub_common.name = parse_attr(attr, e.decoder())
-                                            .unwrap_or(sub_common.name);
+                                    "name" => {
+                                        sub_common.name =
+                                            parse_attr(attr).unwrap_or(sub_common.name);
                                     }
-                                    b"code" => {
+                                    "code" => {
                                         sub_common.code = crate::utils::parse_attr_raw(attr.value)
                                             .unwrap_or_default();
                                     }
@@ -156,7 +156,7 @@ impl FillPattern {
                             }
                             point = Some(PointSymbol::parse(reader, color_set, sub_common)?);
                         }
-                        Event::End(e) if e.local_name().as_ref() == b"pattern" => {
+                        Event::End(e) if e.local_name().as_ref() == "pattern" => {
                             break;
                         }
                         Event::Eof => {
@@ -376,8 +376,8 @@ impl AreaSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => common.description = notes::parse(reader)?,
-                    b"area_symbol" => {
+                    "description" => common.description = notes::parse(reader)?,
+                    "area_symbol" => {
                         let ci = try_get_attr_raw(&e, "inner_color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
                         minimum_area = NonNegativeF64::from_file_value(
@@ -385,15 +385,15 @@ impl AreaSymbol {
                         );
                         is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(false);
                     }
-                    b"pattern" => {
+                    "pattern" => {
                         patterns.push(FillPattern::parse(&e, reader, color_set)?);
                     }
-                    b"icon" => {
+                    "icon" => {
                         common.custom_icon = try_get_attr_raw(&e, "src")?;
                     }
                     _ => {}
                 },
-                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::End(e) if e.local_name().as_ref() == "symbol" => {
                     break;
                 }
                 Event::Eof => {

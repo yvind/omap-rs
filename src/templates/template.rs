@@ -213,13 +213,13 @@ impl Template {
 
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"type" => template_type = parse_attr_raw(attr.value).unwrap_or(template_type),
-                b"open" => is_open = attr.as_bool().unwrap_or(false),
-                b"name" => name = parse_attr_raw(attr.value).unwrap_or(name),
-                b"path" => path = parse_attr_raw(attr.value).unwrap_or(path),
-                b"relpath" => relpath = parse_attr_raw(attr.value).unwrap_or(relpath),
-                b"georef" => is_georeferenced = attr.as_bool().unwrap_or(false),
-                b"group" => group = parse_attr_raw(attr.value).ok(),
+                "type" => template_type = parse_attr_raw(attr.value).unwrap_or(template_type),
+                "open" => is_open = attr.as_bool().unwrap_or(false),
+                "name" => name = parse_attr_raw(attr.value).unwrap_or(name),
+                "path" => path = parse_attr_raw(attr.value).unwrap_or(path),
+                "relpath" => relpath = parse_attr_raw(attr.value).unwrap_or(relpath),
+                "georef" => is_georeferenced = attr.as_bool().unwrap_or(false),
+                "group" => group = parse_attr_raw(attr.value).ok(),
                 _ => {}
             }
         }
@@ -233,21 +233,21 @@ impl Template {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) => match child.local_name().as_ref() {
-                    b"transformations" => {
+                    "transformations" => {
                         transformations = Some(TemplateTransformations::parse(reader, &child)?);
                     }
-                    b"crs_spec" => {
+                    "crs_spec" => {
                         crs_spec = crate::notes::parse(reader)?;
                     }
-                    b"projected_crs_spec" => {
+                    "projected_crs_spec" => {
                         projected_crs_spec = crate::notes::parse(reader)?;
                     }
-                    b"track_crs_spec" => {
+                    "track_crs_spec" => {
                         track_crs_spec = crate::notes::parse(reader)?;
                     }
                     _ => {}
                 },
-                Event::End(be) if be.local_name().as_ref() == b"template" => break,
+                Event::End(be) if be.local_name().as_ref() == "template" => break,
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::Template));
                 }

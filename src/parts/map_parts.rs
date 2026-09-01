@@ -189,7 +189,7 @@ impl MapParts {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), b"part") {
+                    if matches!(bytes_start.local_name().as_ref(), "part") {
                         parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
                     }
                 }

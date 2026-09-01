@@ -252,12 +252,12 @@ impl TextSymbol {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.local_name().as_ref() {
-                    b"description" => common.description = notes::parse(reader)?,
-                    b"text_symbol" => {
+                    "description" => common.description = notes::parse(reader)?,
+                    "text_symbol" => {
                         icon_text = try_get_attr_raw(&e, "icon_text")?.unwrap_or_default();
                         is_rotatable = try_get_attr_raw(&e, "rotatable")?.unwrap_or(false);
                     }
-                    b"font" => {
+                    "font" => {
                         font_family = try_get_attr_raw(&e, "family")?
                             .unwrap_or_else(|| String::from("Arial"));
                         let fs = try_get_attr_raw(&e, "size")?.unwrap_or(4000);
@@ -266,7 +266,7 @@ impl TextSymbol {
                         italic = try_get_attr_raw(&e, "italic")?.unwrap_or(false);
                         underline = try_get_attr_raw(&e, "underline")?.unwrap_or(false);
                     }
-                    b"text" => {
+                    "text" => {
                         let ci = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         color = SymbolColor::from_index(ci, color_set);
                         let ls = try_get_attr_raw(&e, "line_spacing")?.unwrap_or(1.0);
@@ -279,7 +279,7 @@ impl TextSymbol {
                             try_get_attr_raw(&e, "character_spacing")?.unwrap_or(0.0);
                         kerning = try_get_attr_raw(&e, "kerning")?.unwrap_or(false);
                     }
-                    b"framing" => {
+                    "framing" => {
                         let fc = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         let framing_color = SymbolColor::from_index(fc, color_set);
                         let mode = try_get_attr_raw(&e, "mode")?.unwrap_or(0);
@@ -307,7 +307,7 @@ impl TextSymbol {
                             _ => FramingMode::NoFraming,
                         });
                     }
-                    b"line_below" => {
+                    "line_below" => {
                         let lc = try_get_attr_raw(&e, "color")?.unwrap_or(-1);
                         let lb_color = SymbolColor::from_index(lc, color_set);
                         let w = try_get_attr_raw(&e, "width")?.unwrap_or(0);
@@ -318,17 +318,17 @@ impl TextSymbol {
                             distance: NonNegativeF64::from_file_value(d),
                         });
                     }
-                    b"icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
-                    b"tabs" => {}
-                    b"tab" => {}
+                    "icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
+                    "tabs" => {}
+                    "tab" => {}
                     _ => {}
                 },
                 Event::Text(text) => {
-                    if let Ok(v) = str::from_utf8(text.as_ref())?.parse() {
+                    if let Ok(v) = text.as_ref().parse() {
                         custom_tabs.push(NonNegativeF64::from_file_value(v));
                     }
                 }
-                Event::End(e) if e.local_name().as_ref() == b"symbol" => {
+                Event::End(e) if e.local_name().as_ref() == "symbol" => {
                     break;
                 }
                 Event::Eof => {

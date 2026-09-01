@@ -544,9 +544,8 @@ fn file_coords_from_bezier(path: &BezierPath, final_vertex_flags: u8) -> Result<
     Ok(coords)
 }
 
-fn parse_file_coords(text: &[u8], coords: &mut Vec<FileCoord>) -> Result<()> {
-    let raw_xml = str::from_utf8(text)?;
-    for vertex in raw_xml.split_terminator(';') {
+fn parse_file_coords(text: &str, coords: &mut Vec<FileCoord>) -> Result<()> {
+    for vertex in text.split_terminator(';') {
         let mut parts = vertex.split_whitespace();
         let x = parts
             .next()
@@ -581,7 +580,7 @@ fn parse_tags<R: std::io::BufRead>(
     loop {
         match reader.read_event_into(&mut buf)? {
             Event::Start(bytes_start) => {
-                if matches!(bytes_start.local_name().as_ref(), b"t") {
+                if matches!(bytes_start.local_name().as_ref(), "t") {
                     let key = try_get_attr(&bytes_start, "k")?.unwrap_or(String::new());
                     let value = notes::parse(reader)?;
                     if !key.is_empty() && !value.is_empty() {
@@ -589,7 +588,7 @@ fn parse_tags<R: std::io::BufRead>(
                     }
                 }
             }
-            Event::End(bytes_end) if bytes_end.local_name().as_ref() == b"tags" => {
+            Event::End(bytes_end) if bytes_end.local_name().as_ref() == "tags" => {
                 break;
             }
             Event::Eof => {

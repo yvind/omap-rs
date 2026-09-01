@@ -2,7 +2,7 @@ use std::{convert::Infallible, str::FromStr};
 
 use geo_types::Coord;
 use quick_xml::{
-    Decoder, XmlVersion,
+    XmlVersion,
     events::{BytesStart, attributes::Attribute},
 };
 
@@ -74,8 +74,8 @@ impl std::fmt::Display for Code {
 }
 
 /// Do not use this for fields with user text as it will not unescape xml-codes
-pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, [u8]>) -> Result<T> {
-    let e = match T::from_str(std::str::from_utf8(value.as_ref())?) {
+pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, str>) -> Result<T> {
+    let e = match T::from_str(&value) {
         Ok(it) => it,
         Err(_err) => return Err(Error::FromStrError),
     };
@@ -94,9 +94,8 @@ pub(crate) fn try_get_attr_raw<T: FromStr>(
 }
 
 /// This escapes any xml-codes, use for user-strings
-pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>, decoder: Decoder) -> Result<T> {
-    let e = match T::from_str(&attr.decoded_and_normalized_value(XmlVersion::Explicit1_0, decoder)?)
-    {
+pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>) -> Result<T> {
+    let e = match T::from_str(&attr.normalized_value(XmlVersion::Explicit1_0)?) {
         Ok(it) => it,
         Err(_err) => return Err(Error::FromStrError),
     };
@@ -105,9 +104,7 @@ pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>, decoder: Decoder) -> R
 
 /// This escapes any xml-codes, use for user-strings
 pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Result<Option<T>> {
-    let a = bytes
-        .try_get_attribute(attr)?
-        .map(|a| parse_attr(a, bytes.decoder()));
+    let a = bytes.try_get_attribute(attr)?.map(|a| parse_attr(a));
     a.transpose()
 }
 

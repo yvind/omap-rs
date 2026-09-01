@@ -143,10 +143,10 @@ impl TemplateTransformations {
 
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"adjusted" if attr.as_bool().unwrap_or(false) => {
+                "adjusted" if attr.as_bool().unwrap_or(false) => {
                     adjustment = AdjustmentState::Adjusted;
                 }
-                b"adjustment_dirty" if attr.as_bool().unwrap_or(false) => {
+                "adjustment_dirty" if attr.as_bool().unwrap_or(false) => {
                     adjustment = AdjustmentState::AdjustmentDirty;
                 }
                 _ => {}
@@ -164,40 +164,40 @@ impl TemplateTransformations {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) => match child.local_name().as_ref() {
-                    b"transformation" => {
+                    "transformation" => {
                         let t = TemplateTransform::parse(&child);
                         if let Some(role) = child
                             .attributes()
                             .filter_map(std::result::Result::ok)
-                            .find(|a| a.key.local_name().as_ref() == b"role")
+                            .find(|a| a.key.local_name().as_ref() == "role")
                         {
                             match role.value.as_ref() {
-                                b"other" => other_transform = t,
+                                "other" => other_transform = t,
                                 _ => active_transform = t,
                             }
                         }
                     }
-                    b"passpoint" => {
+                    "passpoint" => {
                         passpoints.push(PassPoint::parse(reader)?);
                     }
-                    b"matrix" => {
+                    "matrix" => {
                         let m = Matrix3x3::parse(reader)?;
                         if let Some(role) = child
                             .attributes()
                             .filter_map(std::result::Result::ok)
-                            .find(|a| a.key.local_name().as_ref() == b"role")
+                            .find(|a| a.key.local_name().as_ref() == "role")
                         {
                             match role.value.as_ref() {
-                                b"map_to_template" => map_to_template = Some(m),
-                                b"template_to_map" => template_to_map = Some(m),
-                                b"template_to_map_other" => template_to_map_other = Some(m),
+                                "map_to_template" => map_to_template = Some(m),
+                                "template_to_map" => template_to_map = Some(m),
+                                "template_to_map_other" => template_to_map_other = Some(m),
                                 _ => {}
                             }
                         }
                     }
                     _ => {}
                 },
-                Event::End(be) if be.local_name().as_ref() == b"transformations" => {
+                Event::End(be) if be.local_name().as_ref() == "transformations" => {
                     break;
                 }
                 Event::Eof => {
@@ -249,12 +249,12 @@ impl TemplateTransform {
         let mut pos = Coord::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
             match attr.key.local_name().as_ref() {
-                b"x" => pos.x = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
-                b"y" => pos.y = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
-                b"rotation" => t.template_rotation = parse_attr_raw(attr.value).unwrap_or(0.),
-                b"scale_x" => t.template_scale.x = parse_attr_raw(attr.value).unwrap_or(1.),
-                b"scale_y" => t.template_scale.y = parse_attr_raw(attr.value).unwrap_or(1.),
-                b"shear" => t.template_shear = parse_attr_raw(attr.value).unwrap_or(0.),
+                "x" => pos.x = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
+                "y" => pos.y = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
+                "rotation" => t.template_rotation = parse_attr_raw(attr.value).unwrap_or(0.),
+                "scale_x" => t.template_scale.x = parse_attr_raw(attr.value).unwrap_or(1.),
+                "scale_y" => t.template_scale.y = parse_attr_raw(attr.value).unwrap_or(1.),
+                "shear" => t.template_shear = parse_attr_raw(attr.value).unwrap_or(0.),
                 _ => {}
             }
         }
@@ -323,12 +323,12 @@ impl PassPoint {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(child) => match child.local_name().as_ref() {
-                    b"source" => src = parse_inner_coord(reader).ok(),
-                    b"destination" => dest = parse_inner_coord(reader).ok(),
-                    b"calculated" => calc = parse_inner_coord(reader).ok(),
+                    "source" => src = parse_inner_coord(reader).ok(),
+                    "destination" => dest = parse_inner_coord(reader).ok(),
+                    "calculated" => calc = parse_inner_coord(reader).ok(),
                     _ => {}
                 },
-                Event::End(be) if be.local_name().as_ref() == b"passpoint" => {
+                Event::End(be) if be.local_name().as_ref() == "passpoint" => {
                     break;
                 }
                 Event::Eof => {
@@ -373,11 +373,11 @@ impl Matrix3x3 {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(child) if child.local_name().as_ref() == b"element" => {
+                Event::Start(child) if child.local_name().as_ref() == "element" => {
                     values[i] = try_get_attr_raw(&child, "value")?.unwrap_or(0.);
                     i += 1;
                 }
-                Event::End(be) if be.local_name().as_ref() == b"matrix" => break,
+                Event::End(be) if be.local_name().as_ref() == "matrix" => break,
                 Event::Eof => {
                     return Err(Error::UnexpectedEof(OmapSection::Matrix));
                 }
@@ -428,7 +428,7 @@ fn parse_inner_coord<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Coor
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(bs) if bs.local_name().as_ref() == b"coord" => {
+            Event::Start(bs) if bs.local_name().as_ref() == "coord" => {
                 coord = Coord {
                     x: try_get_attr_raw(&bs, "x")?.unwrap_or(0),
                     y: try_get_attr_raw(&bs, "y")?.unwrap_or(0),

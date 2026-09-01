@@ -5,7 +5,8 @@ use super::{Color, ColorId, MixedColorId, SpotColorId};
 /// A color together with the handle that names it.
 ///
 /// What every lookup hands back. It dereferences to the [`Color`] for reading
-/// and narrows to a typed handle through the `as_*` methods, so a lookup and a
+/// and can be narrowed through each typed handle's [`TryFrom`] implementation.
+/// The `as_*` convenience methods wrap those conversions, so a lookup and a
 /// narrowing compose in one expression:
 ///
 /// ```
@@ -40,12 +41,12 @@ impl<'a> ColorRef<'a> {
 
     /// Narrow to a spot color handle, or `None` if this names a mixed color.
     pub fn as_spot(self) -> Option<SpotColorId> {
-        matches!(self.color, Color::SpotColor(_)).then_some(SpotColorId(self.id.0))
+        SpotColorId::try_from(self).ok()
     }
 
     /// Narrow to a mixed color handle, or `None` if this names a spot color.
     pub fn as_mixed(self) -> Option<MixedColorId> {
-        matches!(self.color, Color::MixedColor(_)).then_some(MixedColorId(self.id.0))
+        MixedColorId::try_from(self).ok()
     }
 }
 

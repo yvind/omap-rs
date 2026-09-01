@@ -360,7 +360,7 @@ impl SymbolSet {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), b"symbol") {
+                    if matches!(bytes_start.local_name().as_ref(), "symbol") {
                         let (symbol_id, symbol, combined_components) =
                             Symbol::parse(reader, &bytes_start, colors)?;
                         if symbol_id >= symbols.len() {
@@ -374,7 +374,7 @@ impl SymbolSet {
                     }
                 }
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"symbols") {
+                    if matches!(bytes_end.local_name().as_ref(), "symbols") {
                         break;
                     }
                 }

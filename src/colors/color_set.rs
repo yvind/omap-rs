@@ -213,12 +213,12 @@ impl ColorSet {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), b"color") {
+                    if matches!(bytes_start.local_name().as_ref(), "color") {
                         colors_and_components.push(Color::parse(reader, &bytes_start)?);
                     }
                 }
                 Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), b"colors") {
+                    if matches!(bytes_end.local_name().as_ref(), "colors") {
                         break;
                     }
                 }
