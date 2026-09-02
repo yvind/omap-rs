@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// The georeferencing information of the map. We assume the projected units are meters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GeoRef {
     /// Map scale
@@ -500,5 +500,51 @@ impl GeoRef {
         let dec = field.declination().get::<degree>();
 
         Ok(dec as f64)
+    }
+}
+
+#[expect(clippy::unwrap_used, clippy::expect_used)]
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use geo_types::Coord;
+    use quick_xml::Reader;
+
+    use super::{CrsType, GeoRef};
+    use crate::{PositiveF64, geo_referencing::UtmCode};
+
+    #[test]
+    fn parse_utm() {
+        let geo_tag = "<georeferencing scale=\"10000\" auxiliary_scale_factor=\"1.000352\" declination=\"3.29\" grivation=\"2.16\"><projected_crs id=\"UTM\"><spec language=\"PROJ.4\">+proj=utm +datum=WGS84 +zone=32</spec><parameter>32</parameter><ref_point x=\"563000\" y=\"7032000\"/></projected_crs><geographic_crs id=\"Geographic coordinates\"><spec language=\"PROJ.4\">+proj=latlong +datum=WGS84</spec><ref_point_deg lat=\"63.41097085\" lon=\"10.26159582\"/></geographic_crs></georeferencing>";
+
+        let mut reader = Reader::from_str(geo_tag);
+        reader.config_mut().expand_empty_elements = true;
+
+        let actual = match reader.read_event().unwrap() {
+            quick_xml::events::Event::Start(bytes_start) => {
+                GeoRef::parse(&mut reader, &bytes_start).expect("Test failed")
+            }
+            _ => unreachable!("Should not be reached"),
+        };
+        let expected = GeoRef {
+            scale_denominator: NonZeroU32::new(10_000).unwrap(),
+            grid_scale_factor: PositiveF64::try_from(1. / 1.000352).unwrap(),
+            auxiliary_scale_factor: PositiveF64::try_from(1.000352).unwrap(),
+            declination_deg: 3.29,
+            convergence_deg: 3.29 - 2.16,
+            crs_type: CrsType::Utm(UtmCode::new(32).unwrap()),
+            map_ref_point: Coord { x: 0., y: 0. },
+            projected_ref_point: Coord {
+                x: 563_000.,
+                y: 7_032_000.,
+            },
+            geographic_ref_point_deg: Coord {
+                x: 10.26159582,
+                y: 63.41097085,
+            },
+        };
+
+        assert_eq!(actual, expected);
     }
 }

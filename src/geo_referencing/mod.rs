@@ -43,18 +43,10 @@ impl FromStr for UtmCode {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        // code N/S
         let mut parts = s.split_whitespace();
 
         let zone: u8 = parts.next().ok_or(Error::InvalidGeoreferencing)?.parse()?;
-        let sign_part = parts.next().ok_or(Error::InvalidGeoreferencing)?;
-        let sign = if sign_part == "N" {
-            1
-        } else if sign_part == "S" {
-            -1
-        } else {
-            return Err(Error::InvalidGeoreferencing);
-        };
+        let sign = if parts.next() == Some("S") { -1 } else { 1 };
 
         if (1..=60).contains(&zone) {
             Ok(Self(zone as i8 * sign))
