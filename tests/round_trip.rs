@@ -131,6 +131,27 @@ fn references(xml: &str, scope: &str, element: &str) -> Vec<String> {
 }
 
 #[test]
+fn bundled_templates_number_symbols_in_file_order() {
+    for (name, bytes) in [
+        ("isom_15000", ISOM_15000),
+        ("isom_10000", ISOM_10000),
+        ("issprom_4000", ISSPROM_4000),
+    ] {
+        let xml = std::str::from_utf8(bytes).expect("bundled maps use UTF-8");
+        let ids = start_tags(section(xml, "symbols"), "symbol")
+            .into_iter()
+            .filter_map(|tag| attr(tag, "id"));
+        for (position, id) in ids.enumerate() {
+            assert_eq!(
+                id.parse(),
+                Ok(position),
+                "{name}: Mapper expects each symbol ID to match its position in the file"
+            );
+        }
+    }
+}
+
+#[test]
 fn writing_is_a_fixed_point() -> Result<()> {
     for (name, bytes) in corpus() {
         let first = round_trip(bytes)?;

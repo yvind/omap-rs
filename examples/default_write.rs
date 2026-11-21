@@ -3,8 +3,8 @@
     reason = "the example intentionally displays the map data it reads"
 )]
 #![expect(
-    clippy::unwrap_used,
-    reason = "the bundled default map is known to contain these symbols and colors"
+    clippy::expect_used,
+    reason = "the bundled default map contains the required symbol and map part"
 )]
 
 use geo_types::{Coord, LineString};
@@ -48,7 +48,7 @@ fn main() -> Result<(), Error> {
         .symbols
         .find_by_code(Code::new(107, 0, 0))
         .and_then(|symbol| symbol.as_line_path())
-        .unwrap();
+        .expect("the default map contains erosion gully as a line symbol (107)");
 
     let mut ls = LineObject::new(
         Some(erosion_gully),
@@ -58,7 +58,10 @@ fn main() -> Result<(), Error> {
     ls.tags_mut()
         .insert("Some Key".to_owned(), "My value".to_owned());
 
-    map.parts.get_mut(0).unwrap().add_object(ls);
+    map.parts
+        .get_mut(0)
+        .expect("the default map has a first part")
+        .add_object(ls);
 
     println!("\nCombined Line symbols:");
     for symbol in map.symbols.values() {

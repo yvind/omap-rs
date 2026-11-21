@@ -3,12 +3,8 @@
     reason = "the example intentionally displays the map data it reads"
 )]
 #![expect(
-    clippy::unwrap_used,
-    reason = "the example input is expected to contain nonempty objects and known symbols"
-)]
-#![expect(
     clippy::expect_used,
-    reason = "the example input is expected to give the named symbol its documented type"
+    reason = "the bundled example map has known geometry, symbols, and map parts"
 )]
 
 use geo_types::{Coord, LineString};
@@ -49,14 +45,19 @@ fn main() -> Result<(), Error> {
                             .iter()
                             .copied()
                             .reduce(|sum, c| sum + c)
-                            .unwrap();
+                            .expect("the example line has at least one coordinate");
                     num_coords += line_string.0.len();
                 }
                 MapObject::Area(object) => {
                     let geometry = object.flatten(NonNegativeF64::clamped_from(0.1))?;
                     let exterior = geometry.exterior().geometry();
-                    mean_pos =
-                        mean_pos + exterior.0.iter().copied().reduce(|sum, c| sum + c).unwrap();
+                    mean_pos = mean_pos
+                        + exterior
+                            .0
+                            .iter()
+                            .copied()
+                            .reduce(|sum, c| sum + c)
+                            .expect("the example area exterior has at least one coordinate");
                     num_coords += exterior.0.len();
                 }
                 MapObject::Text(object) => {
@@ -80,7 +81,7 @@ fn main() -> Result<(), Error> {
             2_469.,
             map.geo_referencing.scale_denominator,
         )
-        .unwrap();
+        .expect("the example map can be georeferenced at the new center");
 
         // assign the new info
         map.geo_referencing = new_gr;
@@ -93,7 +94,7 @@ fn main() -> Result<(), Error> {
         // NB! If the new projection were different than the old (not just an affine transformation),
         // the geo_ref feature must be activated
         map.try_transform_between(&old_transform, &new_transform)
-            .unwrap();
+            .expect("the example geometry transforms to the new map coordinates");
     };
 
     println!("Map colors in order:");
@@ -110,7 +111,7 @@ fn main() -> Result<(), Error> {
         .symbols
         .find_by_code(Code::new(107, 0, 0))
         .and_then(|symbol| symbol.as_line_path())
-        .unwrap();
+        .expect("the example map contains erosion gully as a line symbol (107)");
 
     let mut ls = LineObject::new(
         Some(erosion_gully),
@@ -120,7 +121,10 @@ fn main() -> Result<(), Error> {
     ls.tags_mut()
         .insert("Some Key".to_owned(), "My value".to_owned());
 
-    map.parts.get_mut(0).unwrap().add_object(ls);
+    map.parts
+        .get_mut(0)
+        .expect("the example map has a first part")
+        .add_object(ls);
 
     let contour_value = map
         .symbols
@@ -133,7 +137,10 @@ fn main() -> Result<(), Error> {
         TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
         "This is the middle of the map".to_owned(),
     );
-    map.parts.get_mut(0).unwrap().add_object(ts);
+    map.parts
+        .get_mut(0)
+        .expect("the example map has a first part")
+        .add_object(ts);
 
     println!("Does the map pass validation: {:?}", map.validate());
 

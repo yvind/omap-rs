@@ -507,7 +507,6 @@ fn transform_bezierstring(
     bezierstring
 }
 
-#[expect(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
@@ -519,7 +518,7 @@ mod tests {
 
     fn map_transform(crs_type: CrsType, projected_ref_point: Coord) -> MapTransform {
         GeoRef {
-            scale_denominator: NonZeroU32::new(15_000).unwrap(),
+            scale_denominator: NonZeroU32::new(15_000).expect("the scale is nonzero"),
             grid_scale_factor: Default::default(),
             auxiliary_scale_factor: Default::default(),
             declination_deg: 2.,
@@ -535,16 +534,20 @@ mod tests {
     #[test]
     fn transform_between_preserves_coordinates_in_the_same_projection() -> crate::Result<()> {
         let old = map_transform(
-            CrsType::Utm(UtmCode::new(33).unwrap()),
+            CrsType::Utm(UtmCode::new(33).expect("33 is a valid UTM zone")),
             coord! { x: 500_000., y: 6_600_000. },
         );
         let mut new_geo_ref = GeoRef {
-            scale_denominator: NonZeroU32::new(10_000).unwrap(),
-            grid_scale_factor: 0.9998.try_into().unwrap(),
-            auxiliary_scale_factor: 1.0001.try_into().unwrap(),
+            scale_denominator: NonZeroU32::new(10_000).expect("the scale is nonzero"),
+            grid_scale_factor: 0.9998
+                .try_into()
+                .expect("the grid scale factor is positive"),
+            auxiliary_scale_factor: 1.0001
+                .try_into()
+                .expect("the auxiliary scale factor is positive"),
             declination_deg: -3.,
             convergence_deg: 1.,
-            crs_type: CrsType::Utm(UtmCode::new(33).unwrap()),
+            crs_type: CrsType::Utm(UtmCode::new(33).expect("33 is a valid UTM zone")),
             map_ref_point: coord! { x: -100., y: 75. },
             projected_ref_point: coord! { x: 500_250., y: 6_599_800. },
             geographic_ref_point_deg: Coord::zero(),
@@ -570,11 +573,11 @@ mod tests {
     #[test]
     fn transform_between_rejects_different_projections_without_geo_ref() {
         let old = map_transform(
-            CrsType::Utm(UtmCode::new(33).unwrap()),
+            CrsType::Utm(UtmCode::new(33).expect("33 is a valid UTM zone")),
             coord! { x: 500_000., y: 6_600_000. },
         );
         let new = map_transform(
-            CrsType::Utm(UtmCode::new(32).unwrap()),
+            CrsType::Utm(UtmCode::new(32).expect("32 is a valid UTM zone")),
             coord! { x: 500_000., y: 6_600_000. },
         );
 
@@ -588,11 +591,11 @@ mod tests {
     #[test]
     fn transform_between_converts_different_projections_with_geo_ref() -> crate::Result<()> {
         let old = map_transform(
-            CrsType::Utm(UtmCode::new(33).unwrap()),
+            CrsType::Utm(UtmCode::new(33).expect("33 is a valid UTM zone")),
             coord! { x: 500_000., y: 6_600_000. },
         );
         let new = map_transform(
-            CrsType::Utm(UtmCode::new(32).unwrap()),
+            CrsType::Utm(UtmCode::new(32).expect("32 is a valid UTM zone")),
             coord! { x: 500_000., y: 6_600_000. },
         );
         let input = coord! { x: 12.5, y: -8.25 };

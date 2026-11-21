@@ -79,7 +79,8 @@ fn main() -> Result<(), Error> {
         proj_center,
         CrsType::Epsg(crs_epsg_code),
         map_center_elevation_meters,
-    ).unwrap();
+    )
+    .expect("the default map initializes at the given projected center");
 
     // Iterate through the colors, in priority order
     for color in map.colors.values() {

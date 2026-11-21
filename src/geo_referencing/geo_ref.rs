@@ -503,7 +503,6 @@ impl GeoRef {
     }
 }
 
-#[expect(clippy::unwrap_used, clippy::expect_used)]
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
@@ -521,19 +520,24 @@ mod tests {
         let mut reader = Reader::from_str(geo_tag);
         reader.config_mut().expand_empty_elements = true;
 
-        let actual = match reader.read_event().unwrap() {
+        let actual = match reader
+            .read_event()
+            .expect("read the georeferencing start tag")
+        {
             quick_xml::events::Event::Start(bytes_start) => {
                 GeoRef::parse(&mut reader, &bytes_start).expect("Test failed")
             }
             _ => unreachable!("Should not be reached"),
         };
         let expected = GeoRef {
-            scale_denominator: NonZeroU32::new(10_000).unwrap(),
-            grid_scale_factor: PositiveF64::try_from(1. / 1.000352).unwrap(),
-            auxiliary_scale_factor: PositiveF64::try_from(1.000352).unwrap(),
+            scale_denominator: NonZeroU32::new(10_000).expect("the scale is nonzero"),
+            grid_scale_factor: PositiveF64::try_from(1. / 1.000352)
+                .expect("the grid scale factor is positive"),
+            auxiliary_scale_factor: PositiveF64::try_from(1.000352)
+                .expect("the auxiliary scale factor is positive"),
             declination_deg: 3.29,
             convergence_deg: 3.29 - 2.16,
-            crs_type: CrsType::Utm(UtmCode::new(32).unwrap()),
+            crs_type: CrsType::Utm(UtmCode::new(32).expect("32 is a valid UTM zone")),
             map_ref_point: Coord { x: 0., y: 0. },
             projected_ref_point: Coord {
                 x: 563_000.,

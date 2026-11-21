@@ -170,7 +170,6 @@ impl<'de, T: serde::Deserialize<'de>, K: Key + serde::Deserialize<'de>> serde::D
     }
 }
 
-#[expect(clippy::unwrap_used, reason = "tests assert on known-live handles")]
 #[cfg(test)]
 mod tests {
     use super::Arena;
@@ -205,7 +204,9 @@ mod tests {
     #[test]
     fn a_removed_handle_never_resolves_again() {
         let mut arena = arena_of(&["a", "b", "c"]);
-        let b = arena.id_at(1).unwrap();
+        let b = arena
+            .id_at(1)
+            .expect("the arena has a handle at position 1");
 
         assert_eq!(arena.remove(b).as_deref(), Some("b"));
         assert!(!arena.contains(b));
@@ -233,9 +234,9 @@ mod tests {
         let _removed = arena.remove(ids[1]);
 
         assert_eq!(order(&arena), ["a", "c", "d"]);
-        assert_eq!(arena.get(ids[0]).unwrap(), "a");
-        assert_eq!(arena.get(ids[2]).unwrap(), "c");
-        assert_eq!(arena.get(ids[3]).unwrap(), "d");
+        assert_eq!(arena.get(ids[0]).expect("the handle for a stays live"), "a");
+        assert_eq!(arena.get(ids[2]).expect("the handle for c stays live"), "c");
+        assert_eq!(arena.get(ids[3]).expect("the handle for d stays live"), "d");
         assert_eq!(arena.position(ids[3]), Some(2));
         assert_consistent(&arena);
     }
@@ -243,7 +244,9 @@ mod tests {
     #[test]
     fn inserting_shifts_positions_and_keeps_handles() {
         let mut arena = arena_of(&["a", "c"]);
-        let c = arena.id_at(1).unwrap();
+        let c = arena
+            .id_at(1)
+            .expect("the arena has a handle at position 1");
 
         let b = arena.insert(1, "b".to_owned());
 
@@ -262,8 +265,12 @@ mod tests {
     #[test]
     fn swapping_exchanges_positions() {
         let mut arena = arena_of(&["a", "b", "c"]);
-        let a = arena.id_at(0).unwrap();
-        let c = arena.id_at(2).unwrap();
+        let a = arena
+            .id_at(0)
+            .expect("the arena has a handle at position 0");
+        let c = arena
+            .id_at(2)
+            .expect("the arena has a handle at position 2");
 
         arena.swap(0, 2);
 
@@ -281,10 +288,10 @@ mod tests {
         arena.sort_by_key(Clone::clone);
 
         assert_eq!(order(&arena), ["a", "b", "c", "d"]);
-        assert_eq!(arena.get(ids[0]).unwrap(), "c");
-        assert_eq!(arena.get(ids[1]).unwrap(), "a");
-        assert_eq!(arena.get(ids[2]).unwrap(), "d");
-        assert_eq!(arena.get(ids[3]).unwrap(), "b");
+        assert_eq!(arena.get(ids[0]).expect("the handle for c stays live"), "c");
+        assert_eq!(arena.get(ids[1]).expect("the handle for a stays live"), "a");
+        assert_eq!(arena.get(ids[2]).expect("the handle for d stays live"), "d");
+        assert_eq!(arena.get(ids[3]).expect("the handle for b stays live"), "b");
         assert_eq!(arena.position(ids[0]), Some(2));
         assert_eq!(arena.position(ids[1]), Some(0));
         assert_consistent(&arena);
@@ -333,12 +340,20 @@ mod tests {
     #[test]
     fn mutation_reaches_the_value_behind_the_handle() {
         let mut arena = arena_of(&["a", "b"]);
-        let b = arena.id_at(1).unwrap();
+        let b = arena
+            .id_at(1)
+            .expect("the arena has a handle at position 1");
 
-        arena.get_mut(b).unwrap().push('!');
+        arena
+            .get_mut(b)
+            .expect("the handle for b resolves")
+            .push('!');
         arena.sort_by_key(Clone::clone);
 
-        assert_eq!(arena.get(b).unwrap(), "b!");
+        assert_eq!(
+            arena.get(b).expect("the handle for b survives sorting"),
+            "b!"
+        );
         assert_eq!(order(&arena), ["a", "b!"]);
     }
 
@@ -360,18 +375,23 @@ mod tests {
     #[test]
     fn an_arena_round_trips_through_serde() {
         let mut arena = arena_of(&["c", "a", "d", "b"]);
-        let doomed = arena.id_at(2).unwrap();
+        let doomed = arena
+            .id_at(2)
+            .expect("the arena has a handle at position 2");
         let _removed = arena.remove(doomed);
         let added = arena.push("e".to_owned());
         arena.sort_by_key(Clone::clone);
 
         let before: Vec<(TestKey, String, usize)> = arena
             .iter()
-            .map(|(id, value)| (id, value.clone(), arena.position(id).unwrap()))
+            .map(|(id, value)| {
+                let position = arena.position(id).expect("each live handle has a position");
+                (id, value.clone(), position)
+            })
             .collect();
 
-        let json = serde_json::to_string(&arena).unwrap();
-        let restored: TestArena = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&arena).expect("serialize the test arena");
+        let restored: TestArena = serde_json::from_str(&json).expect("deserialize the test arena");
 
         assert_consistent(&restored);
         assert_eq!(order(&restored), order(&arena));
@@ -387,11 +407,14 @@ mod tests {
     #[test]
     fn a_broken_order_is_rejected() {
         let arena = arena_of(&["a", "b", "c"]);
-        let json = serde_json::to_string(&arena).unwrap();
-        let repr: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&arena).expect("serialize the test arena");
+        let repr: serde_json::Value = serde_json::from_str(&json).expect("parse the arena JSON");
 
         let mut short = repr.clone();
-        short["order"].as_array_mut().unwrap().pop();
+        short["order"]
+            .as_array_mut()
+            .expect("arena order is a JSON array")
+            .pop();
         assert!(
             serde_json::from_value::<TestArena>(short).is_err(),
             "an order that misses a value must be rejected"
@@ -399,14 +422,19 @@ mod tests {
 
         let mut duplicated = repr.clone();
         let first = duplicated["order"][0].clone();
-        duplicated["order"].as_array_mut().unwrap()[1] = first;
+        duplicated["order"]
+            .as_array_mut()
+            .expect("arena order is a JSON array")[1] = first;
         assert!(
             serde_json::from_value::<TestArena>(duplicated).is_err(),
             "an order that names a value twice must be rejected"
         );
 
         let mut missing = repr;
-        missing["values"].as_array_mut().unwrap().pop();
+        missing["values"]
+            .as_array_mut()
+            .expect("arena values are a JSON array")
+            .pop();
         assert!(
             serde_json::from_value::<TestArena>(missing).is_err(),
             "an order naming a missing value must be rejected"

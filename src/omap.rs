@@ -519,7 +519,6 @@ impl Omap {
     }
 }
 
-#[expect(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use std::{fs, num::NonZeroU32};
@@ -540,7 +539,7 @@ mod tests {
 
     #[test]
     fn try_transform_is_transactional() -> Result<()> {
-        let mut map = Omap::new(NonZeroU32::new(10_000).unwrap());
+        let mut map = Omap::new(NonZeroU32::new(10_000).expect("the scale is nonzero"));
         let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
         part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
         part.add_object(PointObject::new(None, Point::new(10.0, 20.0)));
@@ -626,9 +625,12 @@ mod tests {
             .iter_point_symbols()
             .next()
             .map(|(id, _)| id)
-            .unwrap();
+            .expect("the default map contains a point symbol");
 
-        let part = map.parts.get_mut(0).unwrap();
+        let part = map
+            .parts
+            .get_mut(0)
+            .expect("the default map has a first part");
         part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
 
         let _removed = map.symbols.remove(point.into());
@@ -636,7 +638,10 @@ mod tests {
 
         map.prune_dangling_references();
 
-        let object = map.iter_all_objects().last().unwrap();
+        let object = map
+            .iter_all_objects()
+            .last()
+            .expect("the added point object remains after pruning");
         assert_eq!(
             object.symbol(),
             None,

@@ -5,10 +5,6 @@
 //! beforehand still resolves against the restored map.
 
 #![cfg(feature = "serde")]
-#![expect(
-    clippy::expect_used,
-    reason = "a test asserting a round trip should fail loudly at the point it breaks"
-)]
 
 use omap::{Omap, Result};
 
