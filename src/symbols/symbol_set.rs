@@ -206,6 +206,24 @@ impl SymbolSet {
         self.iter().find(|symbol| symbol.common().name == name)
     }
 
+    /// Find all symbols matching the given major component in the symbols' [`Code`]
+    pub fn find_all_by_code_major_component(
+        &self,
+        major: u16,
+    ) -> impl Iterator<Item = SymbolRef<'_>> {
+        self.iter().filter(move |s| s.common().code.major == major)
+    }
+
+    /// Find all symbols matching the given major and minor component in the symbols' [`Code`]
+    pub fn find_all_by_code_major_and_minor_component(
+        &self,
+        major: u16,
+        minor: u16,
+    ) -> impl Iterator<Item = SymbolRef<'_>> {
+        self.iter()
+            .filter(move |s| s.common().code.major == major && s.common().code.minor == minor)
+    }
+
     /// Get the symbol at a file index.
     pub fn find_at(&self, index: usize) -> Option<SymbolRef<'_>> {
         Some(SymbolRef::new(
